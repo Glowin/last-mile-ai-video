@@ -24,6 +24,16 @@ These are research observations and proposals, not implemented features or confi
 
 报告记录公开页面观察与方案建议，尚未实施，也不代表产品决策已定案。
 
+## Development and deployment / 开发与部署
+
+This repository is the product's source of truth throughout the livestream series. Completed code changes will be pushed here. The deployment target is **Dokploy on Hostinger**; application code and deployment integration are not set up yet.
+
+本仓库作为本次系列直播产品的源码仓库，完成的代码变更会及时推送。部署目标为 **Hostinger 上的 Dokploy**；应用代码与部署接入尚未完成。
+
+Real configuration stays outside the checkout and is injected at runtime. Production values are managed separately in the deployment platform. Only empty configuration templates belong in Git. See [AGENTS.md](AGENTS.md) for the contribution and configuration rules.
+
+真实配置保存在仓库外并在运行时加载，生产配置由部署平台单独管理。Git 仅保留空值配置模板；密钥、连接串、服务器地址与部署配置原件均不入库。协作与配置规则见 [AGENTS.md](AGENTS.md)。
+
 ## License / 许可
 
 [MIT](LICENSE)
