@@ -16,6 +16,14 @@ The website's source code will be developed openly in this repository. Research 
 
 站点源码将在本仓库公开开发，调研与实现进展会在准备好后补充。
 
+## Research / 研究
+
+[2026-10-19 AI video site research and launch suggestions / AI 视频站竞品研究与上线建议（中文）](docs/research/2026-10-19-ai-video-sites.md)
+
+These are research observations and proposals, not implemented features or confirmed product decisions.
+
+报告记录公开页面观察与方案建议，尚未实施，也不代表产品决策已定案。
+
 ## License / 许可
 
 [MIT](LICENSE)
