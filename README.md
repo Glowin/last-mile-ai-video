@@ -18,6 +18,8 @@ The website's source code will be developed openly in this repository. Research 
 
 ## Research / 研究
 
+[2026-10-20 Livestream keyword notes / 李正分享的 Google Trends 关键词经验与待验证事项（中文）](docs/research/2026-10-20-google-trends-keyword-notes.md)
+
 [2026-10-19 AI video site research and launch suggestions / AI 视频站竞品研究与上线建议（中文）](docs/research/2026-10-19-ai-video-sites.md)
 
 These are research observations and proposals, not implemented features or confirmed product decisions.
