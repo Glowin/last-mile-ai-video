@@ -2,7 +2,7 @@
 title: "本地开发与 Hostinger Dokploy 部署"
 date: 2026-10-20
 source: "项目实现；Dokploy Docker Compose 文档"
-status: "部署步骤；不代表生产已上线"
+status: "生产服务已部署；当前验收状态见 launch.md"
 ---
 
 # 运行结构
