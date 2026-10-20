@@ -13,7 +13,7 @@ An open-source AI video studio built in public, from the first idea to the first
 
 The MVP includes the English website, model pages, invite-preview studio, PostgreSQL task history, idempotent submission and recovery, and a Docker Compose deployment template.
 
-**Deployed to Hostinger / Dokploy on 2026-10-20: [kakareel.com](https://kakareel.com).** Both containers are healthy, public DNS and the origin TLS certificate are verified, and sixteen origin route/asset checks passed. The operator’s local DNS still needs to refresh, so live browser acceptance is pending. The first real MiniMax generation is processing; complete video output and other model flows are not yet verified. There is no paid checkout or revenue claim. Generation requires a preview code and is limited by a project-specific budget.
+**Deployed to Hostinger / Dokploy on 2026-10-20: [kakareel.com](https://kakareel.com).** Both containers are healthy, public DNS and the origin TLS certificate are verified, and sixteen origin route/asset checks passed. Normal local DNS access has recovered: the health endpoint returned 200 without an origin override, and the homepage rendered correctly in Chrome Glow. Full studio/mobile interaction acceptance remains pending. The first real MiniMax output was played and downloaded in Chrome (2560×1440, 6.584 seconds). The Seedance 480p text-to-video check failed upstream with an invalid-resolution error and no charge; no further paid checks were attempted. Kling and image-to-video flows are not yet verified. GitHub main pushes now trigger Dokploy, verified with commit `6949df4`. There is no paid checkout or revenue claim. Generation requires a preview code and is limited by a project-specific budget.
 
 Type checking, seven tests (including disposable PostgreSQL integration), Docker build, and sixteen production-container route/asset checks passed on 2026-10-20. Provider responses in automated tests are mocked; they do not prove live model availability.
 
@@ -37,6 +37,7 @@ Real configuration stays **outside the checkout, even ignored files**. Only empt
 
 - [MVP scope and launch acceptance](docs/launch.md)
 - [Hostinger / Dokploy deployment](docs/deployment.md)
+- [Search Console and Bing setup status](docs/search-console.md)
 - [VibeToken API contracts and limitations](docs/vibetoken.md)
 - [KakaReel brand and mascot](docs/brand.md)
 - [Competitor research: Higgsfield, Canva, Runway](docs/research/2026-10-19-ai-video-sites.md)
