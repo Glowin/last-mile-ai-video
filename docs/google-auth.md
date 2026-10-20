@@ -1,0 +1,62 @@
+---
+title: "KakaReel Google 登录架构与验证"
+date: 2026-10-20
+status: "本地实现与自动测试完成；待审查、合并及真实登录验收"
+---
+
+# Google sign-in for KakaReel
+
+Implemented 2026-10-20. This is a separate KakaReel identity store; no 13F Insight users, tokens, secrets, or configuration are imported. The reference architecture contributes Google Identity Services (GIS), access JWTs, and rotating hashed refresh tokens. Email/password registration is not implemented.
+
+## Runtime configuration and Google Cloud
+
+Set `GOOGLE_CLIENT_ID`, `SESSION_SECRET`, `APP_URL`, and `DATABASE_URL` at runtime. Keep actual values outside the checkout or in the deployment platform. `.env.example` contains names only. No Google client secret is needed for this GIS ID-token flow. Do not use `NEXT_PUBLIC_GOOGLE_CLIENT_ID` or a Docker build argument.
+
+Create an OAuth **Web application** client in the independent KakaReel Google Cloud project. Configure its exact website origin under **Authorized JavaScript origins** and the consent/branding settings. This implementation uses a JavaScript popup callback, not a redirect callback URL. Production uses HTTPS. A localhost preview can show the disabled state without a client ID; genuine local Google login requires a separately authorized local origin/client. Do not assume the production client permits localhost.
+
+`GET /api/config` returns only `{ googleClientId: string | null }`, with `Cache-Control: no-store`. The official GIS script is loaded from `https://accounts.google.com/gsi/client` and `renderButton()` renders the button. There is no credential in a query string and no application token in localStorage. The public client ID comes from runtime configuration and is not baked into JavaScript bundles. `Cross-Origin-Opener-Policy: same-origin-allow-popups` supports the popup flow. If a stricter CSP is introduced at the proxy, allow the GIS script, frame, style, and connection origins per Google's setup guide.
+
+## Identity and browser security
+
+- `POST /api/auth/challenge` creates a 10-minute random nonce, returns it to GIS, stores its SHA-256 hash in PostgreSQL, and binds it to an HttpOnly browser cookie. Challenge issuance is globally limited to 120/minute; expired nonce rows are removed on issuance.
+- `POST /api/auth/google` calls `google-auth-library` `verifyIdToken({ idToken, audience })`. Signature, issuer, audience, expiry, a verified email, and the expected nonce are required. Exact expiry is additionally checked without clock-skew grace. The nonce is atomically consumed in the account transaction; replay cannot create another session.
+- `users.google_sub` is unique. A returning Google subject retains its KakaReel UUID even if its email changes. Different subjects are never merged by email. Email and name are profile attributes, not account keys; no Google password, photo, access token, or refresh token is stored.
+- Application access JWTs expire in 10 minutes, use HS256 with the existing `SESSION_SECRET`, and specify KakaReel issuer/audience. A database session is checked on authenticated requests, so logout or replay revocation also invalidates existing access JWTs immediately.
+- Application refresh tokens are random 256-bit values, stored only as SHA-256 hashes. Each rotation runs in a PostgreSQL transaction with the session row locked. The absolute session lifetime is 30 days. Used refresh tokens remain as replay evidence; reuse revokes that session family. Independent sessions on other devices are unaffected.
+- Cookies are HttpOnly, SameSite=Lax, host-only, and Secure in production. Access and guest cookies use `/`; refresh uses `/api`; nonce uses `/api/auth`. `DELETE /api/session` revokes the current account session and any presented unclaimed guest cookie, then clears all four cookies.
+- All API mutations, including DELETE, require the exact configured Origin; missing, null, foreign origins and cross-site Fetch Metadata are rejected. The GIS callback is posted by our same-origin JavaScript; there is no unauthenticated Google redirect POST handler. No permissive CORS is enabled.
+- On reload or API expiry, the client obtains the session and rotates when needed, then retries once. A single flight plus Web Locks coordinates refresh within/across tabs. Browsers without Web Locks still deduplicate within a tab; competing cross-tab refreshes fail closed and may require sign-in again. Identity changes clear visible history and stale responses are ignored. A lost rotation response can also require a new login, rather than accepting a reused refresh token.
+
+## Invite permission and existing jobs
+
+Google signup creates an account with **no generation permission**. Both job creation and recovery require preview access. `POST /api/session` continues to accept the existing invitation code: guests receive the legacy signed cookie; signed-in users redeem the code onto their account. Existing rate limits, global daily spend reservations, provider idempotency keys, and recovery behavior remain in force.
+
+A valid, unexpired, correctly signed existing `lm_session` cookie can transfer its owner's jobs and invitation to the Google account. This is done in one transaction with a unique `guest_claims` row and a per-guest advisory lock. Generation reservations and recovery use the same lock, so concurrent claims cannot split ownership or leave new jobs behind. No owner ID supplied in a request body is trusted. Claimed/revoked cookies are denied guest access, and replaying them while signing into a different Google account grants neither history nor invitation. Successful sign-in clears the guest cookie. Account history survives logout; returning with the same Google subject restores access.
+
+## Additive startup migration
+
+`db/0001-init.sql` is unchanged. `0002-google-auth.sql` adds users, sessions, hashed refresh tokens, guest claims, nonces, and auth attempt counters. Existing `video_jobs` are preserved, including their guest owner UUIDs.
+
+`node scripts/migrate.mjs` discovers sorted SQL migrations, records checksums in `schema_migrations`, and applies missing migrations under a PostgreSQL advisory lock in one transaction. It can adopt a legacy database with 0001 tables but no migration ledger. Re-running is safe; changing an applied migration fails rather than silently rewriting history.
+
+`pnpm start` and the Docker `CMD` run `scripts/start.mjs`, which awaits migrations **before** starting Next.js. Migration failure exits without opening the app listener. The database image no longer relies on one-time init SQL. Existing Compose volumes therefore receive upgrades at web startup. Standalone output explicitly traces `postgres`, and the runtime image includes the migration scripts and SQL files. For development, run `pnpm db:migrate` before `pnpm dev`.
+
+## Verification and handoff
+
+Run `pnpm typecheck`, `pnpm test`, `pnpm build`, and `docker build` without real configuration. For integration tests, provide external temporary environment values and dedicated disposable PostgreSQL databases: `DATABASE_URL` must be on `127.0.0.1` with database `video_qa`; `AUTH_TEST_DATABASE_URL` must be on `127.0.0.1` with database `video_auth_qa`. The auth suite resets the latter's public schema; never point it at retained data. Set test-only `APP_URL`, `SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `DEMO_ACCESS_CODE`, and `VIBETOKEN_API_KEY` outside the repository, then run `pnpm db:migrate` and `pnpm test`. Without these DB variables the integration suites explicitly skip.
+
+Google tests generate a temporary RSA key in memory and mock only Google's certificate retrieval inside the test process. Real `verifyIdToken` signature/claim verification still executes; there is no production bypass or test auth endpoint. Video requests are intercepted in tests. Coverage includes legacy migrations, bad audience/issuer/signature/expiry/unverified email, nonce replay, CSRF including DELETE, stable identity, account isolation, hashed refresh rotation/reuse/logout, invitation gating, and concurrent guest adoption. Client tests check refresh deduplication and exact mutation retries.
+
+Local verification completed on 2026-10-20: `pnpm typecheck`, `pnpm test` (23 passed, zero failed/skipped), `pnpm build`, and the Docker image build all passed. The final runtime image successfully imported `postgres`. Its default startup migrated a PostgreSQL 16 volume containing only the legacy schema and a job fixture, preserved that job’s original owner, and preserved it again after web restart. A nonexistent test database caused exit 1 before Next.js readiness. Loopback HTTP checks confirmed health, disabled Google config, session state, and the studio/privacy/terms responses. Browser appearance and genuine Google login remain unverified locally.
+
+The parent owns Google Cloud configuration, deployment, and browser acceptance. After deployment, verify the official button and popup on the authorized HTTPS origin, account reload/logout, guest migration, and invite-required generation. No browser login or production request is claimed by these local tests. No paid generation is necessary for auth acceptance.
+
+Known unrelated provider issue reported by the parent on 2026-10-20: a Seedance 480p request returned `Invalid parameter value: resolution` with zero charge. Models/provider code is unchanged in this auth patch; resolution compatibility needs a separate fix and verification.
+
+## Provider references
+
+Checked against official Google documentation on 2026-10-20:
+
+- [Verify Google ID tokens on the server](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)
+- [GIS JavaScript API: initialization, nonce and official button](https://developers.google.com/identity/gsi/web/reference/js-reference)
+- [Google client/origin, popup and CSP setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid)

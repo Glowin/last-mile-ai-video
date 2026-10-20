@@ -29,16 +29,9 @@ import {
   type PublicJob,
 } from "@/lib/models";
 
-async function api(path: string, options: RequestInit = {}) {
-  const r = await fetch(`/api${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
-    cache: "no-store",
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error ?? "Request failed. Please try again.");
-  return data;
-}
+import { api, SESSION_ENDED } from "@/lib/api";
+import { GoogleSignIn } from "./google-sign-in";
+
 const statusLabel: Record<string, string> = {
   submitting: "Submitting",
   pending: "Generating",
@@ -71,6 +64,13 @@ export function Studio() {
     [ready, setReady] = useState(false),
     [checked, setChecked] = useState(false),
     [code, setCode] = useState("");
+  const [user, setUser] = useState<{
+    id: string;
+    email: string;
+    name: string | null;
+  } | null>(null);
+  const [canGenerate, setCanGenerate] = useState(false);
+  const identityEpoch = useRef(0);
   const [jobs, setJobs] = useState<PublicJob[]>([]),
     [selected, setSelected] = useState<string>(),
     [busy, setBusy] = useState(false),
@@ -90,37 +90,74 @@ export function Studio() {
       ),
     );
   }
+  function clearIdentity() {
+    identityEpoch.current++;
+    setAuthenticated(false);
+    setUser(null);
+    setCanGenerate(false);
+    setJobs([]);
+    setSelected(undefined);
+    setPollError("");
+    localStorage.removeItem("lm_pending");
+  }
   async function refresh() {
+    const epoch = identityEpoch.current;
     const d = await api("/jobs");
-    setJobs(d.jobs);
+    if (epoch === identityEpoch.current) setJobs(d.jobs);
+  }
+  async function loadSession() {
+    const epoch = identityEpoch.current;
+    const s = await api("/session");
+    if (epoch !== identityEpoch.current) return;
+    setAuthenticated(s.authenticated);
+    setUser(s.user);
+    setCanGenerate(s.canGenerate);
+    setReady(s.ready);
+    setChecked(true);
+    if (s.authenticated) await refresh();
+    else setJobs([]);
+  }
+  async function signedIn() {
+    clearIdentity();
+    localStorage.setItem("kr_identity_changed", crypto.randomUUID());
+    await loadSession();
   }
   useEffect(() => {
     let live = true;
-    api("/session")
-      .then(async (s) => {
-        if (!live) return;
-        setAuthenticated(s.authenticated);
-        setReady(s.ready);
-        setChecked(true);
-        if (s.authenticated) {
-          const d = await api("/jobs");
-          if (live) setJobs(d.jobs);
-        }
-      })
-      .catch(() => {
+    const load = () =>
+      loadSession().catch((e) => {
         if (live) {
           setChecked(true);
-          setError(
-            "The studio could not connect. Refresh the page to try again.",
-          );
+          setError((e as Error).message);
         }
       });
+    const ended = () => {
+      clearIdentity();
+      setError("Your session has ended. Please sign in again.");
+    };
+    const changed = (e: StorageEvent) => {
+      if (e.key === "kr_identity_changed") {
+        clearIdentity();
+        void load();
+      }
+    };
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 5 * 60_000);
+    window.addEventListener(SESSION_ENDED, ended);
+    window.addEventListener("storage", changed);
     return () => {
       live = false;
+      identityEpoch.current++;
+      clearInterval(timer);
+      window.removeEventListener(SESSION_ENDED, ended);
+      window.removeEventListener("storage", changed);
     };
   }, []);
   useEffect(() => {
     if (!authenticated || pollError) return;
+    const epoch = identityEpoch.current;
     let active = true,
       running = false,
       failures = 0;
@@ -134,7 +171,7 @@ export function Studio() {
       try {
         for (const j of pending) {
           const d = await api(`/jobs/${j.id}`);
-          if (active) update(d.job);
+          if (active && epoch === identityEpoch.current) update(d.job);
         }
         failures = 0;
         if (active) setPollError("");
@@ -152,7 +189,7 @@ export function Studio() {
       active = false;
       clearInterval(interval);
     };
-  }, [authenticated, pollError]);
+  }, [authenticated, pollError, user?.id]);
   function changeModel(slug: FamilySlug) {
     const model = getFamily(slug)!;
     setFamily(slug);
@@ -193,8 +230,7 @@ export function Studio() {
     try {
       await api("/session", { method: "POST", body: JSON.stringify({ code }) });
       setCode("");
-      setAuthenticated(true);
-      await refresh();
+      await loadSession();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -206,6 +242,7 @@ export function Studio() {
     if (busy) return;
     setBusy(true);
     setError("");
+    const epoch = identityEpoch.current;
     // Persist a stable id before the network call. Reusing identical input after a
     // network interruption cannot accidentally create and bill a second video.
     const body = {
@@ -238,6 +275,7 @@ export function Studio() {
         method: "POST",
         body: JSON.stringify({ ...body, requestId }),
       });
+      if (epoch !== identityEpoch.current) return;
       update(d.job);
       setSelected(d.job.id);
       setTab("preview");
@@ -291,20 +329,48 @@ export function Studio() {
             Workspace <span className="crumb">/</span> <b>Video studio</b>
           </span>
           <div>
-            <span className="preview-tag">INVITE PREVIEW</span>
+            {!user && <span className="preview-tag">INVITE PREVIEW</span>}
+            {user && (
+              <span
+                className="muted"
+                title={user.email}
+                style={{
+                  maxWidth: "min(28vw, 220px)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {user.email}
+              </span>
+            )}
             {authenticated && (
               <button
                 className="icon-button"
-                aria-label="End preview session"
+                aria-label={user ? "Sign out" : "End preview session"}
+                disabled={busy}
                 onClick={async () => {
                   if (
-                    confirm(
-                      "Ending this browser session removes access to its video history. Save your videos first. Continue?",
+                    !user &&
+                    !confirm(
+                      "Ending this guest session removes access to its video history. Sign in with Google first to keep it. Continue?",
                     )
-                  ) {
+                  )
+                    return;
+                  setBusy(true);
+                  setError("");
+                  try {
                     await api("/session", { method: "DELETE" });
-                    setAuthenticated(false);
-                    setJobs([]);
+                    window.google?.accounts.id.disableAutoSelect();
+                    clearIdentity();
+                    localStorage.setItem(
+                      "kr_identity_changed",
+                      crypto.randomUUID(),
+                    );
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setBusy(false);
                   }
                 }}
               >
@@ -486,7 +552,7 @@ export function Studio() {
                   type="submit"
                   disabled={
                     busy ||
-                    !authenticated ||
+                    !canGenerate ||
                     !ready ||
                     !prompt.trim() ||
                     (mode === "image" && !image)
@@ -500,7 +566,18 @@ export function Studio() {
                   Uses the limited project demo allowance. No checkout.
                 </p>
               </form>
-              {!authenticated && (
+              {!user && <GoogleSignIn onSignedIn={signedIn} />}
+              {user && (
+                <div className="access-panel">
+                  <b>Signed in{user.name ? ` as ${user.name}` : ""}</b>
+                  <p>
+                    {canGenerate
+                      ? "Your preview access and video history are saved to this account."
+                      : "Your account is ready. Enter a preview code to unlock generation."}
+                  </p>
+                </div>
+              )}
+              {!canGenerate && (
                 <form className="access-panel" onSubmit={login}>
                   <div>
                     <LockKeyhole size={17} />
@@ -509,7 +586,9 @@ export function Studio() {
                   <p>
                     {checked && !ready
                       ? "Generation is being connected. You can explore the studio while setup is completed."
-                      : "Enter it once to unlock generation in this browser."}
+                      : user
+                        ? "Redeem your code to enable generation for this account."
+                        : "Enter it once to unlock generation in this browser."}
                   </p>
                   <label className="sr-only" htmlFor="preview-code">
                     Preview code
@@ -634,12 +713,14 @@ export function Studio() {
                             className="button secondary"
                             disabled={busy}
                             onClick={async () => {
+                              const epoch = identityEpoch.current;
                               setBusy(true);
                               try {
                                 const d = await api(
                                   `/jobs/${focused.id}/recover`,
                                   { method: "POST" },
                                 );
+                                if (epoch !== identityEpoch.current) return;
                                 update(d.job);
                               } catch (e) {
                                 setError((e as Error).message);

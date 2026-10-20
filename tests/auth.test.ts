@@ -1,0 +1,531 @@
+import { test, before, after, mock } from "node:test";
+import assert from "node:assert/strict";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { OAuth2Client } from "google-auth-library";
+import { SignJWT } from "jose";
+import postgres from "postgres";
+import { sql } from "drizzle-orm";
+import { app } from "../src/server/app";
+import { database, closeDatabase } from "../src/server/db";
+import { migrate } from "../scripts/migrate.mjs";
+import { issueSession, sessionOwner } from "../src/server/auth";
+import { tokenHash } from "../src/server/account";
+
+const integration = !!process.env.AUTH_TEST_DATABASE_URL;
+if (integration) process.env.DATABASE_URL = process.env.AUTH_TEST_DATABASE_URL;
+const key = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const originalFetch = global.fetch;
+let providerCalls = 0;
+const legacyGuest = issueSession;
+const legacyId = randomUUID();
+let legacyCookie = "";
+
+class Browser {
+  cookies = new Map<string, string>();
+  header() {
+    return [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
+  }
+  clone() {
+    const b = new Browser();
+    b.cookies = new Map(this.cookies);
+    return b;
+  }
+  async request(
+    path: string,
+    method = "GET",
+    body?: unknown,
+    origin: string | null = process.env.APP_URL!,
+  ) {
+    const r = await app.request(`http://localhost/api${path}`, {
+      method,
+      headers: {
+        cookie: this.header(),
+        "Content-Type": "application/json",
+        ...(origin === null ? {} : { origin }),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    for (const cookie of r.headers.getSetCookie()) {
+      const [name, ...rest] = cookie.split(";")[0].split("=");
+      const value = rest.join("=");
+      if (!value || cookie.includes("Max-Age=0")) this.cookies.delete(name);
+      else this.cookies.set(name, value);
+    }
+    return r;
+  }
+}
+async function credential(
+  nonce: string,
+  sub = "google-alice",
+  claims: Record<string, unknown> = {},
+) {
+  return new SignJWT({
+    sub,
+    aud: process.env.GOOGLE_CLIENT_ID,
+    iss: "https://accounts.google.com",
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    email: `${sub}@example.com`,
+    email_verified: true,
+    name: "Test User",
+    nonce,
+    ...claims,
+  })
+    .setProtectedHeader({ alg: "RS256", kid: "test-only-key" })
+    .sign(key.privateKey);
+}
+async function challenge(b: Browser) {
+  const r = await b.request("/auth/challenge", "POST");
+  assert.equal(r.status, 200);
+  return (await r.json()).nonce as string;
+}
+async function login(
+  b: Browser,
+  sub = "google-alice",
+  claims: Record<string, unknown> = {},
+) {
+  const nonce = await challenge(b);
+  const r = await b.request("/auth/google", "POST", {
+    credential: await credential(nonce, sub, claims),
+  });
+  assert.equal(r.status, 200);
+  const s = await b.request("/session");
+  assert.equal(s.status, 200);
+  return s.json();
+}
+async function seedJob(owner: string, id = randomUUID(), status = "success") {
+  await database()
+    .execute(sql`INSERT INTO video_jobs(id,owner,family,mode,prompt,duration,resolution,fingerprint,status)
+    VALUES(${id}::uuid,${owner}::uuid,'seedance','text','Existing history',5,'720p','test',${status})`);
+  return id;
+}
+const input = () => ({
+  requestId: randomUUID(),
+  family: "seedance",
+  mode: "text",
+  prompt: "A leaf in sunlight",
+  duration: 5,
+  resolution: "720p",
+  ratio: "16:9",
+  audio: false,
+});
+before(async () => {
+  if (!integration) return;
+  const url = new URL(process.env.DATABASE_URL!);
+  assert.equal(
+    url.hostname,
+    "127.0.0.1",
+    "Auth tests require their own disposable loopback database",
+  );
+  assert.equal(url.pathname, "/video_auth_qa");
+  const db = postgres(process.env.DATABASE_URL!, { max: 1 });
+  try {
+    // Only the explicitly named, disposable, loopback auth test database may be reset.
+    await db`DROP SCHEMA public CASCADE`;
+    await db`CREATE SCHEMA public`;
+    // Simulate a real pre-upgrade installation; the migrator must adopt 0001 without deleting jobs.
+    await db.unsafe(
+      await readFile(new URL("../db/0001-init.sql", import.meta.url), "utf8"),
+    );
+    legacyCookie = legacyGuest();
+    await db`INSERT INTO video_jobs(id,owner,family,mode,prompt,duration,resolution,fingerprint,status)
+      VALUES(${legacyId},${sessionOwner(legacyCookie)!},'seedance','text','Before upgrade',5,'720p','legacy','success')`;
+  } finally {
+    await db.end();
+  }
+  await Promise.all([migrate(), migrate()]);
+  mock.method(
+    OAuth2Client.prototype,
+    "getFederatedSignonCertsAsync",
+    async () => ({
+      certs: {
+        "test-only-key": key.publicKey
+          .export({ type: "spki", format: "pem" })
+          .toString(),
+      },
+      format: "PEM",
+    }),
+  );
+  global.fetch = async (url, init) => {
+    assert.ok(
+      String(url).startsWith("https://vibetoken.cn/v1/videos/generations"),
+      "Unexpected network access blocked",
+    );
+    providerCalls++;
+    assert.equal(init?.method, "POST");
+    return Response.json({ id: `mock-${randomUUID()}`, status: "pending" });
+  };
+});
+after(async () => {
+  mock.restoreAll();
+  global.fetch = originalFetch;
+  await closeDatabase();
+});
+
+test(
+  "real PostgreSQL Google identity and session security",
+  { skip: !integration },
+  async (t) => {
+    await t.test(
+      "additive concurrent startup migrations retain legacy jobs and cookies",
+      async () => {
+        const b = new Browser();
+        b.cookies.set("lm_session", legacyCookie);
+        const r = await b.request("/jobs");
+        assert.equal(r.status, 200);
+        assert.equal((await r.json()).jobs[0].id, legacyId);
+        const versions = await database().execute(
+          sql`SELECT count(*)::int AS n FROM schema_migrations`,
+        );
+        assert.equal(versions[0].n, 2);
+        await migrate();
+      },
+    );
+    await t.test(
+      "runtime public config is uncached, independent of generation config, and can be disabled",
+      async () => {
+        const b = new Browser();
+        const r = await b.request("/config");
+        assert.equal(r.headers.get("cache-control"), "no-store");
+        assert.deepEqual(await r.json(), {
+          googleClientId: process.env.GOOGLE_CLIENT_ID,
+        });
+        const saved = process.env.GOOGLE_CLIENT_ID;
+        delete process.env.GOOGLE_CLIENT_ID;
+        assert.deepEqual(await (await b.request("/config")).json(), {
+          googleClientId: null,
+        });
+        assert.equal((await b.request("/auth/challenge", "POST")).status, 503);
+        process.env.GOOGLE_CLIENT_ID = saved;
+      },
+    );
+    await t.test(
+      "Origin CSRF checks cover every mutation, including DELETE and missing Origin",
+      async () => {
+        const b = new Browser();
+        for (const [path, method] of [
+          ["/session", "POST"],
+          ["/session", "DELETE"],
+          ["/auth/challenge", "POST"],
+          ["/auth/google", "POST"],
+          ["/auth/refresh", "POST"],
+          ["/jobs", "POST"],
+          [`/jobs/${legacyId}/recover`, "POST"],
+        ]) {
+          for (const origin of ["https://attacker.example", "null", null])
+            assert.equal(
+              (await b.request(path, method, {}, origin)).status,
+              403,
+              `${method} ${path}`,
+            );
+        }
+      },
+    );
+    await t.test(
+      "real verifyIdToken rejects wrong audience/issuer, expired/unverified/bad signature and wrong nonce",
+      async () => {
+        const b = new Browser(),
+          nonce = await challenge(b);
+        for (const claims of [
+          { aud: "other-client" },
+          { iss: "https://attacker.example" },
+          { exp: Math.floor(Date.now() / 1000) - 1 },
+          { email_verified: false },
+          { email_verified: "true" },
+          { sub: "" },
+          { nonce: "other-nonce" },
+        ]) {
+          assert.equal(
+            (
+              await b.request("/auth/google", "POST", {
+                credential: await credential(nonce, "invalid-user", claims),
+              })
+            ).status,
+            401,
+          );
+        }
+        const token = await credential(nonce);
+        const parts = token.split(".");
+        parts[1] = Buffer.from(
+          JSON.stringify({
+            ...JSON.parse(Buffer.from(parts[1], "base64url").toString()),
+            sub: "tampered",
+          }),
+        ).toString("base64url");
+        assert.equal(
+          (
+            await b.request("/auth/google", "POST", {
+              credential: parts.join("."),
+            })
+          ).status,
+          401,
+        );
+        const other = new Browser();
+        assert.equal(
+          (await other.request("/auth/google", "POST", { credential: token }))
+            .status,
+          401,
+        );
+        await database().execute(
+          sql`UPDATE auth_nonces SET expires_at=now()-interval '1 second' WHERE nonce_hash=${tokenHash(nonce)}`,
+        );
+        assert.equal(
+          (await b.request("/auth/google", "POST", { credential: token }))
+            .status,
+          401,
+        );
+      },
+    );
+    await t.test(
+      "single-use nonce cannot be replayed, including simultaneous callbacks",
+      async () => {
+        const a = new Browser(),
+          nonce = await challenge(a),
+          b = a.clone();
+        const body = { credential: await credential(nonce, "nonce-user") };
+        const replies = await Promise.all([
+          a.request("/auth/google", "POST", body),
+          b.request("/auth/google", "POST", body),
+        ]);
+        assert.deepEqual(replies.map((r) => r.status).sort(), [200, 401]);
+        b.cookies.set("kr_nonce", nonce);
+        assert.equal(
+          (await b.request("/auth/google", "POST", body)).status,
+          401,
+        );
+      },
+    );
+    const alice = new Browser(),
+      bob = new Browser();
+    let aliceId = "";
+    await t.test(
+      "returning sub retains ID across email changes; matching emails never merge subjects",
+      async () => {
+        const first = await login(alice);
+        aliceId = first.user.id;
+        assert.equal(first.canGenerate, false);
+        const second = await login(new Browser(), "google-alice", {
+          email: "changed@example.com",
+        });
+        assert.equal(second.user.id, aliceId);
+        const other = await login(bob, "google-bob", {
+          email: "changed@example.com",
+        });
+        assert.notEqual(other.user.id, aliceId);
+        const copies = await Promise.all([
+          login(new Browser(), "simultaneous"),
+          login(new Browser(), "simultaneous"),
+        ]);
+        assert.equal(copies[0].user.id, copies[1].user.id);
+      },
+    );
+    await t.test(
+      "Google account alone cannot spend or recover; explicit invitation unlocks only that account",
+      async () => {
+        const before = providerCalls;
+        assert.equal(
+          (await alice.request("/jobs", "POST", input())).status,
+          403,
+        );
+        const recovery = await seedJob(aliceId, randomUUID(), "unknown");
+        assert.equal(
+          (await alice.request(`/jobs/${recovery}/recover`, "POST")).status,
+          403,
+        );
+        assert.equal(providerCalls, before);
+        assert.equal(
+          (await alice.request("/session", "POST", { code: "invalid" })).status,
+          401,
+        );
+        assert.equal(
+          (
+            await alice.request("/session", "POST", {
+              code: process.env.DEMO_ACCESS_CODE,
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await (await alice.request("/session")).json()).canGenerate,
+          true,
+        );
+        assert.equal(
+          (await (await bob.request("/session")).json()).canGenerate,
+          false,
+        );
+        const r = await alice.request("/jobs", "POST", input());
+        assert.equal(r.status, 201);
+        assert.equal(providerCalls, before + 1);
+        assert.equal((await bob.request(`/jobs/${recovery}`)).status, 404);
+        assert.deepEqual((await (await bob.request("/jobs")).json()).jobs, []);
+      },
+    );
+    await t.test(
+      "verified guest cookie adopts history and invite once; replay cannot leak across accounts",
+      async () => {
+        const guest = new Browser();
+        guest.cookies.set("lm_session", legacyCookie);
+        const owner = await login(guest, "legacy-adopter");
+        assert.equal(owner.canGenerate, true);
+        assert.ok(!guest.cookies.has("lm_session"));
+        assert.equal(
+          (await (await guest.request("/jobs")).json()).jobs[0].id,
+          legacyId,
+        );
+        const stolen = new Browser();
+        stolen.cookies.set("lm_session", legacyCookie);
+        assert.equal((await stolen.request("/jobs")).status, 401);
+        assert.equal(
+          (await stolen.request("/jobs", "POST", input())).status,
+          401,
+        );
+        const other = await login(stolen, "other-adopter");
+        assert.equal(other.canGenerate, false);
+        assert.equal((await stolen.request(`/jobs/${legacyId}`)).status, 404);
+        await guest.request("/session", "DELETE");
+        const returning = await login(guest, "legacy-adopter");
+        assert.equal(returning.user.id, owner.user.id);
+        assert.equal((await guest.request(`/jobs/${legacyId}`)).status, 200);
+      },
+    );
+    await t.test(
+      "unsigned, tampered and revoked guest cookies cannot confer invitation or adopt jobs",
+      async () => {
+        const raw = issueSession(),
+          guestId = sessionOwner(raw)!;
+        const jobId = await seedJob(guestId);
+        for (const invalid of [
+          guestId,
+          `${raw.slice(0, -1)}${raw.endsWith("0") ? "1" : "0"}`,
+        ]) {
+          const b = new Browser();
+          b.cookies.set("lm_session", invalid);
+          const s = await login(b, randomUUID());
+          assert.equal(s.canGenerate, false);
+          assert.equal((await b.request(`/jobs/${jobId}`)).status, 404);
+        }
+        const guest = new Browser();
+        guest.cookies.set("lm_session", raw);
+        assert.equal((await guest.request("/session", "DELETE")).status, 200);
+        guest.cookies.set("lm_session", raw);
+        assert.equal((await guest.request("/jobs")).status, 401);
+        assert.equal((await login(guest, "ended-guest")).canGenerate, false);
+      },
+    );
+    await t.test(
+      "concurrent guest claims grant history and permission to exactly one account",
+      async () => {
+        const raw = issueSession(),
+          jobId = await seedJob(sessionOwner(raw)!);
+        const a = new Browser(),
+          b = new Browser();
+        a.cookies.set("lm_session", raw);
+        b.cookies.set("lm_session", raw);
+        const sessions = await Promise.all([
+          login(a, "claim-a"),
+          login(b, "claim-b"),
+        ]);
+        assert.deepEqual(sessions.map((s) => s.canGenerate).sort(), [
+          false,
+          true,
+        ]);
+        assert.deepEqual(
+          (
+            await Promise.all([
+              a.request(`/jobs/${jobId}`),
+              b.request(`/jobs/${jobId}`),
+            ])
+          )
+            .map((r) => r.status)
+            .sort(),
+          [200, 404],
+        );
+      },
+    );
+    await t.test(
+      "HttpOnly cookies, hashed refresh tokens, reload/rotation, replay and logout revoke access immediately",
+      async () => {
+        const b = new Browser(),
+          nonce = await challenge(b);
+        const priorNodeEnv = process.env.NODE_ENV;
+        Object.assign(process.env, { NODE_ENV: "production" });
+        let r: Response;
+        try {
+          r = await b.request("/auth/google", "POST", {
+            credential: await credential(nonce, "rotation-user"),
+          });
+        } finally {
+          if (priorNodeEnv === undefined)
+            delete (process.env as Record<string, string | undefined>).NODE_ENV;
+          else Object.assign(process.env, { NODE_ENV: priorNodeEnv });
+        }
+        const cookies = r.headers
+          .getSetCookie()
+          .filter(
+            (c) => c.startsWith("kr_access=") || c.startsWith("kr_refresh="),
+          );
+        assert.equal(cookies.length, 2);
+        assert.ok(
+          cookies.every(
+            (c) =>
+              /HttpOnly/i.test(c) &&
+              /SameSite=Lax/i.test(c) &&
+              /Secure/i.test(c),
+          ),
+        );
+        const raw = b.cookies.get("kr_refresh")!;
+        const tokens = await database().execute(
+          sql`SELECT token_hash FROM refresh_tokens WHERE token_hash=${tokenHash(raw)}`,
+        );
+        assert.equal(tokens.length, 1);
+        assert.notEqual(tokens[0].token_hash, raw);
+        const old = b.clone();
+        b.cookies.delete("kr_access"); // Browser after access cookie expiry, with refresh still present.
+        assert.equal((await b.request("/session")).status, 401);
+        assert.equal((await b.request("/auth/refresh", "POST")).status, 200);
+        assert.notEqual(b.cookies.get("kr_refresh"), raw);
+        assert.equal((await b.request("/session")).status, 200);
+        assert.equal((await old.request("/auth/refresh", "POST")).status, 401);
+        assert.equal(
+          (await b.request("/jobs")).status,
+          401,
+          "reuse revokes even the newest access token",
+        );
+        await login(b, "rotation-user");
+        const snapshot = b.clone();
+        assert.equal((await b.request("/session", "DELETE")).status, 200);
+        assert.equal((await snapshot.request("/jobs")).status, 401);
+        assert.equal(
+          (await snapshot.request("/auth/refresh", "POST")).status,
+          401,
+        );
+        assert.equal(b.cookies.has("kr_refresh"), false);
+      },
+    );
+    await t.test(
+      "concurrent refresh permits one rotation and revokes the replayed session family",
+      async () => {
+        const a = new Browser();
+        await login(a, "parallel-refresh");
+        const b = a.clone();
+        const r = await Promise.all([
+          a.request("/auth/refresh", "POST"),
+          b.request("/auth/refresh", "POST"),
+        ]);
+        assert.deepEqual(r.map((x) => x.status).sort(), [200, 401]);
+        const winner = r[0].status === 200 ? a : b;
+        assert.equal((await winner.request("/jobs")).status, 401);
+      },
+    );
+    await t.test("expired refresh sessions are rejected", async () => {
+      const b = new Browser();
+      await login(b, "expired-refresh");
+      const raw = b.cookies.get("kr_refresh")!;
+      await database()
+        .execute(sql`UPDATE auth_sessions SET expires_at=now()-interval '1 second'
+      WHERE id=(SELECT session_id FROM refresh_tokens WHERE token_hash=${tokenHash(raw)})`);
+      assert.equal((await b.request("/auth/refresh", "POST")).status, 401);
+    });
+  },
+);

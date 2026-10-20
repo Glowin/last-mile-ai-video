@@ -9,14 +9,16 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/start.mjs next start",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "db:migrate": "tsx scripts/migrate.ts"
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
+    "google-auth-library": "^11.3.1",
     "hono": "^4.13.13",
+    "jose": "^6.2.13",
     "lucide-react": "^1.60.0",
     "next": "^16.4.2",
     "postgres": "^3.4.9",
