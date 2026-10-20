@@ -42,7 +42,7 @@ node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next d
 
 1. 在已有 Hostinger Dokploy 创建本项目独立 Compose 服务，源仓库为 `Glowin/last-mile-ai-video`、分支 `main`，使用根目录 `compose.yaml`。
 2. 在平台内设置上述运行环境；数据库 URL 的主机为该 Compose 内的 `db`，用户、密码、库名与数据库服务对应。由平台保存，不导出到 Git。
-3. 首次启动空数据库卷会执行 `db/0001-init.sql`。已有卷不会重新执行初始化；升级前备份，按迁移流程操作，不删卷强制重建。
+3. 数据库镜像通过 `db/Dockerfile` 打包初始化 SQL，不直接挂载 Git checkout 内文件；Dokploy 重新 clone 时不会使挂载失效。首次启动空数据库卷会执行 `db/0001-init.sql`。已有卷不会重新执行初始化；升级前备份，按迁移流程操作，不删卷强制重建。
 4. 将已注册域名绑定 `web` 服务端口 3000，配置 DNS 与 TLS。不要公开 PostgreSQL 端口，不修改其他项目的服务或卷。
 5. 一次部署一个构建；确认 VPS 资源可用。只有平台实际配置并验收 webhook 后，才称为 push 自动上线。
 6. 核对实际运行版本、HTTPS 首页、`/build`、三个模型页、`/create`、`/api/health`、sitemap 与 canonical。健康接口只证明应用存活，不证明上游可用。

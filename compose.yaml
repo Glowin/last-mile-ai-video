@@ -15,7 +15,9 @@ services:
       db:
         condition: service_healthy
   db:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: db/Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Set a project database user}
@@ -23,7 +25,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a project database password}
     volumes:
       - video-db:/var/lib/postgresql/data
-      - ./db/0001-init.sql:/docker-entrypoint-initdb.d/0001-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
