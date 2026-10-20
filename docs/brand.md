@@ -2,12 +2,12 @@
 title: "KakaReel 品牌与鸮鹦鹉资产"
 date: 2026-10-20
 source: "江昪会话定案；内置 imagegen 生成初版"
-status: "首版已接入；域名注册单独验收"
+status: "首版已接入；域名已注册"
 ---
 
 # 品牌决定
 
-2026-10-20，江昪确定域名 `kakareel.com`，并要求继续以鸮鹦鹉作为 Logo 与吉祥物。对外名称采用 **KakaReel**；仓库与直播系列仍保留 Last Mile 名称。此前 KakapoVideo 等方案不再作为当前购买目标。
+2026-10-20，江昪确定域名 `kakareel.com`，并要求继续以鸮鹦鹉作为 Logo 与吉祥物。对外名称采用 **KakaReel**；仓库与直播系列仍保留 Last Mile 名称。此前 KakapoVideo 等方案不再作为当前购买目标。当天已在 Cloudflare 完成 `kakareel.com` 注册并核到 Active 状态；后续继续接入部署。
 
 第一版采用苔绿、深森林绿与奶油色；鸟类特征是浅色圆脸、弯喙、圆润身体和短翅。Logo 用正面头像，吉祥物用挥翅全身像。
 

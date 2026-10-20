@@ -7,13 +7,13 @@ date: 2026-10-20
 
 An open-source AI video studio built in public, from the first idea to the first US$100 in revenue. For international creators, with text-to-video and image-to-video adapters for Seedance 2.5, Kling 3.0, and MiniMax H3 through VibeToken.
 
-《最后一海里计划》的直播产品：从创意、制作、上线、获取首位付费用户到 US$100 收入。品牌 **KakaReel**，目标域名 `kakareel.com`，Logo 和吉祥物为鸮鹦鹉。
+《最后一海里计划》的直播产品：从创意、制作、上线、获取首位付费用户到 US$100 收入。品牌 **KakaReel**，已注册域名 `kakareel.com`，Logo 和吉祥物为鸮鹦鹉。
 
 ## Current status
 
 The local MVP includes the English website, model pages, invite-preview studio, PostgreSQL task history, idempotent submission and recovery, and a Docker Compose deployment template.
 
-**Production launch, domain registration and real provider generations are not yet verified.** There is no paid checkout or revenue claim. Generation stays disabled until project-specific runtime configuration is supplied.
+**Domain registration completed on 2026-10-20; Cloudflare shows Active. Production launch and real provider generations are not yet verified.** There is no paid checkout or revenue claim. Generation stays disabled until project-specific runtime configuration is supplied.
 
 Type checking, seven tests (including disposable PostgreSQL integration), Docker build, and sixteen production-container route/asset checks passed on 2026-10-20. Provider responses in automated tests are mocked; they do not prove live model availability.
 
