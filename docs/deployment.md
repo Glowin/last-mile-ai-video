@@ -48,6 +48,12 @@ node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next d
 6. 核对实际运行版本、HTTPS 首页、`/build`、三个模型页、`/create`、`/api/health`、sitemap 与 canonical。健康接口只证明应用存活，不证明上游可用。
 7. 配好专用上游 Key 后做有限真实生成验收，再开放邀请。
 
+## 本轮已解决的打包问题
+
+2026-10-20 实测，通用 `build/` 忽略规则会误排除应用路由 `src/app/build/page.tsx`：本地开发能打开，不代表 Docker 镜像或 Git 提交包含该页。现已在 `.gitignore` 与 `.dockerignore` 同时加例外，并在生产容器验证 `/build` 返回 200。以后调整忽略规则须同时核这两处和镜像内实际路由。
+
+Docker 生产阶段必须复制 `public/`，否则代码引用的鸮鹦鹉素材不会随 standalone 输出自动带入。本轮已显式复制，并验证两个 PNG 的生产容器响应。
+
 ## 检查
 
 `pnpm typecheck`、`pnpm test`、`pnpm build`、`docker build -t kakareel:local .`。
