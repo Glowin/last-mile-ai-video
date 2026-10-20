@@ -1,0 +1,62 @@
+---
+title: "本地开发与 Hostinger Dokploy 部署"
+date: 2026-10-20
+source: "项目实现；Dokploy Docker Compose 文档"
+status: "部署步骤；不代表生产已上线"
+---
+
+# 运行结构
+
+Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzle 存任务。共享 VPS 上先用一个应用构建，独立数据库，避免多个前后端构建同时争用资源。上游提供持久化异步任务，MVP 未引入 Redis 队列。
+
+## 配置边界
+
+真实配置一律在 checkout 外；本机目录权限 0700，配置文件 0600；生产值只进入 Dokploy 环境设置。不得复制或软链接配置回仓库，不使用其他应用的密钥。`.env.example` 仅列空变量。
+
+| 变量 | 用途 |
+|---|---|
+| DATABASE_URL | 项目专用 PostgreSQL 连接串 |
+| VIBETOKEN_API_KEY | 项目专用上游密钥；缺少时仅浏览工作台 |
+| SESSION_SECRET | 至少 32 字符的随机签名密钥 |
+| DEMO_ACCESS_CODE | 至少 12 字符的预览口令 |
+| APP_URL | 对外 HTTPS origin，不带子路径 |
+| GENERATION_DAILY_LIMIT | 全站 UTC 日提交上限，默认 10 |
+| POSTGRES_USER / POSTGRES_DB / POSTGRES_PASSWORD | Compose 独立数据库配置 |
+
+配置不作为构建参数，不进入浏览器或镜像。可以先部署浏览版本、暂不配置 VibeToken Key 和邀请口令，页面会明确提示暂不能生成。
+
+## 本地
+
+使用 Node.js 22 和 pnpm 10.27.0，先 `pnpm install --frozen-lockfile`。外部配置文件路径由操作者提供，以下占位路径不应直接执行：
+
+```sh
+node --env-file=/absolute/external/runtime.env --import tsx scripts/migrate.ts
+node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next dev --hostname 127.0.0.1
+```
+
+迁移脚本目前只应用初始 schema，未来结构修改需要新增版本化迁移。开发不依赖真实上游密钥才能打开页面。
+
+## Dokploy
+
+参照 [Dokploy Compose 文档](https://docs.dokploy.com/docs/core/docker-compose)：
+
+1. 在已有 Hostinger Dokploy 创建本项目独立 Compose 服务，源仓库为 `Glowin/last-mile-ai-video`、分支 `main`，使用根目录 `compose.yaml`。
+2. 在平台内设置上述运行环境；数据库 URL 的主机为该 Compose 内的 `db`，用户、密码、库名与数据库服务对应。由平台保存，不导出到 Git。
+3. 首次启动空数据库卷会执行 `db/0001-init.sql`。已有卷不会重新执行初始化；升级前备份，按迁移流程操作，不删卷强制重建。
+4. 将已注册域名绑定 `web` 服务端口 3000，配置 DNS 与 TLS。不要公开 PostgreSQL 端口，不修改其他项目的服务或卷。
+5. 一次部署一个构建；确认 VPS 资源可用。只有平台实际配置并验收 webhook 后，才称为 push 自动上线。
+6. 核对实际运行版本、HTTPS 首页、`/build`、三个模型页、`/create`、`/api/health`、sitemap 与 canonical。健康接口只证明应用存活，不证明上游可用。
+7. 配好专用上游 Key 后做有限真实生成验收，再开放邀请。
+
+## 检查
+
+`pnpm typecheck`、`pnpm test`、`pnpm build`、`docker build -t kakareel:local .`。
+
+普通 `pnpm test` 不配置数据库时跳过数据库集成用例。完整集成测试须使用独立、可清空的本机 PostgreSQL，主机固定 `127.0.0.1`、库名固定 `video_qa`，外部测试配置提供随机签名密钥与邀请口令、测试假 API Key 和本机 APP_URL：
+
+```sh
+node --env-file=/absolute/external/test.env --import tsx scripts/migrate.ts
+node --env-file=/absolute/external/test.env --import tsx --test tests/*.test.ts
+```
+
+集成用例会清空该测试库内任务表，使用 mock 上游，不产生真实生成费用。覆盖会话隔离、重复提交、超时恢复、参数映射、每日上限和来源校验。测试通过仍不能代替真实视频与生产部署验收。

@@ -46,3 +46,7 @@
 **/.DS_Store
 **/.idea
 **/.vscode
+
+# /build is an application route, not a build artifact.
+!src/app/build/
+!src/app/build/**

@@ -1,13 +1,13 @@
 # Project instructions
 
-This public repository contains the product built during the Last Mile livestream series: an AI video service for international users, working toward the first US$100 in revenue. Research proposals are not confirmed product scope. Source: project owner's instructions, 2026-10-20.
+This public repository contains the product built during the Last Mile livestream series: an AI video service for international users, working toward the first US$100 in revenue. The product brand is KakaReel (selected domain kakareel.com), with a kakapo logo and mascot. The confirmed MVP is an international All-in-One video studio for Seedance, Kling and MiniMax H3 via VibeToken. Other research proposals are not confirmed product scope. Source: project owner's instructions, 2026-10-20.
 
 ## Repository and deployment
 
 - Keep the application in this standalone repository, alongside other local projects; do not embed it in the team knowledge repository.
 - Commit small, reviewable changes and push completed work to this repository. Stage explicit files, inspect the staged diff, preserve other contributors' work, and never force-push without authorization.
 - Deployment target: Dokploy on Hostinger. This is a target, not evidence of a completed deployment. Do not claim push-triggered deployment is enabled until it is configured and verified.
-- Choose build commands, ports and application environment variables after the stack is selected. Do not invent server addresses or infrastructure identifiers.
+- Stack: Next.js/TypeScript with Hono API routes, PostgreSQL/Drizzle, one web container on port 3000 plus an isolated database. Follow docs/deployment.md. Do not invent server addresses or infrastructure identifiers.
 
 ## Configuration boundary
 

@@ -1,0 +1,33 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set the project database URL in Dokploy}
+      VIBETOKEN_API_KEY: ${VIBETOKEN_API_KEY:-}
+      SESSION_SECRET: ${SESSION_SECRET:?Set a project-specific secret}
+      DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-}
+      APP_URL: ${APP_URL:?Set the public origin}
+      GENERATION_DAILY_LIMIT: ${GENERATION_DAILY_LIMIT:-10}
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set a project database user}
+      POSTGRES_DB: ${POSTGRES_DB:?Set a project database name}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a project database password}
+    volumes:
+      - video-db:/var/lib/postgresql/data
+      - ./db/0001-init.sql:/docker-entrypoint-initdb.d/0001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  video-db:

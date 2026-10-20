@@ -46,3 +46,8 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Application route named build must remain tracked.
+!src/app/build/
+!src/app/build/**
+*.tsbuildinfo
