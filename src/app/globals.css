@@ -6,6 +6,8 @@
   --accent: #d5f47b;
   --panel: #fff;
   --dark: #152a23;
+  --page-max-width: 1264px;
+  --page-gutter: 40px;
 }
 * {
   box-sizing: border-box;
@@ -90,10 +92,10 @@ p {
   line-height: 1.65;
 }
 .shell {
-  max-width: 1264px;
+  max-width: var(--page-max-width);
   margin: auto;
-  padding-left: 40px;
-  padding-right: 40px;
+  padding-left: var(--page-gutter);
+  padding-right: var(--page-gutter);
 }
 .site-header {
   height: 88px;
@@ -101,8 +103,8 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  max-width: 1264px;
-  padding: 0 40px;
+  max-width: var(--page-max-width);
+  padding: 0 var(--page-gutter);
   margin: auto;
   border-bottom: 1px solid var(--line);
 }
@@ -1670,13 +1672,12 @@ p {
   }
 }
 @media (max-width: 650px) {
-  .shell {
-    padding-left: 22px;
-    padding-right: 22px;
+  :root {
+    --page-gutter: 22px;
   }
   .site-header {
     min-height: 75px;
-    padding: 14px 22px;
+    padding: 14px var(--page-gutter);
     gap: 12px;
   }
   .site-header-actions {
@@ -1979,9 +1980,14 @@ p {
   position: fixed;
   z-index: 60;
   top: 100px;
-  right: max(16px, env(safe-area-inset-right));
+  /* Match the padded content edge of the centered page shell. */
+  right: max(
+    var(--page-gutter),
+    calc((100% - var(--page-max-width)) / 2 + var(--page-gutter)),
+    env(safe-area-inset-right)
+  );
   width: 304px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100% - max(var(--page-gutter), env(safe-area-inset-left)) - max(var(--page-gutter), env(safe-area-inset-right)));
   max-height: calc(100dvh - 120px);
   overflow-y: auto;
   padding: 16px;
@@ -2001,5 +2007,5 @@ p {
 .google-signin-card .google-signin-card-links { margin: 12px 0 0; }
 .google-signin-recovery { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; }
 @media (max-width: 600px) {
-  .google-signin-card { top: 108px; right: 12px; padding: 12px; width: 288px; max-height: calc(100dvh - 128px); }
+  .google-signin-card { top: 108px; padding: 12px; width: 288px; max-height: calc(100dvh - 128px); }
 }
