@@ -12,6 +12,8 @@ import {
   type Identity,
 } from "./account";
 import { authRoutes } from "./auth-routes";
+import { accountRoutes } from "./account-routes";
+import { billingRoutes, billingWebhookRoutes, isBillingWebhookRequest } from "./billing/routes";
 import { generationSchema, providerPayload } from "./input";
 import { providerRequest, ProviderError, type ProviderTask } from "./provider";
 import { families } from "../lib/models";
@@ -32,7 +34,8 @@ app.use(
 );
 app.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store");
-  if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
+  if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method) &&
+      !isBillingWebhookRequest(c.req.method, c.req.path)) {
     const expected = process.env.APP_URL;
     if (
       !expected ||
@@ -58,6 +61,10 @@ app.onError((error, c) => {
 });
 app.get("/health", (c) => c.json({ status: "ok" }));
 app.route("/", authRoutes);
+app.route("/", accountRoutes);
+// Signed provider callbacks have their own exact-path authentication boundary.
+app.route("/billing/webhooks", billingWebhookRoutes);
+app.route("/billing", billingRoutes);
 app.get("/models", (c) => c.json({ models: families, ready: configured() }));
 const requireIdentity: import("hono").MiddlewareHandler<{
   Variables: { owner: string; identity: Identity };

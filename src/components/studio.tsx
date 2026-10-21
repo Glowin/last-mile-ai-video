@@ -18,6 +18,8 @@ import {
   LockKeyhole,
   Check,
   LogOut,
+  CreditCard,
+  UserRound,
 } from "lucide-react";
 import {
   families,
@@ -318,6 +320,12 @@ export function Studio() {
           <Clock size={18} />
           My videos<span>{jobs.length}</span>
         </button>
+        <Link className="side-nav" href="/pricing" title="Pricing" aria-label="Pricing">
+          <CreditCard size={18} />Pricing
+        </Link>
+        <Link className="side-nav" href="/account" title="Account" aria-label="Account">
+          <UserRound size={18} />Account
+        </Link>
         <div className="side-bottom">
           <span className="preview-tag">
             <i /> EARLY PREVIEW
@@ -371,7 +379,7 @@ export function Studio() {
                   setBusy(true);
                   setError("");
                   try {
-                    await api("/session", { method: "DELETE" });
+                    await api("/session", { method: "DELETE", headers: sessionOwner.current ? { "X-KakaReel-Owner": sessionOwner.current } : {} });
                     window.google?.accounts.id.disableAutoSelect();
                     clearIdentity();
                   } catch (e) {

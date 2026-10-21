@@ -30,8 +30,10 @@ Google 的发现页面数不是索引数。新资源报告仍在处理数据；�
 ## 可复用做法与边界
 
 - 复用 13F Insight 的独立站点验证、sitemap、canonical 和私有页面排除方式，不照搬其他站点配置。
-- 当前 sitemap 包含首页、`/build`、三个模型页共 5 个 URL；`/create` 不索引，`/api` 禁止抓取。用户历史和生成结果不进入公开 sitemap。
+- 本次版本 sitemap 包含首页、`/build`、`/pricing`、三个模型页共 6 个 URL；`/create` 不索引，`/api` 禁止抓取。`/account`、付款返回页、用户历史和生成结果不进入公开 sitemap。这不代表 GSC 已重新读取六页；此前控制台成功记录仍为五页。
 - Bing Webmaster sitemap、IndexNow 和 Google Indexing API 是不同入口；本轮没有配置 IndexNow 或自动索引推送，不能因搜索平台接入就宣称自动收录。
 - DNS 生效、平台产权验证、sitemap 接收和搜索收录是不同状态，分别取证。Bing 的报错后界面变化须再次读回，不能只凭按钮点击或站点入口存在宣布成功。
 
 浏览器继续使用 Chrome Glow，并以当前 Profile 名识别，不固定标签或浏览器编号。Google 验证与 sitemap 截图已归档库外，归档入口由知识库项目档案维护。
+
+2026-10-21 复核：Glow 的 Bing 登录再次被 Chrome 拦截（ERR_BLOCKED_BY_CLIENT），已请江昪恢复访问。未获得新的站点验证或 sitemap 成功回执；保留该待办，不重复提交或更改扩展安全设置。

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getFamily } from "../lib/models";
 const taskSchema = z.object({
   id: z.string().min(1).max(200),
   status: z.enum(["pending", "success", "failed"]),
@@ -10,10 +11,38 @@ export class ProviderError extends Error {
     super("Video service request failed.");
   }
 }
+// A local policy block says nothing about a previous remote submission.
+// Keep this separate from ProviderError so submit retains unknown + payload.
+export class ProviderSubmissionBlockedError extends Error {
+  constructor() {
+    super("Video submission blocked locally; remote task status is unknown.");
+    this.name = "ProviderSubmissionBlockedError";
+  }
+}
 export async function providerRequest(
   path: string,
   options: RequestInit = {},
 ): Promise<ProviderTask> {
+  // Recovery submits stored JSON without re-running the current input schema.
+  // Reject the known-bad setting before credentials/fetch; never upgrade or retry it.
+  if (options.method?.toUpperCase() === "POST" && typeof options.body === "string") {
+    let body: unknown;
+    try {
+      body = JSON.parse(options.body);
+    } catch {
+      throw new ProviderSubmissionBlockedError();
+    }
+    const blocked = z.object({
+      model: z.string(),
+      resolution: z.literal("480p"),
+    }).safeParse(body);
+    const seedance = getFamily("seedance")!;
+    if (
+      blocked.success &&
+      (blocked.data.model === seedance.t2v || blocked.data.model === seedance.i2v)
+    )
+      throw new ProviderSubmissionBlockedError();
+  }
   const key = process.env.VIBETOKEN_API_KEY;
   if (!key) throw new ProviderError(503);
   const response = await fetch(

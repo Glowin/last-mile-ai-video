@@ -36,39 +36,49 @@ const send = (path: string, options: RequestInit) =>
     cache: "no-store",
     headers: { "Content-Type": "application/json", ...options.headers },
   });
+// Preserve serialization within this tab even when Web Locks are unavailable.
+let localSessionQueue = Promise.resolve();
 function withSessionLock<T>(work: () => Promise<T>): Promise<T> {
-  return navigator.locks
-    ? navigator.locks.request("kakareel-session", work)
-    : work();
+  if (navigator.locks) return navigator.locks.request("kakareel-session", work);
+  const next = localSessionQueue.then(work);
+  localSessionQueue = next.then(() => {}, () => {});
+  return next;
 }
-async function refreshSession(expected: string) {
-  if (!refreshFlight) {
-    const work = async () => {
-      assertIdentity(expected);
-      // Another tab may have rotated or switched accounts while we waited.
-      const current = await send("/session", {});
-      const data = await current.json();
-      assertIdentity(expected);
-      if (current.ok) {
-        if (!data.authenticated) sessionEnded();
-        return;
-      }
-      if (current.status !== 401)
-        throw new Error("Session service is unavailable. Please try again.");
-      const response = await send("/auth/refresh", { method: "POST" });
-      assertIdentity(expected);
-      if (!response.ok) {
-        if (response.status === 401) sessionEnded();
-        throw new Error(
-          "Your session could not be refreshed. Please sign in again.",
-        );
-      }
-    };
-    refreshFlight = withSessionLock(work).finally(() => {
-      refreshFlight = undefined;
-    });
+async function refreshSession(expected: string, alreadyLocked = false) {
+  const work = async () => {
+    assertIdentity(expected);
+    // Another tab may have rotated or switched accounts while we waited.
+    const current = await send("/session", {});
+    const data = await current.json();
+    assertIdentity(expected);
+    if (current.ok) {
+      if (!data.authenticated) sessionEnded();
+      return;
+    }
+    if (current.status !== 401)
+      throw new Error("Session service is unavailable. Please try again.");
+    const response = await send("/auth/refresh", { method: "POST" });
+    assertIdentity(expected);
+    if (!response.ok) {
+      if (response.status === 401) sessionEnded();
+      throw new Error(
+        "Your session could not be refreshed. Please sign in again.",
+      );
+    }
+  };
+  if (alreadyLocked) {
+    // Identity mutations hold the session lock. Never acquire it recursively,
+    // or join refreshFlight: that flight may itself be waiting for our lock.
+    // Leave a queued flight intact; it will recheck identity after we release.
+    await work();
+  } else {
+    if (!refreshFlight) {
+      refreshFlight = withSessionLock(work).finally(() => {
+        refreshFlight = undefined;
+      });
+    }
+    await refreshFlight;
   }
-  await refreshFlight;
   assertIdentity(expected);
 }
 export async function api(path: string, options: RequestInit = {}) {
@@ -84,7 +94,7 @@ export async function api(path: string, options: RequestInit = {}) {
     let data = await r.json();
     assertIdentity(expected);
     if (r.status === 401 && data.code === "SESSION_EXPIRED") {
-      await refreshSession(expected);
+      await refreshSession(expected, changesIdentity);
       r = await send(path, options);
       data = await r.json();
       assertIdentity(expected);

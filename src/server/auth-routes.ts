@@ -226,6 +226,21 @@ authRoutes.post("/session", async (c) => {
   return c.json({ ok: true });
 });
 authRoutes.delete("/session", async (c) => {
+  const expectedOwner = c.req.header("X-KakaReel-Owner");
+  if (expectedOwner !== undefined) {
+    const who = await identity(c);
+    // Let the existing client refresh an expired access cookie before comparing.
+    if (!who && hasAccountCookies(c))
+      return c.json(
+        { error: "Please refresh your account session.", code: "SESSION_EXPIRED" },
+        401,
+      );
+    if (expectedOwner !== who?.owner)
+      return c.json(
+        { error: "Your account changed. Refresh before signing out." },
+        409,
+      );
+  }
   const guest = sessionOwner(getCookie(c, "lm_session"));
   await database().transaction(async (tx) => {
     await revokeLogin(c, tx);
