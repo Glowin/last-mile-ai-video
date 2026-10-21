@@ -86,7 +86,7 @@ Google 与 Bing 的具体操作证据、失败边界与下一步见 [搜索平�
 | 工作台 SEO | canonical、54 字符 title、156 字符 description、分享标签及有意义的 H2/H3 已线上核对 | 工作台继续 noindex；装饰图片空 alt 有语义依据 |
 | Seedance 480p | 已移除 480p 选项并增加本地拒绝与旧任务保护，回归通过 | 生产选项仅 720p／1080p；不把本地阻止当成旧任务远端失败，无新付费生成 |
 | 用户管理 | 已上线；本人资料、当前会话、无其他会话的禁用状态、退出及重新登录在 Glow 实测通过 | 多会话撤销与跨用户隔离由独立 PostgreSQL 回归验证；生产没有人为制造其他设备会话 |
-| 付费计划 | 原研究及 [三站个人定价视觉报告](research/2026-10-21-individual-pricing-visual-review.md)完成，9 张截图库外归档；`/pricing` 继续未开售 | 首期仍为一次性包；$9／$19 是一个 SKU 的两个候选，成本／额度待核，本轮未改变线上价格或开通支付 |
+| 付费计划 | 原研究及 [三站个人定价视觉报告](research/2026-10-21-individual-pricing-visual-review.md)完成，9 张截图库外归档；`/pricing` 继续未开售 | 江昪确认先一次性后订阅，首渠道 Pancake；六模型成本详情已核，建议 $19／150 credits，Seedance／Kling 单位有歧义；详见[成本与失败测算](research/2026-10-21-video-pricing.md#11-vibetoken-成本复核失败损耗与首包建议2026-10-21)，未开售 |
 | 支付后端 | [一次性额度包基础](billing-backend.md)已上线；生产 catalog 无价格／额度且关闭，未配置回调拒绝处理 | 默认不开售；真实 adapter、成本报价、内容审核与沙盒端到端验收未完成前不启售 |
 | Pancake 研究 | [接入研究](research/2026-10-21-payment-integration.md)已完成 | 需本项目测试资源、商户路线与 AI 视频准入确认；不是已接入 |
 | Bing | 江昪恢复登录后，sitemap 提交并刷新为 Success，发现 6 URL、错误／警告均为 0 | 索引与排名另验；不把 DNS 按钮旧错误当成成功回执 |
