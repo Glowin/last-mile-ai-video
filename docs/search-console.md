@@ -1,8 +1,8 @@
 ---
 title: "KakaReel 搜索平台接入与接续"
-date: 2026-10-20
+date: 2026-10-21
 source: "Google Search Console、Bing Webmaster、Cloudflare 控制台实际操作；江昪会话指示"
-status: "Google 已验证且 sitemap 成功；Bing 状态待核"
+status: "Google 与 Bing sitemap 均成功；索引与排名另验"
 ---
 
 # 搜索平台接入
@@ -14,18 +14,19 @@ status: "Google 已验证且 sitemap 成功；Bing 状态待核"
 | 平台 | 资源与提交 | 实际读回 |
 |---|---|---|
 | Google Search Console | Domain property `sc-domain:kakareel.com`；根域 DNS TXT 验证；提交 `https://kakareel.com/sitemap.xml` | Ownership verified；sitemap Success；提交与读取日期 2026-10-20；发现页面 5，视频 0 |
-| Bing Webmaster | 手动添加 `https://kakareel.com/`；Cloudflare 验证 CNAME 为 DNS only，指向 `verify.bing.com`；公共 DNS 查询确认生效 | 验证两次报 Unexpected error；之后可进入站点 Home/Sitemaps，曾不再显示 Not verified，但缺少稳定验证结果，不能直接认定完成 |
+| Bing Webmaster | 手动添加 `https://kakareel.com/`；Cloudflare 验证 CNAME 为 DNS only，指向 `verify.bing.com`；公共 DNS 查询确认生效 | 2026-10-21 登录恢复后确认 Site already added；sitemap 提交后刷新显示 Success，发现 6 URL、错误 0、警告 0；CNAME Verify 按钮仍曾报 Unexpected error，不伪造单独的验证成功提示 |
 
 Google 的发现页面数不是索引数。新资源报告仍在处理数据；不宣称已经收录、已有排名或搜索流量。TXT/CNAME 实际验证值、账户资料与平台配置均留库外，不写入这个公开仓库。
 
-## Bing 尚未完成
+## Bing 接续结果（2026-10-21）
 
-1. 已尝试提交相同 sitemap 一次，平台返回 “This might be a momentary issue”，尚未取得保存成功证据。
-2. 之后页面出现 Chrome `ERR_BLOCKED_BY_CLIENT`。江昪确认已修复并允许重试；重试后页面能打开，但显示欢迎页、Profile 中账号字段为 `0`，没有稳定站点清单。
-3. 当前应先恢复并确认原有账号，然后读取 KakaReel 的验证状态和 sitemap 列表。已存在就不重复新建；未保存才重新提交，并在页面重开后核条目、状态和日期。
-4. GSC Import 入口的自动审批曾因可能涉及其他站点授权而拒绝；未执行导入，未授予读取其他属性的权限。继续使用已配置的手动 DNS 路径。
+1. 最初受 Chrome ERR_BLOCKED_BY_CLIENT 影响；江昪本日再次完成登录并提供当前页面。
+2. 欢迎页暂未列出站点，经目标域名入口返回 **Site already added**，确认已有资源而非重复创建。重开后进入 KakaReel 管理页。
+3. 既有 CNAME 验证按钮仍返回 Unexpected error；这是该按钮的实际回执，不据随后页面可用推定该请求成功。
+4. Sitemaps 列表最初没有条目，提交 `https://kakareel.com/sitemap.xml` 后出现 Processing；重新加载页面后 **Success、发现 6 URL、错误 0、警告 0**，最后提交及抓取日期均为 2026-10-21。保存和抓取成功已验，不需要重复提交。
+5. 没有启用 GSC Import、读取其他属性或更改浏览器安全设置。展开 Personal details 被自动审批拒绝后跳过，未影响站点入口完成操作。
 
-这些现象不能证明站点被删除、验证已失败或 sitemap 已保存。不要循环重试同一失败操作；先判断账号／界面状态。
+后续只需观察索引／搜索报告；sitemap Success 不等于已收录或获得排名。此前“等待恢复登录并确认 sitemap 保存”的待办已解除。若独立 DNS 验证状态今后仍有提示，再按当时可见状态排查，不能循环点击旧错误。
 
 ## 可复用做法与边界
 
@@ -36,4 +37,4 @@ Google 的发现页面数不是索引数。新资源报告仍在处理数据；�
 
 浏览器继续使用 Chrome Glow，并以当前 Profile 名识别，不固定标签或浏览器编号。Google 验证与 sitemap 截图已归档库外，归档入口由知识库项目档案维护。
 
-2026-10-21 复核：Glow 的 Bing 登录再次被 Chrome 拦截（ERR_BLOCKED_BY_CLIENT），已请江昪恢复访问。未获得新的站点验证或 sitemap 成功回执；保留该待办，不重复提交或更改扩展安全设置。
+2026-10-21 的成功截图已另存库外；历史受阻截图只保留追溯用途。
