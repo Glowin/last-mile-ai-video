@@ -1,5 +1,34 @@
+import { adoptPendingRequest, adoptLegacyPendingRequest } from "./pending-request";
 let refreshFlight: Promise<void> | undefined;
 export const SESSION_ENDED = "kakareel:session-ended";
+export const IDENTITY_CHANGED_KEY = "kr_identity_changed";
+let localIdentityVersion = 0;
+function identityVersion() {
+  let shared = "";
+  try {
+    shared = localStorage.getItem(IDENTITY_CHANGED_KEY) ?? "";
+  } catch {
+    // Storage may be disabled. Still protect requests within this tab.
+  }
+  return `${localIdentityVersion}:${shared}`;
+}
+function assertIdentity(expected: string) {
+  if (identityVersion() !== expected)
+    throw new Error("Your account changed. Please try again from the current account.");
+}
+function identityChanged() {
+  localIdentityVersion++;
+  try {
+    localStorage.setItem(IDENTITY_CHANGED_KEY, crypto.randomUUID());
+  } catch {
+    // A storage failure must not turn a successful sign-in/out into an error.
+  }
+}
+function sessionEnded(): never {
+  identityChanged();
+  window.dispatchEvent(new Event(SESSION_ENDED));
+  throw new Error("Your session has ended. Please sign in again.");
+}
 const send = (path: string, options: RequestInit) =>
   fetch(`/api${path}`, {
     ...options,
@@ -7,41 +36,71 @@ const send = (path: string, options: RequestInit) =>
     cache: "no-store",
     headers: { "Content-Type": "application/json", ...options.headers },
   });
-async function refreshSession() {
+function withSessionLock<T>(work: () => Promise<T>): Promise<T> {
+  return navigator.locks
+    ? navigator.locks.request("kakareel-session", work)
+    : work();
+}
+async function refreshSession(expected: string) {
   if (!refreshFlight) {
     const work = async () => {
-      // Another tab may have rotated while we waited for the browser-wide lock.
+      assertIdentity(expected);
+      // Another tab may have rotated or switched accounts while we waited.
       const current = await send("/session", {});
-      if (current.ok) return;
+      const data = await current.json();
+      assertIdentity(expected);
+      if (current.ok) {
+        if (!data.authenticated) sessionEnded();
+        return;
+      }
       if (current.status !== 401)
         throw new Error("Session service is unavailable. Please try again.");
       const response = await send("/auth/refresh", { method: "POST" });
+      assertIdentity(expected);
       if (!response.ok) {
-        if (response.status === 401)
-          window.dispatchEvent(new Event(SESSION_ENDED));
+        if (response.status === 401) sessionEnded();
         throw new Error(
           "Your session could not be refreshed. Please sign in again.",
         );
       }
     };
-    refreshFlight = (
-      navigator.locks
-        ? navigator.locks.request("kakareel-session", work)
-        : work()
-    ).finally(() => {
+    refreshFlight = withSessionLock(work).finally(() => {
       refreshFlight = undefined;
     });
   }
-  return refreshFlight;
+  await refreshFlight;
+  assertIdentity(expected);
 }
 export async function api(path: string, options: RequestInit = {}) {
-  let r = await send(path, options);
-  let data = await r.json();
-  if (r.status === 401 && data.code === "SESSION_EXPIRED") {
-    await refreshSession();
-    r = await send(path, options);
-    data = await r.json();
-  }
-  if (!r.ok) throw new Error(data.error ?? "Request failed. Please try again.");
-  return data;
+  const expected = identityVersion();
+  // Serialize cookie-changing sign-in/out with refresh across tabs. Otherwise a
+  // delayed refresh response can overwrite the new account's cookies.
+  const changesIdentity =
+    (path === "/auth/google" && options.method === "POST") ||
+    (path === "/session" && options.method === "DELETE");
+  const request = async () => {
+    assertIdentity(expected);
+    let r = await send(path, options);
+    let data = await r.json();
+    assertIdentity(expected);
+    if (r.status === 401 && data.code === "SESSION_EXPIRED") {
+      await refreshSession(expected);
+      r = await send(path, options);
+      data = await r.json();
+      assertIdentity(expected);
+      if (r.status === 401 && data.code === "SESSION_EXPIRED") sessionEnded();
+    }
+    if (!r.ok) throw new Error(data.error ?? "Request failed. Please try again.");
+    if (path === "/auth/google" && data.claimedGuestId && data.userId) {
+      try {
+        adoptLegacyPendingRequest(data.claimedGuestId);
+        adoptPendingRequest(data.claimedGuestId, data.userId);
+      } catch {
+        // Storage may be disabled; server-side history migration has succeeded.
+      }
+    }
+    if (changesIdentity) identityChanged();
+    return data;
+  };
+  return changesIdentity ? withSessionLock(request) : request();
 }

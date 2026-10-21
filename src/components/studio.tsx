@@ -29,7 +29,11 @@ import {
   type PublicJob,
 } from "@/lib/models";
 
-import { api, SESSION_ENDED } from "@/lib/api";
+import { api, SESSION_ENDED, IDENTITY_CHANGED_KEY } from "@/lib/api";
+import {
+  pendingRequestId, clearPendingRequest, adoptLegacyPendingRequest,
+  DamagedPendingRequest, resetDamagedPendingRequest,
+} from "@/lib/pending-request";
 import { GoogleSignIn } from "./google-sign-in";
 
 const statusLabel: Record<string, string> = {
@@ -71,12 +75,14 @@ export function Studio() {
   } | null>(null);
   const [canGenerate, setCanGenerate] = useState(false);
   const identityEpoch = useRef(0);
+  const sessionOwner = useRef<string | null>(null);
   const [jobs, setJobs] = useState<PublicJob[]>([]),
     [selected, setSelected] = useState<string>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [tab, setTab] = useState<"preview" | "history">("preview");
   const [pollError, setPollError] = useState("");
+  const [damagedPending, setDamagedPending] = useState<DamagedPendingRequest | null>(null);
   const jobsRef = useRef(jobs);
   useEffect(() => {
     jobsRef.current = jobs;
@@ -92,13 +98,14 @@ export function Studio() {
   }
   function clearIdentity() {
     identityEpoch.current++;
+    sessionOwner.current = null;
     setAuthenticated(false);
     setUser(null);
     setCanGenerate(false);
     setJobs([]);
     setSelected(undefined);
     setPollError("");
-    localStorage.removeItem("lm_pending");
+    setDamagedPending(null);
   }
   async function refresh() {
     const epoch = identityEpoch.current;
@@ -109,6 +116,11 @@ export function Studio() {
     const epoch = identityEpoch.current;
     const s = await api("/session");
     if (epoch !== identityEpoch.current) return;
+    if (sessionOwner.current && sessionOwner.current !== s.owner) clearIdentity();
+    sessionOwner.current = s.owner;
+    if (s.owner) {
+      try { adoptLegacyPendingRequest(s.owner); } catch { /* Storage can be disabled. */ }
+    }
     setAuthenticated(s.authenticated);
     setUser(s.user);
     setCanGenerate(s.canGenerate);
@@ -119,7 +131,6 @@ export function Studio() {
   }
   async function signedIn() {
     clearIdentity();
-    localStorage.setItem("kr_identity_changed", crypto.randomUUID());
     await loadSession();
   }
   useEffect(() => {
@@ -136,7 +147,7 @@ export function Studio() {
       setError("Your session has ended. Please sign in again.");
     };
     const changed = (e: StorageEvent) => {
-      if (e.key === "kr_identity_changed") {
+      if (e.key === IDENTITY_CHANGED_KEY) {
         clearIdentity();
         void load();
       }
@@ -239,7 +250,8 @@ export function Studio() {
   }
   async function generate(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    const owner = sessionOwner.current;
+    if (busy || !owner) return;
     setBusy(true);
     setError("");
     const epoch = identityEpoch.current;
@@ -266,21 +278,20 @@ export function Studio() {
       )
         .map((x) => x.toString(16).padStart(2, "0"))
         .join("");
-      let requestId = crypto.randomUUID();
-      const old = JSON.parse(localStorage.getItem("lm_pending") ?? "null");
-      if (old?.digest === digest && typeof old?.requestId === "string")
-        requestId = old.requestId;
-      localStorage.setItem("lm_pending", JSON.stringify({ digest, requestId }));
+      if (epoch !== identityEpoch.current) return;
+      const requestId = pendingRequestId(owner, digest);
       const d = await api("/jobs", {
         method: "POST",
+        headers: { "X-KakaReel-Owner": owner },
         body: JSON.stringify({ ...body, requestId }),
       });
       if (epoch !== identityEpoch.current) return;
       update(d.job);
       setSelected(d.job.id);
       setTab("preview");
-      localStorage.removeItem("lm_pending");
+      clearPendingRequest(owner, requestId);
     } catch (e) {
+      if (e instanceof DamagedPendingRequest) setDamagedPending(e);
       setError((e as Error).message);
       try {
         await refresh();
@@ -363,10 +374,6 @@ export function Studio() {
                     await api("/session", { method: "DELETE" });
                     window.google?.accounts.id.disableAutoSelect();
                     clearIdentity();
-                    localStorage.setItem(
-                      "kr_identity_changed",
-                      crypto.randomUUID(),
-                    );
                   } catch (e) {
                     setError((e as Error).message);
                   } finally {
@@ -388,7 +395,10 @@ export function Studio() {
             <span className="muted">Text. Image. Possibility.</span>
           </div>
           <div className="workspace">
-            <section className="controls-panel" aria-label="Video settings">
+            <section className="controls-panel" aria-labelledby="video-settings-heading">
+              <h2 id="video-settings-heading" className="field-label" style={{ marginTop: 0, letterSpacing: 0, lineHeight: "normal" }}>
+                Video settings
+              </h2>
               <div className="mode-tabs">
                 <button
                   className={mode === "text" ? "selected" : ""}
@@ -482,9 +492,9 @@ export function Studio() {
                     {prompt.length}/{f.maxPrompt}
                   </span>
                 </div>
-                <label className="field-label">
+                <h3 className="field-label" style={{ letterSpacing: 0 }}>
                   Output settings<span>03</span>
-                </label>
+                </h3>
                 <div className="settings-grid">
                   <label>
                     Duration
@@ -546,6 +556,17 @@ export function Studio() {
                   <p role="alert" className="error-message">
                     {error}
                   </p>
+                )}
+                {damagedPending && (
+                  <button type="button" className="button secondary" disabled={busy}
+                    onClick={() => {
+                      if (!confirm("Check My videos first and recover any existing task. Resetting this saved request allows a NEW generation and may charge again. Reset without submitting?")) return;
+                      resetDamagedPendingRequest(damagedPending);
+                      setDamagedPending(null);
+                      setError("Saved request reset. No video was submitted. Review your history before generating again.");
+                    }}>
+                    Reset saved request…
+                  </button>
                 )}
                 <button
                   className="button generate-button"
@@ -706,7 +727,9 @@ export function Studio() {
                             ? "The provider could not finish this task. You can edit your prompt and create a new generation."
                             : focused.status === "unknown"
                               ? "The request may already be running. Recover it with the same ID to avoid a duplicate generation."
-                              : "Your idea is with the model. This may take a few minutes. You can safely leave this tab and return in the same browser."}
+                              : user
+                                ? "Your idea is with the model. This may take a few minutes. Sign in to this account to check it later on any device."
+                                : "Your idea is with the model. This may take a few minutes. You can safely leave this tab and return in the same browser."}
                         </p>
                         {focused.status === "unknown" && (
                           <button
@@ -714,11 +737,13 @@ export function Studio() {
                             disabled={busy}
                             onClick={async () => {
                               const epoch = identityEpoch.current;
+                              const owner = sessionOwner.current;
+                              if (!owner) return;
                               setBusy(true);
                               try {
                                 const d = await api(
                                   `/jobs/${focused.id}/recover`,
-                                  { method: "POST" },
+                                  { method: "POST", headers: { "X-KakaReel-Owner": owner } },
                                 );
                                 if (epoch !== identityEpoch.current) return;
                                 update(d.job);
@@ -757,7 +782,9 @@ export function Studio() {
                     <p>{focused.prompt}</p>
                     <small>
                       Save completed videos promptly. Provider links may expire.
-                      History belongs to this browser session.
+                      {user
+                        ? " Your video history is saved to your account."
+                        : " History belongs to this browser session. Sign in with Google to keep it with your account."}
                     </small>
                   </div>
                 </div>

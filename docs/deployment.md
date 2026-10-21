@@ -24,7 +24,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 | GENERATION_DAILY_LIMIT | 全站 UTC 日提交上限，默认 10 |
 | POSTGRES_USER / POSTGRES_DB / POSTGRES_PASSWORD | Compose 独立数据库配置 |
 
-配置不作为构建参数，不进入浏览器或镜像。可以先部署浏览版本、暂不配置 VibeToken Key 和邀请口令，页面会明确提示暂不能生成。
+配置不作为构建参数，不写入镜像；密钥不进入浏览器。Google Client ID 是登录所需的公开标识，仅经运行时 `/api/config` 返回。可以先部署浏览版本、暂不配置 VibeToken Key 和邀请口令，页面会明确提示暂不能生成。
 
 ## 本地
 

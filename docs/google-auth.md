@@ -1,7 +1,7 @@
 ---
 title: "KakaReel Google 登录架构与验证"
 date: 2026-10-20
-status: "本地实现与自动测试完成；待审查、合并及真实登录验收"
+status: "本地审查与回归完成；待生产部署与真实登录验收"
 ---
 
 # Google sign-in for KakaReel
@@ -25,7 +25,7 @@ Create an OAuth **Web application** client in the independent KakaReel Google Cl
 - Application refresh tokens are random 256-bit values, stored only as SHA-256 hashes. Each rotation runs in a PostgreSQL transaction with the session row locked. The absolute session lifetime is 30 days. Used refresh tokens remain as replay evidence; reuse revokes that session family. Independent sessions on other devices are unaffected.
 - Cookies are HttpOnly, SameSite=Lax, host-only, and Secure in production. Access and guest cookies use `/`; refresh uses `/api`; nonce uses `/api/auth`. `DELETE /api/session` revokes the current account session and any presented unclaimed guest cookie, then clears all four cookies.
 - All API mutations, including DELETE, require the exact configured Origin; missing, null, foreign origins and cross-site Fetch Metadata are rejected. The GIS callback is posted by our same-origin JavaScript; there is no unauthenticated Google redirect POST handler. No permissive CORS is enabled.
-- On reload or API expiry, the client obtains the session and rotates when needed, then retries once. A single flight plus Web Locks coordinates refresh within/across tabs. Browsers without Web Locks still deduplicate within a tab; competing cross-tab refreshes fail closed and may require sign-in again. Identity changes clear visible history and stale responses are ignored. A lost rotation response can also require a new login, rather than accepting a reused refresh token.
+- On reload or API expiry, the client obtains the session and rotates when needed, then retries once. A single flight plus Web Locks coordinates refresh within/across tabs. Browsers without Web Locks still deduplicate within a tab; competing cross-tab refreshes fail closed and may require sign-in again. Sign-in, sign-out, and refresh share the same browser lock. Identity changes clear visible history and reject stale responses and retries. Paid mutations also carry the expected owner, checked against the authenticated server identity. Unacknowledged request IDs are retained per owner and move with a valid guest claim; damaged saved requests block submission until an explicit reset. A lost rotation response can also require a new login, rather than accepting a reused refresh token.
 
 ## Invite permission and existing jobs
 
@@ -48,6 +48,8 @@ Run `pnpm typecheck`, `pnpm test`, `pnpm build`, and `docker build` without real
 Google tests generate a temporary RSA key in memory and mock only Google's certificate retrieval inside the test process. Real `verifyIdToken` signature/claim verification still executes; there is no production bypass or test auth endpoint. Video requests are intercepted in tests. Coverage includes legacy migrations, bad audience/issuer/signature/expiry/unverified email, nonce replay, CSRF including DELETE, stable identity, account isolation, hashed refresh rotation/reuse/logout, invitation gating, and concurrent guest adoption. Client tests check refresh deduplication and exact mutation retries.
 
 Local verification completed on 2026-10-20: `pnpm typecheck`, `pnpm test` (23 passed, zero failed/skipped), `pnpm build`, and the Docker image build all passed. The final runtime image successfully imported `postgres`. Its default startup migrated a PostgreSQL 16 volume containing only the legacy schema and a job fixture, preserved that job’s original owner, and preserved it again after web restart. A nonexistent test database caused exit 1 before Next.js readiness. Loopback HTTP checks confirmed health, disabled Google config, session state, and the studio/privacy/terms responses. Browser appearance and genuine Google login remain unverified locally.
+
+Review completed on 2026-10-21: 9 client regressions and 17 auth/integration checks passed without skips on disposable PostgreSQL 16; type checking and the final Next.js build passed. These checks cover cross-tab identity switches, anonymous refresh responses, pending request adoption, and concurrent guest claims. No paid provider calls were made.
 
 The parent owns Google Cloud configuration, deployment, and browser acceptance. After deployment, verify the official button and popup on the authorized HTTPS origin, account reload/logout, guest migration, and invite-required generation. No browser login or production request is claimed by these local tests. No paid generation is necessary for auth acceptance.
 

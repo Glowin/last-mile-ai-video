@@ -71,6 +71,14 @@ const requireIdentity: import("hono").MiddlewareHandler<{
       },
       401,
     );
+  // A tab can still display account A after another tab changed browser cookies.
+  // Bind paid actions to the identity shown when the user initiated the action.
+  const expectedOwner = c.req.header("X-KakaReel-Owner");
+  if (c.req.method !== "GET" && expectedOwner && expectedOwner !== who.owner)
+    return c.json(
+      { error: "Your account changed. Refresh before generating or recovering a video." },
+      409,
+    );
   if (c.req.method !== "GET" && !who.canGenerate)
     return c.json(
       { error: "Redeem a preview code before generating videos." },

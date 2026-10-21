@@ -40,6 +40,7 @@ authRoutes.get("/session", async (c) => {
     );
   return c.json({
     authenticated: !!who,
+    owner: who?.owner ?? null,
     user: who?.user ? publicUser(who.user) : null,
     canGenerate: who?.canGenerate ?? false,
     ready: configured(),
@@ -143,7 +144,9 @@ authRoutes.post("/auth/google", async (c) => {
         set: { email: profile.email, name: profile.name },
       })
       .returning();
+    let claimedGuestId: string | null = null;
     if (guest && (await lockGuest(tx, guest))) {
+      claimedGuestId = guest;
       await tx.insert(guestClaims).values({ guestId: guest, userId: user.id });
       await tx
         .update(jobs)
@@ -155,7 +158,7 @@ authRoutes.post("/auth/google", async (c) => {
         .where(eq(users.id, user.id));
     }
     await revokeLogin(c, tx);
-    return createLogin(tx, user.id);
+    return { ...(await createLogin(tx, user.id)), claimedGuestId };
   });
   if (!result)
     return c.json(
@@ -165,7 +168,7 @@ authRoutes.post("/auth/google", async (c) => {
   await setLogin(c, result);
   deleteCookie(c, "lm_session", cookieOptions());
   deleteCookie(c, "kr_nonce", cookieOptions("/api/auth"));
-  return c.json({ ok: true });
+  return c.json({ ok: true, userId: result.userId, claimedGuestId: result.claimedGuestId });
 });
 authRoutes.post("/auth/refresh", async (c) => {
   const login = await rotate(c);

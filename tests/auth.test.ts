@@ -36,6 +36,7 @@ class Browser {
     method = "GET",
     body?: unknown,
     origin: string | null = process.env.APP_URL!,
+    extraHeaders: Record<string, string> = {},
   ) {
     const r = await app.request(`http://localhost/api${path}`, {
       method,
@@ -43,6 +44,7 @@ class Browser {
         cookie: this.header(),
         "Content-Type": "application/json",
         ...(origin === null ? {} : { origin }),
+        ...extraHeaders,
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
@@ -361,6 +363,15 @@ test(
         assert.deepEqual((await (await bob.request("/jobs")).json()).jobs, []);
       },
     );
+    await t.test("stale-tab owner binding prevents paid creation and recovery under replacement cookies", async () => {
+      const otherId = (await (await bob.request("/session")).json()).user.id;
+      const before = providerCalls;
+      const headers = { "X-KakaReel-Owner": otherId };
+      assert.equal((await alice.request("/jobs", "POST", input(), process.env.APP_URL!, headers)).status, 409);
+      const id = await seedJob(aliceId, randomUUID(), "unknown");
+      assert.equal((await alice.request(`/jobs/${id}/recover`, "POST", undefined, process.env.APP_URL!, headers)).status, 409);
+      assert.equal(providerCalls, before);
+    });
     await t.test(
       "verified guest cookie adopts history and invite once; replay cannot leak across accounts",
       async () => {
@@ -443,6 +454,53 @@ test(
         );
       },
     );
+    for (const operation of ["create", "recover"] as const) {
+      await t.test(`guest adoption preserves an in-flight ${operation} and its idempotency key`, async () => {
+        const guest = new Browser();
+        const raw = issueSession();
+        guest.cookies.set("lm_session", raw);
+        const replay = guest.clone();
+        const request = input();
+        const provider = global.fetch;
+        if (operation === "recover") {
+          global.fetch = async () => { throw new Error("Simulated lost provider response"); };
+          try {
+            const unknown = await guest.request("/jobs", "POST", request);
+            assert.equal((await unknown.json()).job.status, "unknown");
+          } finally { global.fetch = provider; }
+        }
+        let release!: () => void, reached!: () => void;
+        const waiting = new Promise<void>((resolve) => { release = resolve; });
+        const started = new Promise<void>((resolve) => { reached = resolve; });
+        global.fetch = async (url, init) => {
+          reached();
+          await waiting;
+          return provider(url, init);
+        };
+        const pending = guest.request(
+          operation === "create" ? "/jobs" : `/jobs/${request.requestId}/recover`,
+          "POST", operation === "create" ? request : undefined,
+        );
+        try {
+          await started; // The reservation committed; the provider response has not returned.
+          const session = await login(guest, `inflight-${operation}`);
+          assert.equal(session.canGenerate, true);
+          release();
+          assert.equal((await pending).status, operation === "create" ? 201 : 200);
+          const count = providerCalls;
+          assert.equal((await guest.request("/jobs", "POST", request)).status, 200);
+          assert.equal(providerCalls, count, "adopted request ID must not submit a second video");
+          assert.equal((await replay.request("/jobs", "POST", input())).status, 401);
+          const rows = await database().execute(sql`SELECT owner FROM video_jobs WHERE id=${request.requestId}::uuid`);
+          assert.equal(rows[0].owner, session.user.id, "late provider response must not restore guest ownership");
+          assert.equal((await (await guest.request("/jobs")).json()).jobs.length, 1);
+        } finally {
+          release();
+          await pending;
+          global.fetch = provider;
+        }
+      });
+    }
     await t.test(
       "HttpOnly cookies, hashed refresh tokens, reload/rotation, replay and logout revoke access immediately",
       async () => {
