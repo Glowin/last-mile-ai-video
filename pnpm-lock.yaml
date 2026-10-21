@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@waffo/pancake-ts':
+        specifier: 0.26.0
+        version: 0.26.0
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(postgres@3.4.9)
@@ -546,6 +549,10 @@ packages:
     engines: {node: '>=16.20.0'}
     cpu: [x64]
     os: [win32]
+
+  '@waffo/pancake-ts@0.26.0':
+    resolution: {integrity: sha512-3exK093SGBYmbhEF40jRF+BiCQZRLLThxsADZ3s3vJs/JPDqRSICAmUiIUhu0/gtDe1hB0VzrduLSYRS9YAMhg==}
+    engines: {node: '>=20.0.0'}
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -1166,6 +1173,8 @@ snapshots:
 
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
+
+  '@waffo/pancake-ts@0.26.0': {}
 
   agent-base@7.1.4: {}
 

@@ -8,7 +8,7 @@ method: "读取本项目源码及公开官方文档；未登录支付后台、�
 
 # KakaReel 支付接入研究
 
-建议先做 **Waffo Pancake 托管结账＋登录用户绑定＋一次性固定额度包**，把支付完成后充值、生成扣减、失败释放和退款串成一条可验收链路。这是实施建议，额度包、价格和正式渠道尚待产品负责人确定。订单、事件与积分账本基础已实现，见[支付后端说明](../billing-backend.md)；真实渠道、商户创建与正式收款资格均未完成。
+建议先做 **Waffo Pancake 托管结账＋登录用户绑定＋一次性固定额度包**，把支付完成后充值、生成扣减、失败释放和退款串成一条可验收链路。江昪于 2026-10-21 已确认先一次性付费、后订阅，并选定 Waffo Pancake 为首渠道；最新成本与 $19／150 credits 建议见[成本报告 §11](2026-10-21-video-pricing.md#11-vibetoken-成本复核失败损耗与首包建议2026-10-21)。价格、额度与正式开售仍未启用。订单、事件与积分账本基础已实现，见[支付后端说明](../billing-backend.md)；真实渠道、商户创建与正式收款资格均未完成。
 
 2026-10-21 晚上可独立推进订单、账本、适配接口和离线测试。真实沙盒联调需要该项目自己的测试商户资源；正式收款还需要商户审核、AI 视频业务审核和生产配置。Google 登录上线本身不解除这些条件。
 
@@ -158,6 +158,20 @@ Pancake 测试数据隔离，测试 webhook 正常发送；API Key 创建时即�
 
 ## 10. 本轮研究范围
 
-公开依据为上文所链的 Google、Waffo／Pancake、Stripe、Antom 官方页面和 Waffo 官方 SDK 仓库，访问日期为 2026-10-21。`llms.txt`／`llms-full.txt` 本轮抓取不可用，改读具体官方页面；部分官方页面存在版本差异，已列出。未安装 SDK、未执行官方 Skill／CLI、未触碰商户后台或生产环境。
+公开依据为上文所链的 Google、Waffo／Pancake、Stripe、Antom 官方页面和 Waffo 官方 SDK 仓库，访问日期为 2026-10-21。`llms.txt`／`llms-full.txt` 本轮抓取不可用，改读具体官方页面；部分官方页面存在版本差异，已列出。初稿研究阶段未安装 SDK、未执行官方 Skill／CLI、未触碰商户后台；同日后续已固定 SDK 并完成离线接入层测试，见下节与[实现说明](../billing-backend.md)。尚未访问真实商户或进行渠道交易。
 
 本文件只包含公开可核能力、本项目源码观察及通用实现建议。不包含商务合作条件、私有资料、内部联系人、真实配置或其他项目的接入记录。
+
+## 11. SDK 接入复核与业务关联调整（2026-10-21）
+
+本轮核对官方 npm `@waffo/pancake-ts@0.26.0` 与对应源码（gitHead `800e01025473a11b868e7c2f4681dd1f234cff94`），并在工程固定该版本。没有读取商户凭证或调用真实支付。
+
+需要修订旧通用接口的两处假设：checkout 返回 `sessionId`；webhook 里的 `data.orderId` 是渠道订单号，两者不能互相填充。回调的 `storeId` 用于核店铺，SDK 的 `merchantId` 用于请求签名；须保留两种身份含义。缺少 sessionId 并不证明付款不可信，但现有强制 sessionId 相等的接口不能直接套用。
+
+后续业务桥接应以签名覆盖的 `orderMerchantExternalId`、`merchantProvidedBuyerIdentity`、店铺、环境、实收金额及币种关联本地订单；服务端提交、签名回传的 metadata 可核对本地商品／价格版本快照，须明确它是回传的商户元数据，不是供应商独立观察到的商品字段。渠道订单号和资金 paymentId 均需持久化，防止错单、重投和重复发放。旧通用 checkoutId 规则继续用于确实返回该证据的渠道，不为适配 Pancake 直接删掉所有渠道的校验。
+
+SDK 幂等响应缓存为 24 小时，不能把同一个 key 永远安全重提作为不变前提。老订单／不确定结果超出窗口后走查询或人工对账，不重新创建 checkout。创建时服务端限制 checkout 有效期并保留原订单创建时刻；使用进程内首次见到的时间会在重启后失效，不可采用。
+
+实际 SDK transport 的离线检查与真实店铺沙盒必须分别记录。缺少本项目测试店铺、商品和配置时，保持默认 provider registry 和销售开关关闭；接入层代码不等于完整支付链路或可收款。
+
+来源：[官方 SDK](https://github.com/waffo-com/waffo-pancake-sdk-ts)、[创建结账会话](https://docs.waffo.ai/api-reference/endpoints/orders/create-checkout-session)、[Webhook 字段](https://docs.waffo.ai/api-reference/webhooks)。

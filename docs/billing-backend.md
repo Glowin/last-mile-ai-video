@@ -6,7 +6,7 @@ status: "基础已部署，所有真实渠道关闭，尚不能收款"
 
 # 支付后端基础
 
-本轮只提供一次性积分包的订单、验签适配边界、事件状态机和整数积分账本。默认商品无价格、无积分数量、未开售；Pancake、Waffo、Stripe、Antom 的 provider registry 为空。未安装支付 SDK、创建商户、执行真实／真实渠道沙盒交易或发放真实付费额度。不把 mock 验收写成生产支付可用。
+本轮只提供一次性积分包的订单、验签适配边界、事件状态机和整数积分账本。默认商品无价格、无积分数量、未开售；Pancake、Waffo、Stripe、Antom 的 provider registry 为空。已固定官方 Pancake SDK `0.26.0` 并准备独立 SDK 接入层；尚未接入订单事务、创建商户、执行真实／真实渠道沙盒交易或发放真实付费额度。不把 mock 验收写成生产支付可用。
 
 依据：[2026-10-21 支付接入研究](research/2026-10-21-payment-integration.md)；项目负责人 2026-10-21 的任务要求。app 挂载、账户及定价前端已集成；生成仍沿用邀请预览权限。江昪于 2026-10-21 明确确认 MVP 先做一次性付费、首渠道 Waffo Pancake，订阅后续接入，必须保留扩展性。售价与积分方案见[成本及失败测算](research/2026-10-21-video-pricing.md#11-vibetoken-成本复核失败损耗与首包建议2026-10-21)，尚未开售。
 
@@ -66,7 +66,7 @@ webhook body 上限 256 KiB，checkout 上限 4 KiB；raw bytes 在验签前不�
 
 每个 adapter 固定渠道、test/live 环境、商户／店铺 ID、允许的 HTTPS checkout hostname。订单记录渠道商品映射、价格版本和金额／积分快照。所有 provider 幂等键固定为本地订单 UUID；超时／进程重启不能换键、换渠道、重建资金订单。返回地址、Google token、客户端价格都不是 adapter 的客户端输入。
 
-- **Pancake**：后续按核准版本 `@waffo/pancake-ts` 的 authenticated checkout 实现。buyerIdentity 映射本地用户 UUID、buyerEmail 只作预填，orderMerchantExternalId 映射本地订单；显式传幂等键。把整数最小货币单位精确转展示金额字符串，不能浮点运算或套用弃用 amount 字段。RSA-SHA256 原始 body／平台公钥、事件 id／eventType、mode、storeId、时间与重试窗口按锁定 SDK／真实沙盒载荷核验；不能混用通用页面与 SDK 两套事件格式或测试公钥兜底。
+- **Pancake**：SDK 接入层位于 `src/server/billing/pancake.ts`，使用固定版本 `@waffo/pancake-ts@0.26.0` 的 authenticated checkout；尚未注册到 billing service。buyerIdentity 映射本地用户 UUID、buyerEmail 只作预填，orderMerchantExternalId 映射本地订单；显式传幂等键。把整数最小货币单位精确转展示金额字符串，不能浮点运算或套用弃用 amount 字段。RSA-SHA256 原始 body／平台公钥、事件 id／eventType、mode、storeId、时间与重试窗口按锁定 SDK／真实沙盒载荷核验；不能混用通用页面与 SDK 两套事件格式或测试公钥兜底。
 - **Stripe**：独立 Checkout Session、签名 secret、原始 body、实际 payment_status／异步支付完成判据。
 - **Waffo 企业支付**：独立产品和 adapter；不能复用 Pancake SDK、字段或商户配置。
 - **Antom**：先确定合同产品及托管结账 API；RSA256／Client-Id／环境、通知和响应规则独立实现。
@@ -152,3 +152,14 @@ Pancake [商品](https://docs.waffo.ai/features/products)与[订阅](https://doc
 生成收费按用户确认报价持久化：报价包含模型参数指纹、积分、版本及失效时刻；预留与任务建立同一事务；同任务最多一个终态结算。失败释放与资金退款各走独立账务。预留存在时退款要冻结对应购买批次，防止同时生成和退现金；若供应商迟到成功但本站已向用户终结返还，则只记本站损耗，不再自动追扣。
 
 上述订阅表、权益批次与生成预留不是当前已部署能力；需新增迁移与并发／重启／乱序验收后逐项更新。本轮不预建未接线的空表，也不改变已有用户或视频数据。
+
+## Pancake SDK 接入层边界（2026-10-21）
+
+`PancakeClient` 负责官方 SDK 的 authenticated checkout、精确金额字符串和项目选择的平台公钥验签，返回 `PancakePaymentEvidence`。它不是已经可收款的 BillingProvider，不以始终 false 的配置判断或始终抛错的 normalized webhook 冒充完成适配。默认 registry 仍为空，销售仍关闭。
+
+`merchantId` 与 `storeId` 各司其职；本地商品／价格版本只接受服务端白名单。回调保留渠道订单、资金支付、投递／业务事件、店铺与环境，核对整数实收、原始付款、退款、税额及身份元数据。不完整付款、部分退款、订阅事件和过期签名均不作为本轮一次性支付成功。创建时固定本地订单为幂等键，老于 23 小时的订单停止创建请求，避免超过渠道 24 小时幂等缓存后重扣；恢复查询与对账尚需完成。
+
+完整接线仍需：扩展订单关联以分别保存渠道 orderId 和 checkout sessionId；在事务中比对签名覆盖的外部订单、用户、店铺／环境、金额／币种和服务端元数据快照；保留付款唯一与账本幂等；加入丢失回调恢复与真实沙盒验收。不能把本接入层的离线验签成功当作用户已付款，且不能把商户元数据包装成供应商独立核验的商品 ID。税含模式目前在 SDK 请求中传 `taxIncluded:true`，实际商户接受和金额回传仍须沙盒确认。
+
+
+接入层验证：`tests/pancake.test.ts` 14/14 通过、0 跳过；全项目 TypeScript 与生产构建通过。测试运行实际 SDK 的本地 transport 与 RSA 验签，使用临时生成的非生产密钥及官方结构改编的 fixture，真实网络被禁止。覆盖精确金额、税额、错店铺／环境、签名篡改、时间窗口、完整退款、部分退款拒绝、重复 JSON 字段、旧订单幂等窗口、同键重试与每单返回链接。订单事务桥接、真实商户／税额回传、真实沙盒和生成扣费／释放均未因此完成；本次没有数据库迁移或真实资金动作。
