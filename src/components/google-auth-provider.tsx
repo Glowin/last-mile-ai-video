@@ -28,7 +28,7 @@ export function GoogleAuthProvider({ children }: { children: React.ReactNode }) 
     dismissed: () => { try { return sessionStorage.getItem(CLOSED_KEY) === "1"; } catch { return false; } },
     rememberDismissal: (closed) => { try { sessionStorage.setItem(CLOSED_KEY, closed ? "1" : "0"); } catch { /* Optional storage. */ } },
     schedule: (work, ms) => setTimeout(work, ms),
-    unschedule: clearTimeout,
+    unschedule: (timer) => clearTimeout(timer),
   }));
   const mounted = useRef(false);
   useEffect(() => {
