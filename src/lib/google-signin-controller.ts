@@ -29,6 +29,7 @@ export class GoogleSignInController {
   private started = false;
   private prompted = false;
   private closed = false;
+  private manualOpen = false;
   private expiry?: ReturnType<typeof setTimeout>;
   constructor(private deps: Dependencies) {}
   subscribe = (listener: () => void) => {
@@ -44,6 +45,9 @@ export class GoogleSignInController {
   private cancel() {
     if (this.expiry) this.deps.unschedule(this.expiry);
     this.expiry = undefined;
+    this.cancelPrompt();
+  }
+  private cancelPrompt() {
     try { this.google?.cancel(); } catch { /* UI cancellation must not affect auth. */ }
   }
   start() {
@@ -55,13 +59,14 @@ export class GoogleSignInController {
   stop() {
     ++this.epoch;
     this.started = false;
+    this.manualOpen = false;
     this.cancel();
     this.update({ phase: "checking", visible: false });
   }
   private prepare() {
     const epoch = ++this.epoch;
     this.cancel();
-    this.update({ phase: "checking", visible: false, message: "" });
+    this.update({ phase: "checking", visible: this.manualOpen, message: "" });
     // Serialize attempts, including abandoned challenge requests: an older
     // response must never overwrite a newer challenge cookie.
     const previous = this.flight;
@@ -70,10 +75,11 @@ export class GoogleSignInController {
       const session = await this.deps.session();
       if (epoch !== this.epoch) return;
       if (session.user) {
+        this.manualOpen = false;
         this.update({ phase: "signed-in", visible: false });
         return;
       }
-      this.update({ phase: "loading", visible: !this.closed });
+      this.update({ phase: "loading", visible: this.manualOpen });
       const { googleClientId } = await this.deps.config();
       if (epoch !== this.epoch) return;
       if (!googleClientId) { this.update({ phase: "disabled" }); return; }
@@ -97,14 +103,14 @@ export class GoogleSignInController {
         this.cancel();
         this.update({ phase: "error", message: "Sign-in expired. Retry to get a fresh Google sign-in button." });
       }, expiresAfter);
-      if (!this.prompted && !this.closed) {
+      if (!this.prompted && !this.closed && !this.manualOpen) {
         this.prompted = true;
         // Browsers may suppress One Tap. The official button always remains.
         // No display-moment callbacks or timers are used to guess FedCM UI.
         try { google.prompt(); } catch { /* Keep the official button available. */ }
       }
     }).catch((error: unknown) => {
-      if (epoch === this.epoch) this.update({ phase: "error", visible: !this.closed, message: error instanceof Error ? error.message : "Google sign-in is unavailable. Please retry." });
+      if (epoch === this.epoch) this.update({ phase: "error", visible: this.manualOpen, message: error instanceof Error ? error.message : "Google sign-in is unavailable. Please retry." });
     });
     return this.flight;
   }
@@ -116,6 +122,7 @@ export class GoogleSignInController {
       if (!credential) throw new Error("Google did not return a credential. Please retry.");
       await this.deps.authenticate(credential);
       if (epoch !== this.epoch) return;
+      this.manualOpen = false;
       this.update({ phase: "signed-in", visible: false });
     } catch (error) {
       if (epoch === this.epoch) this.update({ phase: "error", message: error instanceof Error ? error.message : "Sign-in failed. Please retry." });
@@ -126,6 +133,7 @@ export class GoogleSignInController {
     // successful credential callback; page subscribers still refresh normally.
     if (reason === "sign-in" && this.state.phase === "pending") return;
     this.prompted = true;
+    this.manualOpen = false;
     if (reason !== "sign-in") {
       this.closed = true;
       this.deps.rememberDismissal(true);
@@ -134,13 +142,15 @@ export class GoogleSignInController {
     return this.prepare();
   }
   close = () => {
+    this.manualOpen = false;
     this.closed = true;
     this.deps.rememberDismissal(true);
-    try { this.google?.cancel(); } catch { /* Keep inline buttons usable. */ }
+    this.cancelPrompt(); // Keep inline buttons and nonce expiry usable.
     this.update({ visible: false });
   };
   sessionEnded() {
     ++this.epoch;
+    this.manualOpen = false;
     this.prompted = true;
     this.closed = true;
     this.deps.rememberDismissal(true);
@@ -149,9 +159,13 @@ export class GoogleSignInController {
   }
 
   open = () => {
+    if (this.state.phase === "signed-in") return;
+    this.manualOpen = true;
+    // Consume the automatic attempt even while the SDK is still loading.
+    this.prompted = true;
     this.closed = false;
     this.deps.rememberDismissal(false);
-    if (this.state.phase === "signed-in") return;
+    this.cancelPrompt(); // Cancel native UI before showing ours; retain nonce expiry.
     this.update({ visible: true });
     if (["error", "disabled"].includes(this.state.phase)) void this.prepare();
   };
