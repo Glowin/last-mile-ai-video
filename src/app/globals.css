@@ -118,6 +118,16 @@ p {
 .brand-dot {
   color: #6d8e2d;
 }
+.site-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.site-header-actions .button {
+  white-space: nowrap;
+  min-height: 44px;
+}
 .site-header nav {
   display: flex;
   gap: 30px;
@@ -912,18 +922,39 @@ p {
   width: calc(100% - 210px);
 }
 .studio-header {
-  height: 76px;
+  min-height: 76px;
+  flex-wrap: wrap;
+  gap: 12px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 35px;
+  padding: 14px 35px;
   font-size: 12px;
 }
 .studio-header > div {
   display: flex;
-  gap: 15px;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  gap: 10px;
   align-items: center;
+}
+.studio-header .button {
+  min-height: 44px;
+}
+#google-sign-in {
+  scroll-margin-top: 24px;
+}
+.studio-account-link {
+  max-width: min(50vw, 220px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-account-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 .studio-header b {
   font-weight: 500;
@@ -1509,6 +1540,14 @@ p {
   }
 }
 @media (max-width: 900px) {
+  .site-header {
+    height: auto;
+    min-height: 88px;
+    flex-wrap: wrap;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    gap: 16px;
+  }
   .hero {
     grid-template-columns: 1fr;
     padding-top: 50px;
@@ -1602,8 +1641,8 @@ p {
     width: 100%;
   }
   .studio-header {
-    height: 56px;
-    padding: 0 25px;
+    min-height: 56px;
+    padding: 12px 25px;
   }
   .workspace {
     grid-template-columns: 315px minmax(0, 1fr);
@@ -1636,9 +1675,12 @@ p {
     padding-right: 22px;
   }
   .site-header {
-    height: 75px;
-    padding: 0 22px;
+    min-height: 75px;
+    padding: 14px 22px;
     gap: 12px;
+  }
+  .site-header-actions {
+    margin-left: auto;
   }
   .site-header nav {
     display: none;
@@ -1808,6 +1850,7 @@ p {
   .studio-sidebar {
     padding: 16px 18px;
     gap: 8px;
+    flex-wrap: wrap;
   }
   .side-nav {
     font-size: 0;
@@ -1821,7 +1864,7 @@ p {
     margin-left: 7px;
   }
   .studio-header {
-    padding: 0 20px;
+    padding: 12px 20px;
     font-size: 10px;
   }
   .studio-header .preview-tag {
@@ -1910,7 +1953,7 @@ p {
   .site-header .brand svg {
     width: 21px;
   }
-  .site-header > .button {
+  .site-header-actions .button {
     padding: 11px;
     font-size: 10px;
     gap: 7px;

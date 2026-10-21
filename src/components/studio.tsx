@@ -348,20 +348,23 @@ export function Studio() {
             Workspace <span className="crumb">/</span> <b>Video studio</b>
           </span>
           <div>
-            {!user && <span className="preview-tag">INVITE PREVIEW</span>}
+            {!user && (
+              <>
+                <span className="preview-tag">INVITE PREVIEW</span>
+                <a className="button small secondary" href="#google-sign-in">
+                  Sign in with Google
+                </a>
+              </>
+            )}
             {user && (
-              <span
-                className="muted"
+              <Link
+                className="studio-account-link"
+                href="/account"
                 title={user.email}
-                style={{
-                  maxWidth: "min(28vw, 220px)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
+                aria-label={`Account: ${user.email}`}
               >
                 {user.email}
-              </span>
+              </Link>
             )}
             {authenticated && (
               <button
@@ -595,7 +598,11 @@ export function Studio() {
                   Uses the limited project demo allowance. No checkout.
                 </p>
               </form>
-              {!user && <GoogleSignIn onSignedIn={signedIn} />}
+              {!user && (
+                <div id="google-sign-in">
+                  <GoogleSignIn onSignedIn={signedIn} />
+                </div>
+              )}
               {user && (
                 <div className="access-panel">
                   <b>Signed in{user.name ? ` as ${user.name}` : ""}</b>

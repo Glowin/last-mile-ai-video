@@ -14,11 +14,15 @@ export function SiteHeader() {
         <Link href="/#models">Models</Link>
         <Link href="/pricing">Pricing</Link>
         <Link href="/build">Built in public</Link>
-        <Link href="/account">Account</Link>
       </nav>
-      <Link className="button small" href="/create">
-        Open studio <ArrowUpRight size={16} />
-      </Link>
+      <div className="site-header-actions">
+        <Link className="button small secondary" href="/account">
+          Sign in
+        </Link>
+        <Link className="button small" href="/create">
+          Open studio <ArrowUpRight size={16} />
+        </Link>
+      </div>
     </header>
   );
 }
