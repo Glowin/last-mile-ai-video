@@ -1,5 +1,7 @@
 import { adoptPendingRequest, adoptLegacyPendingRequest } from "./pending-request";
 let refreshFlight: Promise<void> | undefined;
+export const IDENTITY_CHANGED_EVENT = "kakareel:identity-changed";
+export type IdentityChangedEvent = Event & { reason: "sign-in" | "sign-out" };
 export const SESSION_ENDED = "kakareel:session-ended";
 export const IDENTITY_CHANGED_KEY = "kr_identity_changed";
 let localIdentityVersion = 0;
@@ -88,13 +90,18 @@ export async function api(path: string, options: RequestInit = {}) {
   const changesIdentity =
     (path === "/auth/google" && options.method === "POST") ||
     (path === "/session" && options.method === "DELETE");
+  // Challenge responses set the shared HttpOnly nonce cookie. Serialize them
+  // across tabs with refresh/sign-in/out, without announcing an identity change.
+  // Browsers without Web Locks retain the existing within-tab queue only.
+  const needsSessionLock = changesIdentity ||
+    (path === "/auth/challenge" && options.method === "POST");
   const request = async () => {
     assertIdentity(expected);
     let r = await send(path, options);
     let data = await r.json();
     assertIdentity(expected);
     if (r.status === 401 && data.code === "SESSION_EXPIRED") {
-      await refreshSession(expected, changesIdentity);
+      await refreshSession(expected, needsSessionLock);
       r = await send(path, options);
       data = await r.json();
       assertIdentity(expected);
@@ -109,8 +116,13 @@ export async function api(path: string, options: RequestInit = {}) {
         // Storage may be disabled; server-side history migration has succeeded.
       }
     }
-    if (changesIdentity) identityChanged();
+    if (changesIdentity) {
+      identityChanged();
+      window.dispatchEvent(Object.assign(new Event(IDENTITY_CHANGED_EVENT), {
+        reason: path === "/auth/google" ? "sign-in" : "sign-out",
+      }));
+    }
     return data;
   };
-  return changesIdentity ? withSessionLock(request) : request();
+  return needsSessionLock ? withSessionLock(request) : request();
 }

@@ -1,132 +1,32 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
-import { loadGoogleIdentity } from "@/lib/google-identity";
+import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { useGoogleAuth } from "./google-auth-provider";
 
-export function GoogleSignIn({
-  onSignedIn,
-}: {
-  onSignedIn: () => Promise<void>;
-}) {
+// All placements register with the same controller. They never initialize GIS
+// or issue challenges, even when both the floating and inline buttons exist.
+export function GoogleSignIn({ compact = false }: { compact?: boolean }) {
+  const { controller, state } = useGoogleAuth();
   const target = useRef<HTMLDivElement>(null);
-  const callback = useRef(onSignedIn);
-  callback.current = onSignedIn;
-  const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<
-    "loading" | "ready" | "pending" | "disabled" | "error"
-  >("loading");
-  const [message, setMessage] = useState("");
+  const signedIn = state.phase === "signed-in";
   useEffect(() => {
-    let live = true,
-      submitting = false;
-    let expiry: ReturnType<typeof setTimeout> | undefined;
-    const container = target.current!;
-    container.replaceChildren();
-    setState("loading");
-    (async () => {
-      const { googleClientId } = await api("/config");
-      if (!live) return;
-      if (!googleClientId) {
-        setState("disabled");
-        return;
-      }
-      const google = await loadGoogleIdentity();
-      if (!live) return;
-      const { nonce } = await api("/auth/challenge", { method: "POST" });
-      if (!live) return;
-      google.initialize({
-        client_id: googleClientId,
-        nonce,
-        auto_select: false,
-        callback: async ({ credential }) => {
-          if (!live || submitting) return;
-          submitting = true;
-          clearTimeout(expiry);
-          setState("pending");
-          container.replaceChildren();
-          try {
-            if (!credential)
-              throw new Error(
-                "Google did not return a credential. Please retry.",
-              );
-            await api("/auth/google", {
-              method: "POST",
-              body: JSON.stringify({ credential }),
-            });
-            if (live) await callback.current();
-          } catch (error) {
-            if (live) {
-              setMessage((error as Error).message);
-              setState("error");
-            }
-          } finally {
-            submitting = false;
-          }
-        },
-      });
-      google.renderButton(container, {
-        theme: "outline",
-        size: "large",
-        text: "continue_with",
-        shape: "pill",
-        width: 260,
-      });
-      setState("ready");
-      expiry = setTimeout(() => {
-        if (live && !submitting) {
-          container.replaceChildren();
-          setMessage("Sign-in expired. Retry to get a fresh sign-in button.");
-          setState("error");
-        }
-      }, 9 * 60_000);
-    })().catch((error) => {
-      if (live) {
-        setMessage((error as Error).message);
-        setState("error");
-      }
-    });
-    return () => {
-      live = false;
-      clearTimeout(expiry);
-      container.replaceChildren();
-    };
-  }, [attempt]);
+    if (target.current) return controller.button(target.current);
+  }, [controller, signedIn]);
+  if (state.phase === "signed-in") return null;
   return (
-    <div className="access-panel" aria-label="Google account sign-in">
-      <b>Keep your videos with your account</b>
-      <p>
-        Sign in with Google. A preview code is still required to generate
-        videos.
-      </p>
-      <div ref={target} />
+    <div className={compact ? "google-signin-content" : "access-panel"} aria-label="Google account sign-in">
+      {!compact && <><b>Keep your videos with your account</b><p>Sign in with Google. A preview code is still required to generate videos.</p></>}
+      <div ref={target} className="google-signin-button" />
       <div role="status" aria-live="polite">
-        {state === "loading" && <p>Loading Google sign-in…</p>}
-        {state === "pending" && <p>Signing you in…</p>}
-        {state === "disabled" && (
-          <>
-            <button className="button small" disabled>
-              Google sign-in unavailable
-            </button>
-            <p>
-              Google sign-in is being set up. You can still use a preview code
-              below.
-            </p>
-          </>
-        )}
+        {["checking", "loading"].includes(state.phase) && <p>Loading Google sign-in…</p>}
+        {state.phase === "pending" && <p>Signing you in…</p>}
+        {state.phase === "disabled" && <p>Google sign-in is currently unavailable.</p>}
       </div>
-      {state === "error" && (
-        <>
-          <p className="error-message" role="alert">
-            {message}
-          </p>
-          <button
-            className="button small"
-            onClick={() => setAttempt((n) => n + 1)}
-          >
-            Retry Google sign-in
-          </button>
-        </>
-      )}
+      {state.phase === "error" && <p className="error-message" role="alert">{state.message}</p>}
+      {["error", "disabled"].includes(state.phase) && <div className="google-signin-recovery">
+        <button type="button" className="button small secondary" onClick={controller.retry}>Retry Google sign-in</button>
+        <Link href="/account">Open account page</Link>
+      </div>}
     </div>
   );
 }

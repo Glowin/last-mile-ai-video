@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { GoogleAuthProvider } from "@/components/google-auth-provider";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: {
@@ -24,7 +25,7 @@ export default function RootLayout({
         <a className="skip" href="#main">
           Skip to content
         </a>
-        {children}
+        <GoogleAuthProvider>{children}</GoogleAuthProvider>
       </body>
     </html>
   );

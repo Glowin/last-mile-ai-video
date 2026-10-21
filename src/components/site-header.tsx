@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
+import { HeaderAccount } from "./google-auth-provider";
 export function SiteHeader() {
   return (
     <header className="site-header">
@@ -16,9 +17,7 @@ export function SiteHeader() {
         <Link href="/build">Built in public</Link>
       </nav>
       <div className="site-header-actions">
-        <Link className="button small secondary" href="/account">
-          Sign in
-        </Link>
+        <HeaderAccount />
         <Link className="button small" href="/create">
           Open studio <ArrowUpRight size={16} />
         </Link>

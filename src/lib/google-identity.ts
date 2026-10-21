@@ -1,4 +1,4 @@
-type GoogleIdentity = {
+export type GoogleIdentity = {
   initialize(config: {
     client_id: string;
     nonce: string;
@@ -7,6 +7,8 @@ type GoogleIdentity = {
   }): void;
   renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
   disableAutoSelect(): void;
+  prompt(): void;
+  cancel(): void;
 };
 declare global {
   interface Window {

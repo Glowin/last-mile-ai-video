@@ -31,7 +31,7 @@ import {
   type PublicJob,
 } from "@/lib/models";
 
-import { api, SESSION_ENDED, IDENTITY_CHANGED_KEY } from "@/lib/api";
+import { api, SESSION_ENDED, IDENTITY_CHANGED_KEY, IDENTITY_CHANGED_EVENT } from "@/lib/api";
 import {
   pendingRequestId, clearPendingRequest, adoptLegacyPendingRequest,
   DamagedPendingRequest, resetDamagedPendingRequest,
@@ -131,10 +131,6 @@ export function Studio() {
     if (s.authenticated) await refresh();
     else setJobs([]);
   }
-  async function signedIn() {
-    clearIdentity();
-    await loadSession();
-  }
   useEffect(() => {
     let live = true;
     const load = () =>
@@ -154,16 +150,19 @@ export function Studio() {
         void load();
       }
     };
+    const localChanged = () => { clearIdentity(); void load(); };
     void load();
     const timer = setInterval(() => {
       if (!document.hidden) void load();
     }, 5 * 60_000);
+    window.addEventListener(IDENTITY_CHANGED_EVENT, localChanged);
     window.addEventListener(SESSION_ENDED, ended);
     window.addEventListener("storage", changed);
     return () => {
       live = false;
       identityEpoch.current++;
       clearInterval(timer);
+      window.removeEventListener(IDENTITY_CHANGED_EVENT, localChanged);
       window.removeEventListener(SESSION_ENDED, ended);
       window.removeEventListener("storage", changed);
     };
@@ -600,7 +599,7 @@ export function Studio() {
               </form>
               {!user && (
                 <div id="google-sign-in">
-                  <GoogleSignIn onSignedIn={signedIn} />
+                  <GoogleSignIn />
                 </div>
               )}
               {user && (

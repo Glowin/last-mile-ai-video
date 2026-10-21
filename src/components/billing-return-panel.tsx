@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, RefreshCw } from "lucide-react";
-import { api, IDENTITY_CHANGED_KEY, SESSION_ENDED } from "@/lib/api";
+import { api, IDENTITY_CHANGED_KEY, SESSION_ENDED, IDENTITY_CHANGED_EVENT } from "@/lib/api";
 import type { BillingOrder, BillingOrderResponse, BillingOrderStatus } from "@/lib/billing";
 import styles from "./pricing.module.css";
 
@@ -86,8 +86,10 @@ export function BillingReturnPanel({ orderId }: { orderId: string | null }) {
     const changed = (event: StorageEvent) => {
       if (event.key === IDENTITY_CHANGED_KEY || event.key === null) void load();
     };
+    const localChanged = () => { void load(); };
     const visible = () => { if (!document.hidden) void load(); };
     // No payment writes and no background polling. Recheck on return or request.
+    window.addEventListener(IDENTITY_CHANGED_EVENT, localChanged);
     window.addEventListener(SESSION_ENDED, ended);
     window.addEventListener("storage", changed);
     window.addEventListener("focus", visible);
@@ -96,6 +98,7 @@ export function BillingReturnPanel({ orderId }: { orderId: string | null }) {
     return () => {
       version.current++;
       flight.current?.abort();
+      window.removeEventListener(IDENTITY_CHANGED_EVENT, localChanged);
       window.removeEventListener(SESSION_ENDED, ended);
       window.removeEventListener("storage", changed);
       window.removeEventListener("focus", visible);
@@ -108,7 +111,7 @@ export function BillingReturnPanel({ orderId }: { orderId: string | null }) {
       <div role="status" aria-live="polite" aria-atomic="true">
         {view.kind === "loading" && <><h2>Checking your order…</h2><p>Looking up the order in your signed-in account.</p></>}
         {view.kind === "missing" && <><h2>No order selected</h2><p>Open the original return link to check an order. Visiting this page does not confirm a payment. Paid checkout is not currently open.</p></>}
-        {view.kind === "signed-out" && <><h2>Sign in to check your order</h2><p>Use the Google account associated with your order. A preview-code session cannot view account orders. After signing in, return here and check again.</p></>}
+        {view.kind === "signed-out" && <><h2>Sign in to check your order</h2><p>Use the Google account associated with your order. A preview-code session cannot view account orders. Sign in using the Google card or your account page.</p></>}
         {view.kind === "error" && <><h2>We could not check this order</h2><p>Make sure you are signed in to the account used for the order, then try again. The order may be unavailable, or the service may be temporarily unreachable. This does not confirm or rule out a payment.</p></>}
         {view.kind === "ready" && (
           <>

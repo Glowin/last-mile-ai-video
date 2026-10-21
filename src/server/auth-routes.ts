@@ -67,7 +67,25 @@ authRoutes.post("/auth/challenge", async (c) => {
       { error: "Too many sign-in attempts. Try again in a minute." },
       429,
     );
+  // Tabs share this cookie. Reuse its unconsumed challenge until expiry so
+  // opening another page cannot invalidate an outstanding Google credential.
+  // Keep this after the rate limit; reuse is still a challenge request.
+  const existingNonce = getCookie(c, "kr_nonce");
+  if (existingNonce && existingNonce.length <= 100) {
+    const [existing] = await database()
+      .select()
+      .from(authNonces)
+      .where(eq(authNonces.nonceHash, tokenHash(existingNonce)));
+    const expiresInMs = existing
+      ? Math.floor(existing.expiresAt.getTime() - Date.now())
+      : 0;
+    if (expiresInMs > 0) {
+      // Do not extend either the database deadline or the browser cookie.
+      return c.json({ nonce: existingNonce, expiresInMs });
+    }
+  }
   const nonce = randomToken();
+  const expiresInMs = 10 * 60_000;
   await database()
     .delete(authNonces)
     .where(lt(authNonces.expiresAt, new Date()));
@@ -75,13 +93,13 @@ authRoutes.post("/auth/challenge", async (c) => {
     .insert(authNonces)
     .values({
       nonceHash: tokenHash(nonce),
-      expiresAt: new Date(Date.now() + 10 * 60_000),
+      expiresAt: new Date(Date.now() + expiresInMs),
     });
   setCookie(c, "kr_nonce", nonce, {
     ...cookieOptions("/api/auth"),
     maxAge: 600,
   });
-  return c.json({ nonce });
+  return c.json({ nonce, expiresInMs });
 });
 authRoutes.post("/auth/google", async (c) => {
   if (!authConfigured())

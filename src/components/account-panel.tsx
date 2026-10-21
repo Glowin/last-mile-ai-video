@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, IDENTITY_CHANGED_KEY, SESSION_ENDED } from "@/lib/api";
+import { api, IDENTITY_CHANGED_KEY, SESSION_ENDED, IDENTITY_CHANGED_EVENT } from "@/lib/api";
 import { GoogleSignIn } from "./google-sign-in";
 
 type Profile = {
@@ -75,12 +75,14 @@ export function AccountPanel() {
     const changed = (event: StorageEvent) => {
       if (event.key === IDENTITY_CHANGED_KEY || event.key === null) void load();
     };
+    const localChanged = () => { void load(); };
     const visible = () => {
       // Returning from the Google popup must not unmount its sign-in callback.
       if (!document.hidden && !pending.current && hasProfile.current) void load();
     };
     void load();
     const timer = setInterval(visible, 5 * 60_000);
+    window.addEventListener(IDENTITY_CHANGED_EVENT, localChanged);
     window.addEventListener(SESSION_ENDED, ended);
     window.addEventListener("storage", changed);
     window.addEventListener("focus", visible);
@@ -88,6 +90,7 @@ export function AccountPanel() {
     return () => {
       epoch.current++;
       clearInterval(timer);
+      window.removeEventListener(IDENTITY_CHANGED_EVENT, localChanged);
       window.removeEventListener(SESSION_ENDED, ended);
       window.removeEventListener("storage", changed);
       window.removeEventListener("focus", visible);
@@ -149,7 +152,7 @@ export function AccountPanel() {
         <section className="controls-panel" aria-labelledby="account-sign-in">
           <h2 id="account-sign-in">Sign in to manage your account</h2>
           <p>Use your Google account to view your profile and manage active sessions.</p>
-          <GoogleSignIn onSignedIn={load} />
+          <GoogleSignIn />
           <p><Link href="/create">Open the studio to use a preview code</Link></p>
         </section>
       )}

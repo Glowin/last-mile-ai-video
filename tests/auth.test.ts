@@ -224,6 +224,78 @@ test(
         }
       },
     );
+    await t.test("challenge requests reuse a valid cookie without extending its deadline", async () => {
+      const b = new Browser();
+      const [before] = await database().execute<{ n: number }>(sql`SELECT coalesce(sum(attempts),0)::int AS n FROM auth_attempts`);
+      const first = await b.request("/auth/challenge", "POST");
+      assert.equal(first.status, 200);
+      const initial = await first.json();
+      assert.equal(initial.expiresInMs, 600_000);
+      assert.equal(b.cookies.get("kr_nonce"), initial.nonce);
+      const [stored] = await database().execute<{ expires_at: string }>(sql`SELECT expires_at FROM auth_nonces WHERE nonce_hash=${tokenHash(initial.nonce)}`);
+      const started = Date.now();
+      const second = await b.request("/auth/challenge", "POST");
+      assert.equal(second.status, 200);
+      const reused = await second.json();
+      const finished = Date.now();
+      assert.equal(reused.nonce, initial.nonce);
+      assert.ok(Number.isInteger(reused.expiresInMs) && reused.expiresInMs > 0);
+      assert.ok(reused.expiresInMs <= Date.parse(stored.expires_at) - started);
+      assert.ok(reused.expiresInMs >= Date.parse(stored.expires_at) - finished);
+      assert.deepEqual(second.headers.getSetCookie(), [], "reuse must not reset cookie lifetime");
+      const [unchanged] = await database().execute<{ expires_at: string }>(sql`SELECT expires_at FROM auth_nonces WHERE nonce_hash=${tokenHash(initial.nonce)}`);
+      assert.equal(Date.parse(unchanged.expires_at), Date.parse(stored.expires_at));
+      const [after] = await database().execute<{ n: number }>(sql`SELECT coalesce(sum(attempts),0)::int AS n FROM auth_attempts`);
+      assert.equal(after.n, before.n + 2, "both new and reused challenges count toward the global limit");
+    });
+    await t.test("a challenge with less than 60 seconds remaining is reused with its actual lifetime", async () => {
+      const b = new Browser();
+      const nonce = await challenge(b);
+      const deadline = new Date(Date.now() + 30_000);
+      await database().execute(sql`UPDATE auth_nonces SET expires_at=${deadline.toISOString()}::timestamptz WHERE nonce_hash=${tokenHash(nonce)}`);
+      const started = Date.now();
+      const response = await b.request("/auth/challenge", "POST");
+      assert.equal(response.status, 200);
+      const reused = await response.json();
+      const finished = Date.now();
+      assert.equal(reused.nonce, nonce, "another tab must not replace a still-valid nonce early");
+      assert.ok(Number.isInteger(reused.expiresInMs) && reused.expiresInMs > 0);
+      assert.ok(reused.expiresInMs <= deadline.getTime() - started);
+      assert.ok(reused.expiresInMs >= deadline.getTime() - finished);
+      assert.deepEqual(response.headers.getSetCookie(), []);
+      const [stored] = await database().execute<{ expires_at: string }>(sql`SELECT expires_at FROM auth_nonces WHERE nonce_hash=${tokenHash(nonce)}`);
+      assert.equal(Date.parse(stored.expires_at), deadline.getTime());
+    });
+    await t.test("an expired challenge cookie receives a fresh nonce", async () => {
+      const b = new Browser();
+      const nonce = await challenge(b);
+      await database().execute(sql`UPDATE auth_nonces SET expires_at=now()-interval '1 second' WHERE nonce_hash=${tokenHash(nonce)}`);
+      const response = await b.request("/auth/challenge", "POST");
+      assert.equal(response.status, 200);
+      const fresh = await response.json();
+      assert.notEqual(fresh.nonce, nonce);
+      assert.equal(fresh.expiresInMs, 600_000);
+      assert.equal(b.cookies.get("kr_nonce"), fresh.nonce);
+      assert.equal((await b.request("/auth/google", "POST", {
+        credential: await credential(fresh.nonce, "expired-challenge-replacement"),
+      })).status, 200);
+    });
+    await t.test("a consumed challenge is not reused even if its old cookie is sent again", async () => {
+      const b = new Browser();
+      const nonce = await challenge(b);
+      assert.equal((await b.request("/auth/google", "POST", {
+        credential: await credential(nonce, "consumed-challenge"),
+      })).status, 200);
+      const consumed = await database().execute(sql`SELECT nonce_hash FROM auth_nonces WHERE nonce_hash=${tokenHash(nonce)}`);
+      assert.equal(consumed.length, 0);
+      b.cookies.set("kr_nonce", nonce);
+      const response = await b.request("/auth/challenge", "POST");
+      assert.equal(response.status, 200);
+      const fresh = await response.json();
+      assert.notEqual(fresh.nonce, nonce);
+      assert.equal(fresh.expiresInMs, 600_000);
+      assert.equal(b.cookies.get("kr_nonce"), fresh.nonce);
+    });
     await t.test(
       "real verifyIdToken rejects wrong audience/issuer, expired/unverified/bad signature and wrong nonce",
       async () => {

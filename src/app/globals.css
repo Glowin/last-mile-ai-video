@@ -1973,3 +1973,33 @@ p {
   flex-shrink: 0;
   object-fit: contain;
 }
+
+/* KakaReel fallback card; Google's native One Tap remains browser-controlled. */
+.google-signin-card {
+  position: fixed;
+  z-index: 60;
+  top: 100px;
+  right: max(16px, env(safe-area-inset-right));
+  width: 304px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 8px 32px #152a231f;
+}
+.google-signin-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.google-signin-card-heading strong { font-size: 15px; }
+.google-signin-close { border: 0; background: transparent; font-size: 24px; line-height: 1; min-width: 36px; min-height: 36px; border-radius: 8px; }
+.google-signin-close:hover { background: var(--bg); }
+.google-signin-card p { font-size: 12px; line-height: 1.5; margin: 8px 0 12px; }
+.google-signin-button { min-width: 0; max-width: 100%; }
+.google-signin-card-links { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); }
+.google-signin-card-links a, .google-signin-recovery > a { text-decoration: underline; text-underline-offset: 3px; }
+.google-signin-card .google-signin-card-links { margin: 12px 0 0; }
+.google-signin-recovery { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; }
+@media (max-width: 600px) {
+  .google-signin-card { top: 108px; right: 12px; padding: 12px; width: 288px; max-height: calc(100dvh - 128px); }
+}

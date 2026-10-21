@@ -6,7 +6,7 @@ export default function Privacy() {
       <SiteHeader />
       <main id="main" className="shell prose">
         <h1>Your preview data.</h1>
-        <p>This page describes the early preview, updated October 20, 2026.</p>
+        <p>This page describes the early preview, updated October 21, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For
@@ -15,6 +15,14 @@ export default function Privacy() {
           database. We do not receive your Google password or request access to
           Gmail, Drive, or other Google account content. Google processes the
           sign-in through its Identity Services.
+        </p>
+        <p>
+          While you are signed out of KakaReel, pages may load Google Identity
+          Services to offer One Tap and the official Google sign-in button.
+          Google and your browser determine which account choices or prompts
+          are available. We remember dismissal of our sign-in card in this
+          tab’s session storage; it contains no Google credentials. You can
+          reopen sign-in from the page header or your account page.
         </p>
         <h2>Essential cookies and sessions</h2>
         <p>
