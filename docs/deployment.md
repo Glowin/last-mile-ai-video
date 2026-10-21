@@ -17,13 +17,14 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 |---|---|
 | DATABASE_URL | 项目专用 PostgreSQL 连接串 |
 | VIBETOKEN_API_KEY | 项目专用上游密钥；缺少时仅浏览工作台 |
+| GOOGLE_CLIENT_ID | Google Web 客户端公开标识，运行时提供；缺少时禁用 Google 登录 |
 | SESSION_SECRET | 至少 32 字符的随机签名密钥 |
 | DEMO_ACCESS_CODE | 至少 12 字符的预览口令 |
 | APP_URL | 对外 HTTPS origin，不带子路径 |
 | GENERATION_DAILY_LIMIT | 全站 UTC 日提交上限，默认 10 |
 | POSTGRES_USER / POSTGRES_DB / POSTGRES_PASSWORD | Compose 独立数据库配置 |
 
-配置不作为构建参数，不进入浏览器或镜像。可以先部署浏览版本、暂不配置 VibeToken Key 和邀请口令，页面会明确提示暂不能生成。
+配置不作为构建参数，不写入镜像；密钥不进入浏览器。Google Client ID 是登录所需的公开标识，仅经运行时 `/api/config` 返回。可以先部署浏览版本、暂不配置 VibeToken Key 和邀请口令，页面会明确提示暂不能生成。
 
 ## 本地
 
@@ -34,7 +35,7 @@ node --env-file=/absolute/external/runtime.env --import tsx scripts/migrate.ts
 node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next dev --hostname 127.0.0.1
 ```
 
-迁移脚本目前只应用初始 schema，未来结构修改需要新增版本化迁移。开发不依赖真实上游密钥才能打开页面。
+迁移按编号应用 `db/*.sql` 并记录校验和；旧库保留任务，补建迁移记录。开发不依赖真实上游密钥才能打开页面；Google 登录详见 [架构说明](google-auth.md)。本分支新增登录尚未合并生产，当前线上状态仍以 [上线记录](launch.md) 为准。
 
 ## Dokploy
 
@@ -42,7 +43,7 @@ node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next d
 
 1. 在已有 Hostinger Dokploy 创建本项目独立 Compose 服务，源仓库为 `Glowin/last-mile-ai-video`、分支 `main`，使用根目录 `compose.yaml`。
 2. 在平台内设置上述运行环境；数据库 URL 的主机为该 Compose 内的 `db`，用户、密码、库名与数据库服务对应。由平台保存，不导出到 Git。
-3. 数据库镜像通过 `db/Dockerfile` 打包初始化 SQL，不直接挂载 Git checkout 内文件；Dokploy 重新 clone 时不会使挂载失效。首次启动空数据库卷会执行 `db/0001-init.sql`。已有卷不会重新执行初始化；升级前备份，按迁移流程操作，不删卷强制重建。
+3. 数据库使用 PostgreSQL 16 镜像；应用启动时先运行版本化迁移，成功后才启动 Web，失败则退出。SQL 与迁移脚本随 Web 镜像打包，新旧数据库卷都通过同一迁移入口升级。升级前备份，保留旧任务，不删卷强制重建；首次部署后的历史初始化方式已被此入口替代。
 4. 将已注册域名绑定 `web` 服务端口 3000，配置 DNS 与 TLS。不要公开 PostgreSQL 端口，不修改其他项目的服务或卷。
 5. 一次部署一个构建；确认 VPS 资源可用。只有平台实际配置并验收 webhook 后，才称为 push 自动上线。
 6. 核对实际运行版本、HTTPS 首页、`/build`、三个模型页、`/create`、`/api/health`、sitemap 与 canonical。健康接口只证明应用存活，不证明上游可用。

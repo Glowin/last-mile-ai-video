@@ -29,16 +29,13 @@ import {
   type PublicJob,
 } from "@/lib/models";
 
-async function api(path: string, options: RequestInit = {}) {
-  const r = await fetch(`/api${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
-    cache: "no-store",
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error ?? "Request failed. Please try again.");
-  return data;
-}
+import { api, SESSION_ENDED, IDENTITY_CHANGED_KEY } from "@/lib/api";
+import {
+  pendingRequestId, clearPendingRequest, adoptLegacyPendingRequest,
+  DamagedPendingRequest, resetDamagedPendingRequest,
+} from "@/lib/pending-request";
+import { GoogleSignIn } from "./google-sign-in";
+
 const statusLabel: Record<string, string> = {
   submitting: "Submitting",
   pending: "Generating",
@@ -71,12 +68,21 @@ export function Studio() {
     [ready, setReady] = useState(false),
     [checked, setChecked] = useState(false),
     [code, setCode] = useState("");
+  const [user, setUser] = useState<{
+    id: string;
+    email: string;
+    name: string | null;
+  } | null>(null);
+  const [canGenerate, setCanGenerate] = useState(false);
+  const identityEpoch = useRef(0);
+  const sessionOwner = useRef<string | null>(null);
   const [jobs, setJobs] = useState<PublicJob[]>([]),
     [selected, setSelected] = useState<string>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [tab, setTab] = useState<"preview" | "history">("preview");
   const [pollError, setPollError] = useState("");
+  const [damagedPending, setDamagedPending] = useState<DamagedPendingRequest | null>(null);
   const jobsRef = useRef(jobs);
   useEffect(() => {
     jobsRef.current = jobs;
@@ -90,37 +96,79 @@ export function Studio() {
       ),
     );
   }
+  function clearIdentity() {
+    identityEpoch.current++;
+    sessionOwner.current = null;
+    setAuthenticated(false);
+    setUser(null);
+    setCanGenerate(false);
+    setJobs([]);
+    setSelected(undefined);
+    setPollError("");
+    setDamagedPending(null);
+  }
   async function refresh() {
+    const epoch = identityEpoch.current;
     const d = await api("/jobs");
-    setJobs(d.jobs);
+    if (epoch === identityEpoch.current) setJobs(d.jobs);
+  }
+  async function loadSession() {
+    const epoch = identityEpoch.current;
+    const s = await api("/session");
+    if (epoch !== identityEpoch.current) return;
+    if (sessionOwner.current && sessionOwner.current !== s.owner) clearIdentity();
+    sessionOwner.current = s.owner;
+    if (s.owner) {
+      try { adoptLegacyPendingRequest(s.owner); } catch { /* Storage can be disabled. */ }
+    }
+    setAuthenticated(s.authenticated);
+    setUser(s.user);
+    setCanGenerate(s.canGenerate);
+    setReady(s.ready);
+    setChecked(true);
+    if (s.authenticated) await refresh();
+    else setJobs([]);
+  }
+  async function signedIn() {
+    clearIdentity();
+    await loadSession();
   }
   useEffect(() => {
     let live = true;
-    api("/session")
-      .then(async (s) => {
-        if (!live) return;
-        setAuthenticated(s.authenticated);
-        setReady(s.ready);
-        setChecked(true);
-        if (s.authenticated) {
-          const d = await api("/jobs");
-          if (live) setJobs(d.jobs);
-        }
-      })
-      .catch(() => {
+    const load = () =>
+      loadSession().catch((e) => {
         if (live) {
           setChecked(true);
-          setError(
-            "The studio could not connect. Refresh the page to try again.",
-          );
+          setError((e as Error).message);
         }
       });
+    const ended = () => {
+      clearIdentity();
+      setError("Your session has ended. Please sign in again.");
+    };
+    const changed = (e: StorageEvent) => {
+      if (e.key === IDENTITY_CHANGED_KEY) {
+        clearIdentity();
+        void load();
+      }
+    };
+    void load();
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 5 * 60_000);
+    window.addEventListener(SESSION_ENDED, ended);
+    window.addEventListener("storage", changed);
     return () => {
       live = false;
+      identityEpoch.current++;
+      clearInterval(timer);
+      window.removeEventListener(SESSION_ENDED, ended);
+      window.removeEventListener("storage", changed);
     };
   }, []);
   useEffect(() => {
     if (!authenticated || pollError) return;
+    const epoch = identityEpoch.current;
     let active = true,
       running = false,
       failures = 0;
@@ -134,7 +182,7 @@ export function Studio() {
       try {
         for (const j of pending) {
           const d = await api(`/jobs/${j.id}`);
-          if (active) update(d.job);
+          if (active && epoch === identityEpoch.current) update(d.job);
         }
         failures = 0;
         if (active) setPollError("");
@@ -152,7 +200,7 @@ export function Studio() {
       active = false;
       clearInterval(interval);
     };
-  }, [authenticated, pollError]);
+  }, [authenticated, pollError, user?.id]);
   function changeModel(slug: FamilySlug) {
     const model = getFamily(slug)!;
     setFamily(slug);
@@ -193,8 +241,7 @@ export function Studio() {
     try {
       await api("/session", { method: "POST", body: JSON.stringify({ code }) });
       setCode("");
-      setAuthenticated(true);
-      await refresh();
+      await loadSession();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -203,9 +250,11 @@ export function Studio() {
   }
   async function generate(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    const owner = sessionOwner.current;
+    if (busy || !owner) return;
     setBusy(true);
     setError("");
+    const epoch = identityEpoch.current;
     // Persist a stable id before the network call. Reusing identical input after a
     // network interruption cannot accidentally create and bill a second video.
     const body = {
@@ -229,20 +278,20 @@ export function Studio() {
       )
         .map((x) => x.toString(16).padStart(2, "0"))
         .join("");
-      let requestId = crypto.randomUUID();
-      const old = JSON.parse(localStorage.getItem("lm_pending") ?? "null");
-      if (old?.digest === digest && typeof old?.requestId === "string")
-        requestId = old.requestId;
-      localStorage.setItem("lm_pending", JSON.stringify({ digest, requestId }));
+      if (epoch !== identityEpoch.current) return;
+      const requestId = pendingRequestId(owner, digest);
       const d = await api("/jobs", {
         method: "POST",
+        headers: { "X-KakaReel-Owner": owner },
         body: JSON.stringify({ ...body, requestId }),
       });
+      if (epoch !== identityEpoch.current) return;
       update(d.job);
       setSelected(d.job.id);
       setTab("preview");
-      localStorage.removeItem("lm_pending");
+      clearPendingRequest(owner, requestId);
     } catch (e) {
+      if (e instanceof DamagedPendingRequest) setDamagedPending(e);
       setError((e as Error).message);
       try {
         await refresh();
@@ -291,20 +340,44 @@ export function Studio() {
             Workspace <span className="crumb">/</span> <b>Video studio</b>
           </span>
           <div>
-            <span className="preview-tag">INVITE PREVIEW</span>
+            {!user && <span className="preview-tag">INVITE PREVIEW</span>}
+            {user && (
+              <span
+                className="muted"
+                title={user.email}
+                style={{
+                  maxWidth: "min(28vw, 220px)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {user.email}
+              </span>
+            )}
             {authenticated && (
               <button
                 className="icon-button"
-                aria-label="End preview session"
+                aria-label={user ? "Sign out" : "End preview session"}
+                disabled={busy}
                 onClick={async () => {
                   if (
-                    confirm(
-                      "Ending this browser session removes access to its video history. Save your videos first. Continue?",
+                    !user &&
+                    !confirm(
+                      "Ending this guest session removes access to its video history. Sign in with Google first to keep it. Continue?",
                     )
-                  ) {
+                  )
+                    return;
+                  setBusy(true);
+                  setError("");
+                  try {
                     await api("/session", { method: "DELETE" });
-                    setAuthenticated(false);
-                    setJobs([]);
+                    window.google?.accounts.id.disableAutoSelect();
+                    clearIdentity();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setBusy(false);
                   }
                 }}
               >
@@ -322,7 +395,10 @@ export function Studio() {
             <span className="muted">Text. Image. Possibility.</span>
           </div>
           <div className="workspace">
-            <section className="controls-panel" aria-label="Video settings">
+            <section className="controls-panel" aria-labelledby="video-settings-heading">
+              <h2 id="video-settings-heading" className="field-label" style={{ marginTop: 0, letterSpacing: 0, lineHeight: "normal" }}>
+                Video settings
+              </h2>
               <div className="mode-tabs">
                 <button
                   className={mode === "text" ? "selected" : ""}
@@ -416,9 +492,9 @@ export function Studio() {
                     {prompt.length}/{f.maxPrompt}
                   </span>
                 </div>
-                <label className="field-label">
+                <h3 className="field-label" style={{ letterSpacing: 0 }}>
                   Output settings<span>03</span>
-                </label>
+                </h3>
                 <div className="settings-grid">
                   <label>
                     Duration
@@ -481,12 +557,23 @@ export function Studio() {
                     {error}
                   </p>
                 )}
+                {damagedPending && (
+                  <button type="button" className="button secondary" disabled={busy}
+                    onClick={() => {
+                      if (!confirm("Check My videos first and recover any existing task. Resetting this saved request allows a NEW generation and may charge again. Reset without submitting?")) return;
+                      resetDamagedPendingRequest(damagedPending);
+                      setDamagedPending(null);
+                      setError("Saved request reset. No video was submitted. Review your history before generating again.");
+                    }}>
+                    Reset saved request…
+                  </button>
+                )}
                 <button
                   className="button generate-button"
                   type="submit"
                   disabled={
                     busy ||
-                    !authenticated ||
+                    !canGenerate ||
                     !ready ||
                     !prompt.trim() ||
                     (mode === "image" && !image)
@@ -500,7 +587,18 @@ export function Studio() {
                   Uses the limited project demo allowance. No checkout.
                 </p>
               </form>
-              {!authenticated && (
+              {!user && <GoogleSignIn onSignedIn={signedIn} />}
+              {user && (
+                <div className="access-panel">
+                  <b>Signed in{user.name ? ` as ${user.name}` : ""}</b>
+                  <p>
+                    {canGenerate
+                      ? "Your preview access and video history are saved to this account."
+                      : "Your account is ready. Enter a preview code to unlock generation."}
+                  </p>
+                </div>
+              )}
+              {!canGenerate && (
                 <form className="access-panel" onSubmit={login}>
                   <div>
                     <LockKeyhole size={17} />
@@ -509,7 +607,9 @@ export function Studio() {
                   <p>
                     {checked && !ready
                       ? "Generation is being connected. You can explore the studio while setup is completed."
-                      : "Enter it once to unlock generation in this browser."}
+                      : user
+                        ? "Redeem your code to enable generation for this account."
+                        : "Enter it once to unlock generation in this browser."}
                   </p>
                   <label className="sr-only" htmlFor="preview-code">
                     Preview code
@@ -627,19 +727,25 @@ export function Studio() {
                             ? "The provider could not finish this task. You can edit your prompt and create a new generation."
                             : focused.status === "unknown"
                               ? "The request may already be running. Recover it with the same ID to avoid a duplicate generation."
-                              : "Your idea is with the model. This may take a few minutes. You can safely leave this tab and return in the same browser."}
+                              : user
+                                ? "Your idea is with the model. This may take a few minutes. Sign in to this account to check it later on any device."
+                                : "Your idea is with the model. This may take a few minutes. You can safely leave this tab and return in the same browser."}
                         </p>
                         {focused.status === "unknown" && (
                           <button
                             className="button secondary"
                             disabled={busy}
                             onClick={async () => {
+                              const epoch = identityEpoch.current;
+                              const owner = sessionOwner.current;
+                              if (!owner) return;
                               setBusy(true);
                               try {
                                 const d = await api(
                                   `/jobs/${focused.id}/recover`,
-                                  { method: "POST" },
+                                  { method: "POST", headers: { "X-KakaReel-Owner": owner } },
                                 );
+                                if (epoch !== identityEpoch.current) return;
                                 update(d.job);
                               } catch (e) {
                                 setError((e as Error).message);
@@ -676,7 +782,9 @@ export function Studio() {
                     <p>{focused.prompt}</p>
                     <small>
                       Save completed videos promptly. Provider links may expire.
-                      History belongs to this browser session.
+                      {user
+                        ? " Your video history is saved to your account."
+                        : " History belongs to this browser session. Sign in with Google to keep it with your account."}
                     </small>
                   </div>
                 </div>

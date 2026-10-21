@@ -1,18 +1,24 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { and, eq, desc, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { database } from "./db";
 import { jobs } from "./schema";
-import { configured, issueSession, secureEqual, sessionOwner } from "./auth";
+import { configured } from "./auth";
+import {
+  identity,
+  hasAccountCookies,
+  lockGuest,
+  type Identity,
+} from "./account";
+import { authRoutes } from "./auth-routes";
 import { generationSchema, providerPayload } from "./input";
 import { providerRequest, ProviderError, type ProviderTask } from "./provider";
 import { families } from "../lib/models";
 
-export const app = new Hono<{ Variables: { owner: string } }>().basePath(
-  "/api",
-);
+export const app = new Hono<{
+  Variables: { owner: string; identity: Identity };
+}>().basePath("/api");
 app.use(
   "*",
   bodyLimit({
@@ -28,7 +34,11 @@ app.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store");
   if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
     const expected = process.env.APP_URL;
-    if (!expected || c.req.header("origin") !== new URL(expected).origin)
+    if (
+      !expected ||
+      c.req.header("origin") !== new URL(expected).origin ||
+      c.req.header("sec-fetch-site") === "cross-site"
+    )
       return c.json(
         { error: "Open the app on its configured website to continue." },
         403,
@@ -47,64 +57,39 @@ app.onError((error, c) => {
   );
 });
 app.get("/health", (c) => c.json({ status: "ok" }));
-app.get("/session", (c) =>
-  c.json({
-    authenticated: !!sessionOwner(getCookie(c, "lm_session")),
-    ready: configured(),
-    mode: "invite-preview",
-  }),
-);
+app.route("/", authRoutes);
 app.get("/models", (c) => c.json({ models: families, ready: configured() }));
-app.post("/session", async (c) => {
-  if (!configured())
-    return c.json({ error: "Preview access is not configured yet." }, 503);
-  const attempts = await database().execute(
-    sql`INSERT INTO demo_login_attempts(minute,attempts) VALUES(date_trunc('minute',now()),1) ON CONFLICT(minute) DO UPDATE SET attempts=demo_login_attempts.attempts+1 RETURNING attempts`,
-  );
-  if (Number(attempts[0]?.attempts) > 30)
+const requireIdentity: import("hono").MiddlewareHandler<{
+  Variables: { owner: string; identity: Identity };
+}> = async (c, next) => {
+  const who = await identity(c);
+  if (!who)
     return c.json(
-      { error: "Too many access attempts. Please wait one minute." },
-      429,
-    );
-  const input = await c.req.json().catch(() => null);
-  if (
-    !input ||
-    typeof input.code !== "string" ||
-    input.code.length > 200 ||
-    !secureEqual(input.code, process.env.DEMO_ACCESS_CODE!)
-  )
-    return c.json({ error: "That preview code did not work." }, 401);
-  const old = getCookie(c, "lm_session");
-  setCookie(c, "lm_session", sessionOwner(old) ? old! : issueSession(), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "Lax",
-    path: "/",
-    maxAge: 30 * 86400,
-  });
-  return c.json({ ok: true });
-});
-app.delete("/session", (c) => {
-  deleteCookie(c, "lm_session", { path: "/" });
-  return c.json({ ok: true });
-});
-app.use("/jobs", async (c, next) => {
-  const owner = sessionOwner(getCookie(c, "lm_session"));
-  if (!owner)
-    return c.json(
-      { error: "Enter your preview code to generate videos." },
+      {
+        error: "Sign in or enter your preview code to continue.",
+        ...(hasAccountCookies(c) ? { code: "SESSION_EXPIRED" } : {}),
+      },
       401,
     );
-  c.set("owner", owner);
+  // A tab can still display account A after another tab changed browser cookies.
+  // Bind paid actions to the identity shown when the user initiated the action.
+  const expectedOwner = c.req.header("X-KakaReel-Owner");
+  if (c.req.method !== "GET" && expectedOwner && expectedOwner !== who.owner)
+    return c.json(
+      { error: "Your account changed. Refresh before generating or recovering a video." },
+      409,
+    );
+  if (c.req.method !== "GET" && !who.canGenerate)
+    return c.json(
+      { error: "Redeem a preview code before generating videos." },
+      403,
+    );
+  c.set("owner", who.owner);
+  c.set("identity", who);
   await next();
-});
-app.use("/jobs/*", async (c, next) => {
-  const owner = sessionOwner(getCookie(c, "lm_session"));
-  if (!owner)
-    return c.json({ error: "Enter your preview code to continue." }, 401);
-  c.set("owner", owner);
-  await next();
-});
+};
+app.use("/jobs", requireIdentity);
+app.use("/jobs/*", requireIdentity);
 
 function publicJob(j: typeof jobs.$inferSelect) {
   return {
@@ -203,6 +188,11 @@ app.post("/jobs", async (c) => {
   const limit =
     Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 1000) : 10;
   const reserved = await database().transaction(async (tx) => {
+    if (!c.get("identity").user && !(await lockGuest(tx, c.get("owner"))))
+      return {
+        error: "This guest session has ended. Sign in again.",
+        status: 401 as const,
+      };
     // Global limit and idempotent reservation are one transaction, including across app replicas.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(7421911)`);
     const [prior] = await tx
@@ -278,13 +268,32 @@ app.get("/jobs/:id", async (c) => {
   return c.json({ job: publicJob(j) });
 });
 app.post("/jobs/:id/recover", async (c) => {
-  const j = await owned(c.req.param("id"), c.get("owner"));
-  if (!j) return c.json({ error: "Video not found." }, 404);
-  if (j.status !== "unknown") return c.json({ job: publicJob(j) });
-  const [claimed] = await database()
-    .update(jobs)
-    .set({ status: "submitting", updatedAt: new Date() })
-    .where(and(eq(jobs.id, j.id), eq(jobs.status, "unknown")))
-    .returning();
-  return c.json({ job: publicJob(claimed ? await submit(claimed) : j) });
+  const id = c.req.param("id");
+  if (!uuidPattern.test(id)) return c.json({ error: "Video not found." }, 404);
+  const result = await database().transaction(async (tx) => {
+    if (!c.get("identity").user && !(await lockGuest(tx, c.get("owner"))))
+      return null;
+    const [j] = await tx
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.id, id), eq(jobs.owner, c.get("owner"))));
+    if (!j) return null;
+    if (j.status !== "unknown") return { job: j, claimed: false };
+    const [claimed] = await tx
+      .update(jobs)
+      .set({ status: "submitting", updatedAt: new Date() })
+      .where(
+        and(
+          eq(jobs.id, j.id),
+          eq(jobs.owner, c.get("owner")),
+          eq(jobs.status, "unknown"),
+        ),
+      )
+      .returning();
+    return { job: claimed ?? j, claimed: !!claimed };
+  });
+  if (!result) return c.json({ error: "Video not found." }, 404);
+  return c.json({
+    job: publicJob(result.claimed ? await submit(result.job) : result.job),
+  });
 });
