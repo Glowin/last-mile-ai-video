@@ -180,7 +180,7 @@ test(
         const versions = await database().execute(
           sql`SELECT count(*)::int AS n FROM schema_migrations`,
         );
-        assert.equal(versions[0].n, 2);
+        assert.equal(versions[0].n, 3);
         await migrate();
       },
     );

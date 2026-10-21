@@ -268,3 +268,205 @@ test("damaged pending state fails closed until explicit reset and never discards
     }
   } finally { browser.restore(); }
 });
+
+
+function sessionLockQueue() {
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, "locks");
+  let queue = Promise.resolve<unknown>(undefined);
+  let active = false, requests = 0;
+  Object.defineProperty(navigator, "locks", { configurable: true, value: {
+    request: (name: string, work: () => Promise<unknown>) => {
+      assert.equal(name, "kakareel-session");
+      requests++;
+      const next = queue.then(async () => {
+        assert.equal(active, false);
+        active = true;
+        try { return await work(); }
+        finally { active = false; }
+      });
+      queue = next.catch(() => {});
+      return next;
+    },
+  } });
+  return {
+    get active() { return active; },
+    get requests() { return requests; },
+    restore() {
+      if (descriptor) Object.defineProperty(navigator, "locks", descriptor);
+      else Reflect.deleteProperty(navigator, "locks");
+    },
+  };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+test("expired owner-bound logout refreshes inside its existing Web Lock and retries with the same owner", { timeout: 2000 }, async () => {
+  const original = global.fetch;
+  const browser = browserState(), lock = sessionLockQueue();
+  const calls: string[] = [];
+  let valid = false;
+  global.fetch = async (url, init) => {
+    assert.equal(lock.active, true, "cookie-changing work must remain protected");
+    const method = init?.method ?? "GET";
+    calls.push(`${method} ${url}`);
+    if (url === "/api/auth/refresh") {
+      valid = true;
+      return Response.json({ ok: true });
+    }
+    assert.equal(url, "/api/session");
+    if (method === "DELETE") {
+      assert.equal((init?.headers as Record<string, string>)["X-KakaReel-Owner"], "account-a");
+      if (valid) {
+        valid = false;
+        return Response.json({ ok: true });
+      }
+    }
+    return Response.json({ code: "SESSION_EXPIRED" }, { status: 401 });
+  };
+  try {
+    await api("/session", { method: "DELETE", headers: { "X-KakaReel-Owner": "account-a" } });
+    assert.equal(valid, false);
+    assert.equal(lock.requests, 1, "refresh must not reacquire the held Web Lock");
+    assert.deepEqual(calls, ["DELETE /api/session", "GET /api/session", "POST /api/auth/refresh", "DELETE /api/session"]);
+  } finally {
+    global.fetch = original;
+    lock.restore();
+    browser.restore();
+  }
+});
+
+for (const webLocks of [true, false]) {
+  test(`logout does not await a refresh flight queued behind its own lock (Web Locks: ${webLocks})`, { timeout: 2000 }, async () => {
+    const original = global.fetch;
+    const browser = browserState();
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "locks");
+    const lock = webLocks ? sessionLockQueue() : undefined;
+    if (!webLocks) Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    const started = deferred(), release = deferred();
+    let valid = false, deletes = 0, refreshes = 0, reads = 0;
+    global.fetch = async (url, init) => {
+      if (url === "/api/jobs") {
+        reads++;
+        return Response.json({ code: "SESSION_EXPIRED" }, { status: 401 });
+      }
+      if (url === "/api/auth/refresh") {
+        refreshes++;
+        valid = true;
+        return Response.json({ ok: true });
+      }
+      assert.equal(url, "/api/session");
+      if (init?.method === "DELETE") {
+        deletes++;
+        assert.equal((init.headers as Record<string, string>)["X-KakaReel-Owner"], "account-a");
+        if (deletes === 1) {
+          started.resolve();
+          await release.promise;
+          return Response.json({ code: "SESSION_EXPIRED" }, { status: 401 });
+        }
+        assert.equal(valid, true);
+        valid = false;
+        return Response.json({ ok: true });
+      }
+      return valid ? Response.json({ authenticated: true })
+        : Response.json({ code: "SESSION_EXPIRED" }, { status: 401 });
+    };
+    try {
+      const logout = api("/session", { method: "DELETE", headers: { "X-KakaReel-Owner": "account-a" } });
+      await started.promise;
+      const reader = api("/jobs").catch((error: Error) => error);
+      // Let the reader's expired response enqueue its refresh behind logout.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (lock) assert.equal(lock.requests, 2);
+      assert.equal(refreshes, 0, "queued refresh must not overlap the identity mutation");
+      release.resolve();
+      await logout;
+      const rejected = await reader;
+      assert.ok(rejected instanceof Error);
+      assert.match(rejected.message, /account changed/i);
+      assert.equal(deletes, 2);
+      assert.equal(reads, 1, "the old reader cannot retry after logout");
+      assert.equal(refreshes, 1);
+      assert.equal(valid, false, "a late refresh cannot restore logged-out cookies");
+    } finally {
+      release.resolve();
+      global.fetch = original;
+      if (lock) lock.restore();
+      else if (descriptor) Object.defineProperty(navigator, "locks", descriptor);
+      else Reflect.deleteProperty(navigator, "locks");
+      browser.restore();
+    }
+  });
+}
+
+test("expired logout retains its displayed owner after refresh reveals another account", { timeout: 2000 }, async () => {
+  const original = global.fetch;
+  const browser = browserState(), lock = sessionLockQueue();
+  let valid = false, deletes = 0, revoked = false;
+  global.fetch = async (url, init) => {
+    if (url === "/api/auth/refresh") {
+      valid = true; // Cookie identity is B, while the initiating page still shows A.
+      return Response.json({ ok: true });
+    }
+    assert.equal(url, "/api/session");
+    if (init?.method === "DELETE") {
+      deletes++;
+      const expectedOwner = (init.headers as Record<string, string>)["X-KakaReel-Owner"];
+      const matchesCookieOwner = expectedOwner === "account-b";
+      assert.equal(expectedOwner, "account-a");
+      if (valid) {
+        // Mirror DELETE /session's server-side guard after authenticating B.
+        if (!matchesCookieOwner)
+          return Response.json({ error: "Your account changed. Refresh before signing out." }, { status: 409 });
+        revoked = true;
+        return Response.json({ ok: true });
+      }
+    }
+    return Response.json({ code: "SESSION_EXPIRED" }, { status: 401 });
+  };
+  try {
+    await assert.rejects(api("/session", { method: "DELETE", headers: { "X-KakaReel-Owner": "account-a" } }), /account changed/i);
+    assert.equal(deletes, 2);
+    assert.equal(revoked, false);
+    assert.equal(valid, true);
+    assert.equal(lock.requests, 1);
+  } finally {
+    global.fetch = original;
+    lock.restore();
+    browser.restore();
+  }
+});
+
+
+test("failed refresh during logout releases the session lock and does not retry DELETE", { timeout: 2000 }, async () => {
+  const original = global.fetch;
+  const browser = browserState(), lock = sessionLockQueue();
+  let deletes = 0, ended = 0;
+  browser.events.addEventListener(SESSION_ENDED, () => ended++);
+  global.fetch = async (url, init) => {
+    assert.equal(lock.active, true);
+    if (init?.method === "DELETE") deletes++;
+    if (url === "/api/auth/refresh") return Response.json({ error: "Session ended" }, { status: 401 });
+    return Response.json({ code: "SESSION_EXPIRED" }, { status: 401 });
+  };
+  try {
+    await assert.rejects(api("/session", { method: "DELETE", headers: { "X-KakaReel-Owner": "account-a" } }), /sign in again/i);
+    assert.equal(deletes, 1);
+    assert.equal(ended, 1);
+    assert.equal(lock.active, false);
+    // A later identity mutation must be able to acquire the same lock.
+    global.fetch = async () => {
+      assert.equal(lock.active, true);
+      return Response.json({ ok: true });
+    };
+    await api("/session", { method: "DELETE" });
+    assert.equal(lock.requests, 2);
+  } finally {
+    global.fetch = original;
+    lock.restore();
+    browser.restore();
+  }
+});

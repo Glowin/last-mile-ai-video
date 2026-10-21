@@ -45,11 +45,10 @@ export type Mode = "text" | "image";
 export function getFamily(slug: string): Family | undefined {
   return families.find((x) => x.slug === slug);
 }
-export function resolutions(slug: FamilySlug, mode: Mode): string[] {
+export function resolutions(slug: FamilySlug, _mode: Mode): string[] {
+  // 480p t2v failed on the project account; see docs/vibetoken.md (2026-10-21).
   return slug === "seedance"
-    ? mode === "text"
-      ? ["480p", "720p", "1080p"]
-      : ["720p", "1080p"]
+    ? ["720p", "1080p"]
     : slug === "minimax"
       ? ["2K"]
       : ["4K"];

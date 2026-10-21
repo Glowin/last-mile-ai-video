@@ -12,8 +12,9 @@ export function SiteHeader() {
       </Link>
       <nav aria-label="Main navigation">
         <Link href="/#models">Models</Link>
-        <Link href="/#how-it-works">How it works</Link>
+        <Link href="/pricing">Pricing</Link>
         <Link href="/build">Built in public</Link>
+        <Link href="/account">Account</Link>
       </nav>
       <Link className="button small" href="/create">
         Open studio <ArrowUpRight size={16} />
@@ -29,6 +30,8 @@ export function SiteFooter() {
       </Link>
       <span>An independent, open-source video studio.</span>
       <div>
+        <Link href="/pricing">Pricing</Link>
+        <Link href="/account">Account</Link>
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Preview terms</Link>
         <a

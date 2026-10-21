@@ -35,7 +35,7 @@ node --env-file=/absolute/external/runtime.env --import tsx scripts/migrate.ts
 node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next dev --hostname 127.0.0.1
 ```
 
-迁移按编号应用 `db/*.sql` 并记录校验和；旧库保留任务，补建迁移记录。开发不依赖真实上游密钥才能打开页面；Google 登录详见 [架构说明](google-auth.md)。本分支新增登录尚未合并生产，当前线上状态仍以 [上线记录](launch.md) 为准。
+迁移按编号应用 `db/*.sql` 并记录校验和；旧库保留任务，补建迁移记录。开发不依赖真实上游密钥才能打开页面；Google 登录详见 [架构说明](google-auth.md)。Google 登录已于 2026-10-21 上线；当前功能与验收状态以 [上线记录](launch.md) 为准。
 
 ## Dokploy
 

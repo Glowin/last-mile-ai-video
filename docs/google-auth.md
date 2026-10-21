@@ -1,7 +1,7 @@
 ---
 title: "KakaReel Google 登录架构与验证"
 date: 2026-10-20
-status: "本地审查与回归完成；待生产部署与真实登录验收"
+status: "2026-10-21 已上线，真实 Google 登录、刷新、退出与再次登录通过"
 ---
 
 # Google sign-in for KakaReel
@@ -62,3 +62,11 @@ Checked against official Google documentation on 2026-10-20:
 - [Verify Google ID tokens on the server](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)
 - [GIS JavaScript API: initialization, nonce and official button](https://developers.google.com/identity/gsi/web/reference/js-reference)
 - [Google client/origin, popup and CSP setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid)
+
+## Production acceptance — 2026-10-21
+
+PR #1 merged as `b5e0dcd`; Dokploy completed that exact commit. The runtime Google client ID matched external configuration. In Chrome Glow, the official Google flow created an account, reload retained it, logout cleared it, reload stayed signed out, and a returning sign-in succeeded. The account had no preview permission and generation remained disabled. No paid video request was submitted.
+
+The production database applied `0001-init.sql` and `0002-google-auth.sql`; both existing video jobs and their owner digest matched the pre-deploy baseline. A custom-format database backup was retained on the persistent database volume before deployment; its location and restricted screenshot evidence are kept outside this repository. Invalid credentials returned 401, anonymous jobs returned 401, and foreign-Origin mutation returned 403.
+
+The deployed workspace has canonical, a 54-character title, a 156-character description, OpenGraph/Twitter metadata, two meaningful H2s and an H3. The redundant brand image intentionally keeps empty alt next to brand text. `/create` retains noindex and is excluded from the sitemap; robots.txt allows crawling the noindex instruction. Desktop appearance was inspected. Responsive acceptance remains pending because the browser viewport override did not change the measured width; no mobile success is claimed.
