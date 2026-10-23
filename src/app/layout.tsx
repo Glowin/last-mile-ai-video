@@ -20,8 +20,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" data-scroll-behavior="smooth">
+      <body id="top">
         <a className="skip" href="#main">
           Skip to content
         </a>

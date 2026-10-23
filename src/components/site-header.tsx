@@ -5,15 +5,15 @@ import { HeaderAccount } from "./google-auth-provider";
 export function SiteHeader() {
   return (
     <header className="site-header">
-      <Link className="brand" href="/">
+      <a className="brand" href="/#top">
         <Image src="/brand/kakapo-logo.png" width={36} height={36} alt="" />
         <span>
           KakaReel<span className="brand-dot">.</span>
         </span>
-      </Link>
+      </a>
       <nav aria-label="Main navigation">
-        <Link href="/#models">Models</Link>
-        <Link href="/pricing">Pricing</Link>
+        <a href="/#models">Models</a>
+        <a href="/pricing#access-options">Pricing</a>
         <Link href="/build">Built in public</Link>
       </nav>
       <div className="site-header-actions">
@@ -28,12 +28,12 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      <Link className="brand" href="/">
+      <a className="brand" href="/#top">
         KakaReel
-      </Link>
+      </a>
       <span>An independent, open-source video studio.</span>
       <div>
-        <Link href="/pricing">Pricing</Link>
+        <a href="/pricing#access-options">Pricing</a>
         <Link href="/account">Account</Link>
         <Link href="/privacy">Privacy</Link>
         <Link href="/terms">Terms</Link>
