@@ -6,6 +6,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set the project database URL in Dokploy}
       VIBETOKEN_API_KEY: ${VIBETOKEN_API_KEY:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GA_MEASUREMENT_ID: ${GA_MEASUREMENT_ID:-}
       SESSION_SECRET: ${SESSION_SECRET:?Set a project-specific secret}
       DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-}
       APP_URL: ${APP_URL:?Set the public origin}

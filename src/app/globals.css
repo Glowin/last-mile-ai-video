@@ -2009,3 +2009,9 @@ p {
 @media (max-width: 600px) {
   .google-signin-card { top: 108px; padding: 12px; width: 288px; max-height: calc(100dvh - 128px); }
 }
+
+.analytics-banner { position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 100; max-width: 620px; padding: 20px; border: 1px solid #d6d9d0; border-radius: 16px; background: #fff; color: #17251b; box-shadow: 0 8px 40px #0002; }
+.analytics-banner p { margin: 0 0 14px; font-size: 14px; line-height: 1.5; }
+.analytics-banner p a { text-decoration: underline; }
+.analytics-banner > div { display: flex; gap: 10px; flex-wrap: wrap; }
+.analytics-settings { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }

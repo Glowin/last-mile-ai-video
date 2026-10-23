@@ -1,3 +1,4 @@
+import { AnalyticsSettings } from "./analytics";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
@@ -36,6 +37,7 @@ export function SiteFooter() {
         <Link href="/pricing">Pricing</Link>
         <Link href="/account">Account</Link>
         <Link href="/privacy">Privacy</Link>
+        {process.env.GA_MEASUREMENT_ID && <AnalyticsSettings />}
         <Link href="/terms">Terms</Link>
         <a
           href="https://github.com/Glowin/last-mile-ai-video"

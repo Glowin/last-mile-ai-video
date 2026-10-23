@@ -84,8 +84,22 @@ export default function Privacy() {
         </p>
         <h2>Analytics and requests</h2>
         <p>
-          The app does not include advertising or analytics SDKs. Hosting and
-          model providers may retain operational logs. Paid sales are not yet open; you do not need payment details to explore the preview.
+          If you choose “Allow analytics”, we load Google Analytics to measure
+          page visits, referral sites, device information, and engagement. Google
+          uses analytics cookies to distinguish browsers. We do not load the
+          analytics tag before you agree. You can reject analytics or change your
+          choice using Cookie settings in the footer. Your choice is stored in
+          this browser. Withdrawing consent removes our analytics cookies and
+          stops further collection; it does not delete previously collected data.
+        </p>
+        <p>
+          We do not send your prompts, uploaded images, email address, account
+          identifier, or payment details to Analytics. Page addresses exclude
+          query strings and fragments, and referral addresses are limited to
+          their origin. Automatic form, search, outbound link, and video tracking
+          are disabled. Advertising personalization and Google signals are not
+          enabled by our tag. See <a href="https://policies.google.com/privacy">Google’s Privacy Policy</a>.
+          Hosting and model providers may retain operational logs.
         </p>
       </main>
       <SiteFooter />

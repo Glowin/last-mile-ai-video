@@ -17,6 +17,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 |---|---|
 | DATABASE_URL | 项目专用 PostgreSQL 连接串 |
 | VIBETOKEN_API_KEY | 项目专用上游密钥；缺少时仅浏览工作台 |
+| GA_MEASUREMENT_ID | Optional GA4 measurement ID, supplied at runtime; leave empty to disable analytics |
 | GOOGLE_CLIENT_ID | Google Web 客户端公开标识，运行时提供；缺少时禁用 Google 登录 |
 | SESSION_SECRET | 至少 32 字符的随机签名密钥 |
 | DEMO_ACCESS_CODE | 至少 12 字符的预览口令 |
