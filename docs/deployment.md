@@ -2,14 +2,14 @@
 title: "本地开发与 Hostinger Dokploy 部署"
 date: 2026-10-23
 source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档"
-status: "307554f 已部署；Web healthy、worker 持续 running，生产五项迁移已只读核验；收费关闭"
+status: "b197051 已部署；Web healthy、worker 持续 running，生产五项迁移已只读核验；收费关闭"
 ---
 
 # 运行结构
 
-2026-10-23 最新核验：`307554f` 的 Dokploy 部署记录为 done，完整日志显示 Compose Deployed；Web healthy，worker 已持续运行十余分钟，数据库 healthy。生产库只读查询返回 `0001-init.sql`、`0002-google-auth.sql`、`0003-billing.sql`、`0004-credit-wallet.sql`、`0005-pancake-bridge.sql`。有任务恢复与真实生成交付仍未验。支付最新状态见[接续记录](billing-backend.md#2026-10-23-当前接续状态)。
+2026-10-23 最新核验：`b197051` 的 Dokploy 部署记录为 done，完整日志显示 Compose Deployed；Web healthy，worker running，数据库 healthy。生产库只读查询返回 `0001-init.sql`、`0002-google-auth.sql`、`0003-billing.sql`、`0004-credit-wallet.sql`、`0005-pancake-bridge.sql`。有任务恢复与真实生成交付仍未验。部署触发链接本轮已轮换，仅同步到库外配置与既有 GitHub push hook；`b197051` push 自动触发并完成部署，确认触发链路可用。支付最新状态见[接续记录](billing-backend.md#2026-10-23-当前接续状态)。
 
-Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzle 存任务。共享 VPS 上先用一个应用构建，独立数据库，避免多个前后端构建同时争用资源。上游提供持久化异步任务，MVP 未引入 Redis 队列。本轮准备代码新增同库持久化 worker，用于不依赖用户打开页面的轮询和恢复；Web 与 worker 启动都通过同一迁移锁。worker 镜像构建和空库 start → migrate → once 已验收，`307554f` 已部署，Web healthy，worker 持续 running，生产五项迁移已只读核验；有任务恢复仍需单独验收。
+Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzle 存任务。共享 VPS 上先用一个应用构建，独立数据库，避免多个前后端构建同时争用资源。上游提供持久化异步任务，MVP 未引入 Redis 队列。本轮准备代码新增同库持久化 worker，用于不依赖用户打开页面的轮询和恢复；Web 与 worker 启动都通过同一迁移锁。worker 镜像构建和空库 start → migrate → once 已验收，`b197051` 已部署，Web healthy，worker 持续 running，生产五项迁移已只读核验；有任务恢复仍需单独验收。
 
 ## 配置边界
 
