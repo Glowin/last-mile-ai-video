@@ -1,8 +1,8 @@
 ---
 title: "KakaReel MVP 与上线状态"
 date: 2026-10-23
-source: "江昪与主会话 2026-10-23 确认；本地测试日志；历次源站与控制台验收"
-status: "715e6b0 已部署；线上定价与路由已验，服务端收费关闭；worker 常驻与生产迁移数待回读；退款 unknown 冻结"
+source: "2026-10-23 Pancake 官方沙盒页面、实际签名回调、隔离数据库与本地测试日志"
+status: "沙盒付款、商户退款及退款回调重启后幂等已验；原单冻结 150，买家退款 403 待解；本机资源已清理，后台临时 Webhook 待删除确认；有税及生产运行待核，收费关闭"
 ---
 
 # KakaReel
@@ -11,20 +11,17 @@ status: "715e6b0 已部署；线上定价与路由已验，服务端收费关闭
 
 《最后一海里计划》是公开直播系列，目标是展示从创意、开发、上线、首位付费用户到 US$100 收入的过程。KakaReel 是这次系列的产品，代码开源。未宣称已有用户或收入。
 
-## 2026-10-23 收费准备进展
+## 2026-10-23 收费准备结果与待办
 
-- 已确认 US$19／150 credits、一次性、税外标价、积分不过期、14 天内整包未使用全额退款；不自动续费。
-- Seedance／Kling 单位歧义已澄清，现行八项文生费用见 [成本订正](research/2026-10-21-video-pricing.md#2026-10-23-现行决定与成本订正)。图生仍需单独核价。
-- Pancake 个人／中国测试商店、Starter Pack 商品与专用测试密钥已创建；配置仅库外受限保存。客服邮箱 [support@kakareel.com](mailto:support@kakareel.com) 的 Cloudflare 转发为 Active，用户实际收信完成 Pancake 验证，主会话已回读确认；不公开内部转发目标。
-- 主会话完成首笔官方 Pancake 沙盒 USD19 支付；authenticated GraphQL 回读为 paid，小计 1900、税额 0、总额 1900（USD 最小货币单位），已入账 150 测试积分。这是零税额测试付款，不是正式收入，也不证明有税交易或 webhook 已验收。
-- 退款只读 diagnosis 实际执行成功：查询结果为 0 tickets／0 refund，原 payment succeeded 且金额匹配；这不证明退款失败或完成。该单仍为 unknown，对应 150 测试积分保持冻结，不重试提交。退款终态、到账与 webhook 送达仍未验收。
-- 本轮定价、钱包／生成结算与 Pancake bridge 的主会话完整测试为 **168 passed、0 failed、0 skipped**；已回读本机临时日志 `/private/tmp/kakareel-tests-final.log`。这是该次代码快照的测试结果；主会话随后确认新增诊断 27 项定向测试通过，最终 build／tsc 通过。两轮测试分开记录，不合称一次全测。
-- 主会话已验 Dockerfile worker target 镜像构建与空库 runtime：非 root UID 1000，在空 `video_worker_qa` 上完成 start → 5 项迁移 → once，退出码 0，jobs 0，未配置上游 Key。仅证明空库启动链路，不代表有任务恢复或生产常驻已验。完整测试库准备见[部署说明](deployment.md#完整测试的独立数据库)。
-- 主会话经授权完成生产数据库 `pg_dump`，备份保存在既有卷；文件 26722 bytes，`pg_restore --list` 可读、输出 72 行。未在公开文档记录实际路径；目录可读不等于已完成恢复演练。
-- **`715e6b0` 已推送 main 并部署。** 主会话回读 Dokploy 完整日志为 `Docker Compose Deployed ✅`，新 Web 与 worker 均显示 Started。观察到 Dokploy 标签页在本会话未操作时连续切换，为避免干扰，主会话已停止该页操作；worker 常驻状态及生产迁移数尚未回读，不能用 Started 代替验收。
-- 线上 `GET /api/billing/catalog` 已核为 USD 1900 最小货币单位／150 credits，`checkoutEnabled=false`，全部 provider unavailable；服务端实际收费保持关闭，生成收费也未开放。
-- 主会话浏览器已视觉验收线上 `/pricing` 的 US$19＋适用税费、八项费率和客服链接。最终 probe：`/pricing`、`/terms`、`/privacy`、`/create`、`/api/health`、`/api/billing/catalog` 均 200；前三页 `support` mailto 命中，`/create` 的 `Generate preview video` 命中；匿名 billing／jobs 均 401。
-- 测试 dev 已停止；临时 PostgreSQL 已留存排除 auth 数据的库外沙盒账本备份；本轮临时容器与 worker 测试镜像已清理，其他项目容器保留。下一步由主会话在确认 Dokploy 页面空闲后回读 worker 常驻及生产迁移数，继续只读核退款；正式收费保持关闭。
+- 官方沙盒 USD19 付款、签名回调入账、重复付款回调不重复发积分及独立拒付不发积分已验；DE 非企业订单仍为零税额，有税验收未过。
+- 商户后台全额退款 USD19、退款签名回调自动冲销 150 credits，以及 receiver 重启后的退款回调幂等已验。
+- 仅原旧单 150 credits 仍冻结，不重提、不解冻；买家端退款提交 HTTP 403 独立待解，不能作为原单 unknown 的根因。
+- 退款 session 响应验证及 SDK 错误来源区分已补充；30 项定向测试、8 项 receiver 测试及 build 通过，不与历史全测合并计数。
+- 新沙盒账本已另存库外备份并检查可读，排除 auth session／token 数据，5 张截图已归档；receiver、HTTPS tunnel 已退出，本轮 Docker 沙盒容器已移除，3026 无监听，其他项目容器未动。
+- Pancake 临时测试 Webhook 后台记录尚未删除，端点现已离线。页面无停用开关、不能保存 0 事件，删除确认正等待用户答复；后续测试前须处理，不能视为全部清理完成。
+- 生产配置与收费保持关闭；Dokploy 待恢复登录后核 worker 常驻及迁移数。真实资金、生产权限、有税交易、买家退款入口及其余开售验收仍未完成，不能宣称完整支付已接入。
+
+订单、事件、账本、批次及清理证据统一见 [支付后端现状表](billing-backend.md#2026-10-23-当前接续状态)；较早测试、部署与页面验收见 [历史快照](billing-backend.md#2026-10-23-较早验收快照历史)。
 
 ## 当前实现
 

@@ -432,6 +432,53 @@ test("non-2xx without SDK errors envelope remains an HTTP rejection, never a fab
     (error: unknown) => safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SUBMISSION_HTTP_403");
   assert.equal(calls.filter((c) => c.path.endsWith("create-ticket")).length, 1);
 });
+
+test("refund rejects malformed or expired session responses before submitting a ticket", async () => {
+  const c = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 1900, currency: "USD", requestId: userId };
+  const future = new Date(Date.now() + 300_000).toISOString();
+  for (const response of [Response.json({}), null, {}, { token: "", expiresAt: future },
+    { token: "   ", expiresAt: future }, { token: 123, expiresAt: future },
+    { token: "offline-token" }, { token: "offline-token", expiresAt: "invalid" },
+    { token: "offline-token", expiresAt: new Date(Date.now() - 60_000).toISOString() }]) {
+    const { client, calls } = harness({}, (path, data) => path.endsWith("issue-session-token") ? response : data);
+    await assert.rejects(client.requestRefund(c), (error: unknown) =>
+      safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SESSION_RESPONSE_MISMATCH");
+    assert.deepEqual(calls.map((call) => call.path), ["/v1/actions/auth/issue-session-token"]);
+  }
+});
+
+test("refund diagnostics preserve SDK origin without claiming a server HTTP rejection", async () => {
+  const { client, calls } = harness();
+  await assert.rejects(client.requestRefund({ orderId, userId, paymentId: "invalid-private-payment-id",
+    amountMinor: 1900, currency: "USD", requestId: userId }), (error: unknown) =>
+    safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SUBMISSION_SDK_REPORTED_STATUS_400");
+  // The real pinned SDK rejects this payment ID before its customer transport runs.
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, "/v1/actions/auth/issue-session-token");
+
+  const malformed = harness({}, (path, data) => path.endsWith("create-ticket")
+    ? new Response("private non-JSON response", { status: 200 }) : data);
+  await assert.rejects(malformed.client.requestRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA",
+    amountMinor: 1900, currency: "USD", requestId: userId }), (error: unknown) =>
+    safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SUBMISSION_SDK_REPORTED_STATUS_200");
+  // SDK also uses layer=sdk for response decoding; that layer alone never proves no submission.
+  assert.equal(malformed.calls.filter((call) => call.path.endsWith("create-ticket")).length, 1);
+});
+
+test("USD19 buyer refund uses the same identity as checkout and empty ticket query stays unknown", async () => {
+  const c = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 1900, currency: "USD", requestId: userId };
+  const { client, calls } = harness({}, (path, data) => path === "/v1/graphql" ? { refundTickets: [] } : data);
+  await client.requestRefund(c);
+  assert.deepEqual(calls[0].body, { storeId, buyerIdentity: userId });
+  assert.deepEqual(calls[1].body.requestedAmount, { amount: "19.00", currency: "USD" });
+  assert.equal(calls[1].body.paymentId, c.paymentId);
+  assert.equal(calls[1].headers.get("authorization"), "Bearer offline-token");
+  assert.equal(calls[1].headers.get("x-environment"), "test");
+  assert.deepEqual(await client.reconcileRefund(c), { ticketId: null, status: "unknown" });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].path, "/v1/graphql");
+});
+
 function refundDiagnosticFixture(): any {
   return { payment: { id: "PAY_6eYCunG3IMmIgcQOnaXdoA", status: "succeeded", testMode: true,
     orderMerchantExternalId: orderId, pspAmountDetails: { amount: "31.90", currency: "USD" },

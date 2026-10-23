@@ -35,18 +35,25 @@ export class PancakeError extends Error {
   constructor(readonly code: string) { super(code); this.name = "PancakeError"; }
 }
 function reject(code: string): never { throw new PancakeError(code); }
-// Only locally assigned codes and integer HTTP status escape to server logs.
+// Only locally assigned codes and integer SDK/HTTP status escape to server logs.
 // Never log SDK message/errors, response bodies, buyer IDs, tokens or request data.
 export function safePancakeDiagnosticCode(error: unknown): string {
   if (error instanceof PancakeError && (
-    ["PANCAKE_REFUND_RESPONSE_MISMATCH", "PANCAKE_QUERY_UNCONFIRMED", "PANCAKE_REFUND_QUERY_TRUNCATED", "PANCAKE_QUERY_REVIEW_REQUIRED"].includes(error.code) ||
-    /^PANCAKE_REFUND_(SESSION|SUBMISSION|QUERY)_(HTTP_[1-5][0-9]{2}|TRANSPORT_UNCONFIRMED)$/.test(error.code)
+    ["PANCAKE_REFUND_RESPONSE_MISMATCH", "PANCAKE_REFUND_SESSION_RESPONSE_MISMATCH", "PANCAKE_QUERY_UNCONFIRMED", "PANCAKE_REFUND_QUERY_TRUNCATED", "PANCAKE_QUERY_REVIEW_REQUIRED"].includes(error.code) ||
+    /^PANCAKE_REFUND_(SESSION|SUBMISSION|QUERY)_(HTTP_[1-5][0-9]{2}|SDK_REPORTED_STATUS_[1-5][0-9]{2}|TRANSPORT_UNCONFIRMED)$/.test(error.code)
   )) return error.code;
   if (error instanceof WaffoPancakeError && Number.isInteger(error.status) && error.status >= 100 && error.status <= 599)
     return `PANCAKE_SDK_HTTP_${error.status}`;
   return "PANCAKE_TRANSPORT_UNCONFIRMED";
 }
 function refundStageError(stage: "SESSION" | "SUBMISSION" | "QUERY", error: unknown): never {
+  // SDK 0.26.0 uses layer=sdk for BOTH preflight validation (synthetic 400)
+  // and non-JSON responses (actual HTTP status). Preserve its origin without
+  // claiming either that the server rejected the request or that no POST ran.
+  if (error instanceof WaffoPancakeError && error.errors.length > 0 &&
+    error.errors.every((detail) => detail.layer === ErrorLayer.Sdk) &&
+    Number.isInteger(error.status) && error.status >= 100 && error.status <= 599)
+    reject(`PANCAKE_REFUND_${stage}_SDK_REPORTED_STATUS_${error.status}`);
   const suffix = error instanceof WaffoPancakeError && Number.isInteger(error.status) && error.status >= 100 && error.status <= 599
     ? `HTTP_${error.status}` : "TRANSPORT_UNCONFIRMED";
   reject(`PANCAKE_REFUND_${stage}_${suffix}`);
@@ -369,12 +376,18 @@ export class PancakeClient {
     };
   }
   async requestRefund(command: RefundCommand): Promise<RefundResult> {
-    let token: string;
-    try { ({ token } = await this.client.auth.issueSessionToken({ storeId: this.storeId, buyerIdentity: command.userId })); }
+    let session;
+    try { session = await this.client.auth.issueSessionToken({ storeId: this.storeId, buyerIdentity: command.userId }); }
     catch (error) { refundStageError("SESSION", error); }
+    // unwrapAction in SDK 0.26.0 turns a missing data envelope into {} and
+    // customer(token) does not validate the token. Do not send Bearer undefined
+    // or use an expired session and then misdiagnose it as a refund POST failure.
+    const checkedSession = z.object({ token: z.string().regex(/^\S+$/), expiresAt: z.iso.datetime({ offset: true }) }).safeParse(session);
+    if (!checkedSession.success || Date.parse(checkedSession.data.expiresAt) <= Date.now())
+      reject("PANCAKE_REFUND_SESSION_RESPONSE_MISMATCH");
     // Pinned SDK's actual public capability. It submits a customer ticket; no
     // invented approval endpoint and no claim that pending means money returned.
-    const { ticket } = await this.client.customer(token).createRefundTicket({
+    const { ticket } = await this.client.customer(checkedSession.data.token).createRefundTicket({
       paymentId: command.paymentId, reason: "Full unused credit pack refund within 14 days",
       requestedAmount: { amount: pancakeDisplayAmount(command.amountMinor, command.currency), currency: command.currency },
       refundTicketMerchantExternalId: command.requestId,

@@ -1,8 +1,8 @@
 ---
 title: "KakaReel 一次性积分包与支付后端"
 date: 2026-10-23
-source: "主会话 2026-10-23 官方沙盒与邮箱回读；本地完整测试日志；当前代码"
-status: "715e6b0 已部署；168 全测及诊断 27 项、最终 build／tsc 通过；线上 catalog 收费关闭；退款 unknown 冻结，worker 常驻与生产迁移数待回读"
+source: "2026-10-23 Pancake 官方沙盒页面、实际签名回调、隔离数据库与本地测试日志"
+status: "沙盒付款、商户退款及退款回调重启后幂等已验；原单冻结 150，买家退款 403 待解；本机资源已清理，后台临时 Webhook 待删除确认；有税及生产运行待核，收费关闭"
 ---
 
 # 现行范围
@@ -11,9 +11,35 @@ status: "715e6b0 已部署；168 全测及诊断 27 项、最终 build／tsc 通
 
 本轮集成订单、Pancake adapter、权益批次、报价、预留、结算、退款申请和恢复工具。**实现、离线测试、真实渠道沙盒与上线验收是四个状态。** 正式销售仍被服务端禁止，`GENERATION_CHARGING_ENABLED=false`；生产不能仅靠添加环境变量开启收费。Pancake 测试商品的“销售中”不代表 KakaReel 正式开售。部署及最终验收看 [launch.md](launch.md)。
 
-## 2026-10-23 已验与未验
+## 2026-10-23 当前接续状态
 
-以下是主会话 2026-10-23 确认的验收快照：`715e6b0` 已推送 main，Dokploy 完整日志为 `Docker Compose Deployed ✅`，新 Web／worker 显示 Started。线上定价与接口已核；worker 常驻状态和生产迁移数仍未回读。
+本表为当前验收状态；下节保留较早历史快照。当前仅完成部分官方沙盒验收，未取得真实资金、生产权限或有税交易验证，正式收费保持关闭。
+
+| 项目 | 本轮已核事实 | 当前边界与接续 |
+|---|---|---|
+| 测试账本与回调入口 | 已将原沙盒账本恢复到独立本机 PostgreSQL；新增临时 loopback-only webhook 接收器，经 Cloudflare HTTPS 测试隧道接收回调，只订阅 `order.completed`／`refund.succeeded` | 这是临时沙盒入口，不是生产 webhook 部署；本机端点现已离线，后台记录待删除确认，见清理行 |
+| 新官方测试付款与税 | 新订单实际付款 USD19 成功；选择 DE、非企业，payload `billingDetail.country=DE`，但 `listPrice` 的税额为 0、`taxName=None`，总额仍为 USD19 | 国家字段已返回不等于税已正确征收；本次仍为零税额交易，有税验收未过 |
+| 付款 webhook 与幂等 | 官方签名 webhook 在未调用 `reconcile` 前完成数据库入账 150 credits；后台第二次重投同一事件，返回 HTTP 200、`outcome=duplicate`；purchase 总计仍为 300 credits／2 笔（包含此前原单 150） | 已证明本次付款回调送达、入账与重复投递不重复发积分；退款回调及 receiver 重启后幂等另见下行；不外推为丢失回调或 worker 任务恢复已验 |
+| 独立拒付测试 | 此前独立测试卡拒付已在页面显示支付失败，该拒付新单未发积分 | 不与本轮成功订单混为同一笔 |
+| 新成功单买家端退款提交（历史步骤） | 随后 `reconcile` 回读付款时间与金额，再对该单调用一次 `requestRefund`，明确返回 `PANCAKE_REFUND_SUBMISSION_HTTP_403`；买家 session 正常，customer GraphQL 可读同单；当时只读 diagnosis 为 0 tickets／0 refund | 买家端退款提交 HTTP 403 仍为独立待解问题；不证明其根因，也不把原 unknown 单归为同一原因；随后商户退款结果见下行 |
+| 新单商户退款与签名回调 | 商户后台仅提交一次新测试单全额 USD19 退款后，真实 `refund.succeeded` 签名回调返回 HTTP 200、`outcome=applied`；隔离数据库中新单为 `refunded/succeeded`，自动冲销 150 credits；商户 UI 已显示已退款 USD19 | 已验本次沙盒商户退款 → 签名回调 → 数据库冲销；不代表买家端提交 403 已解决或真实资金退款已验 |
+| 退款回调重启后幂等 | 主动停止并重启本机 receiver，复用同一沙盒数据库；后台重投 `refund.succeeded` 返回 HTTP 200、`outcome=duplicate`，尝试次数 2；DB refund ledger 仍仅 1 条、-150 credits | 退款回调重启后幂等已通过；未重复冲销，不外推为生产 worker 常驻或任务恢复已验 |
+| 当前订单与账本 | 隔离数据库：原旧单 `paid/unknown`，新单 `refunded/succeeded`，拒付单 `pending/none`；`payment.succeeded/applied` 共 2 条（含原旧单），`payment.refunded/applied` 1 条；ledger purchase 合计 300 credits（2 条），refund 为 -150 credits（1 条） | 当前仅原旧单 150 credits 仍冻结，不重提、不解冻；拒付单没有发积分，页面失败不改写为数据库失败终态 |
+| 重投后批次状态 | 原批次 150 credits、`refund_frozen=true`；新批次 150 credits、`refunded=true` 且 `refund_frozen=false`；reserved／consumed／debt 均为 0 | 仅原旧单仍冻结，新单退款冲销未误解冻原批次 |
+| 本轮工程验证 | 新增退款 session 响应验证及 SDK 错误来源区分（`pancake.ts`／相关 tests）；30 项定向测试、8 项新 receiver 测试与 build 通过 | 与此前 168 项全测、27 项诊断测试分开记录，不合称新一轮全测；未确认本轮补丁已部署 |
+| 备份与本机清理 | 新沙盒账本另存既有库外材料目录的新文件，未覆盖旧备份；`pg_restore --list` 检查可读，排除 auth session／token 数据；5 张验收截图已归档。receiver 与 HTTPS tunnel 正常退出，本轮 Docker 沙盒容器已 stop／rm，3026 无 listener，其他项目容器未动 | 备份可读不等于完成恢复演练；截图、备份实际路径及测试 ID 留库外 |
+| 临时 Webhook 后台记录 | 页面无停用开关，取消全部事件后保存按钮禁用，不能保存 0 事件；已按浏览器删除确认规则向用户申请删除本轮临时测试 Webhook，等待答复 | 后台记录未删，端点现在不在线；后续测试前须处理该记录与端点，不能宣称已停用或全部清理完成 |
+| 生产与部署 | 生产未改配置、未开放收费；Dokploy 登录已过期，已请用户重新登录 | worker 常驻及生产迁移数仍待核；既有部署的 Started 日志不能替代当前验收 |
+
+### 简短接续操作说明
+
+1. 原 unknown 单仅按原请求只读核查，不重提、不解冻；买家端提交 403 单独排查，不以商户退款成功推定买家入口已修复，也不将其作为原单根因。
+2. 等待用户确认删除临时 Webhook；确认后处理后台记录并回读结果。后续测试前核对记录与端点状态，不向当前离线端点继续投递。
+3. 恢复 Dokploy 登录后核生产 worker 常驻及实际迁移数；继续有税交易、丢失回调、worker 任务恢复等验收，生产配置与收费保持关闭。
+
+## 2026-10-23 较早验收快照（历史）
+
+以下保留主会话同日较早确认的事实；其中单笔冻结、webhook 未验、资源已清理及 Dokploy 页面占用原因均属当时状态，不代表本轮当前状态：`715e6b0` 已推送 main，Dokploy 完整日志为 `Docker Compose Deployed ✅`，新 Web／worker 显示 Started。线上定价与接口已核；worker 常驻状态和生产迁移数仍未回读。
 
 | 项目 | 已取得的证据 | 边界与下一步 |
 |---|---|---|
@@ -86,11 +112,11 @@ Pancake 测试商店、一次性商品与测试密钥已于 2026-10-23 创建。
 
 环境变量见 `.env.example`。`sandbox-smoke.ts` 提供 `inspect / seed / checkout / reconcile / refund / refund-diagnose`：inspect 只读 schema，其他操作验证实际沙盒库身份。输出目录必须位于仓库外、0700；输出新建且0600，可能包含结账 token，不得截图、打印或提交。工具不会自己加载凭证，也不会自动开生产销售。
 
-退款／原任务恢复是可用的操作入口，不是已经建立持续运营值班。首笔零税额官方沙盒付款与 authenticated 查询入账已验；退款仍 unknown、150 测试积分冻结，未重提。带税结账、回调送达、退款到账与生产实物视频交付仍须分别验收，由主会话接续；本轮文档更新不操作渠道或部署。
+退款／原任务恢复入口不代表已建立持续运营值班；验收结果、冻结状态及清理待办统一见[当前现状表](#2026-10-23-当前接续状态)。
 
 ## 开售前仍需完成
 
-1. 首笔零税额官方沙盒成功付款已核；继续完成拒绝、重复／丢失回调、重启恢复、有税交易、退款闭环与跨用户隔离的真实渠道验收。当前退款 unknown 保持原请求和冻结，不以再次申请替代查询。
+1. 完成丢失回调、worker 任务恢复、有税交易、买家端退款提交问题与跨用户隔离的真实渠道验收；已验项及原单冻结边界见上方现状表。
 2. 各开放视频规格的真实生成交付；新费用预算须另行批准，不能复用已因失败停止的旧授权。
 3. 原子全局金额预算、成本记录与供应商涨价停用流程；当前日次数限额不能代替金额预算。
 4. 生成前输入审核、展示前输出审核、公开 AUP／举报处置、素材授权和本业务商户准入。
