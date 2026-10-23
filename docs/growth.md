@@ -24,6 +24,24 @@ status: "目标已确认；渠道方案讨论中，未执行推广"
 - 跟踪来源、具体任务、回复、首次成功生成、报价、支付结果、拒绝原因。先区分流量不匹配、样片不匹配、价格／信任障碍与支付失败，再决定改动。
 - LinkedIn 面向有具体商业视频任务的人；X 优先参与求工具、求效果复现等需求讨论；Reddit 先做需求研究与真实贡献，不以 karma 数值视为推广许可。
 
+# 热点效果页与 SEO 补充讨论（2026-10-23）
+
+江昪补充：以近期特斯拉飞行汽车事件为例，抢占汽车品牌词与 AI generate 等组合搜索，帮助 KOL 生成热点视频，让创作者获取流量。此为用户提出的方向，尚未授权建设具体页面或批量发布。
+
+主会话建议把它作为「热点效果模板＋搜索承接＋创作者分发」实验：先实测飞车效果，再用一页承接 flying car AI video generator、make my car fly AI 等制作意图，不以 Tesla 裸品牌词为主。候选关键词尚无搜索量、KD 或转化数据，不把搜索结果存在当成需求量证明。
+
+2026-10-23 搜索覆盖 Tesla 飞车事件、AI 飞车生成器及 Google 官方抓取／垃圾内容政策，回读 Thumix 与 ViewMax 两个产品页面；不是完整竞品排名审计。两个页面均提供飞车场景、汽车图片上传与生成入口，证明已有同类竞争，不证明它们已盈利。来源：
+
+- https://www.thumix.com/tools/flying-car-ai
+- https://viewmax.studio/template/flying-car-video-generator
+- https://www.tesla.com/roadster （本轮正文提取有限，不据此复述完整发布会事实）
+
+建议仅先做一页与三条真实样片，明确 AI 创作及非品牌官方关系；预设实测模型／参数／提示词并保留用户素材输入，不让点击模板后从空白工作台重新开始。KakaReel 图生能力仍须按上线正本验收，不能把竞品的可用能力当成我方已有。
+
+短期由主动接触相关创作者获取第一批访问，SEO 同步积累。Google 官方说明抓取可能需要数天至数周且请求不保证收录，不能承诺几天内靠自然搜索成交：https://developers.google.com/search/docs/crawling-indexing/ask-google-to-recrawl 。避免只替换车型名称的重复薄页，政策见 https://developers.google.com/search/docs/essentials/spam-policies 。
+
+实验分别记录创作者购买与其观众带来的购买；获赠试用／发片不计付费需求。跟踪访问、开始生成、成功生成及实际支付，反馈到下一轮选题。以上建议尚未执行，收费状态继续以运行回读与上线正本为准。
+
 # 来源与边界
 
 - 产品入口：https://kakareel.com 。本轮网页检索器无法读取首页及定价页；上述运行状态来自直接公开 API，不等于完整网页交互验收。
