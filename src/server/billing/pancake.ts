@@ -1,4 +1,4 @@
-import { createPublicKey } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, sign, type KeyObject } from "node:crypto";
 import { WaffoPancake, WaffoPancakeError, verifyWebhook, ErrorLayer, type TaxCategory } from "@waffo/pancake-ts";
 import { z } from "zod";
 import { diagnosePancakeRefund } from "./refund-diagnostics";
@@ -16,8 +16,9 @@ import type { BillingProvider, CheckoutCommand, PancakePaymentEvent, RefundComma
  *
  * The bridge binds signed external order IDs, store, buyer and merchant metadata
  * in the billing transaction. A checkout session ID is never fabricated.
- * SDK 0.26.0 exposes customer refund tickets (pending review), not merchant
- * approval. Keep pending until authenticated executed refund evidence arrives.
+ * Refund creation uses the documented merchant-signed REST endpoint: the SDK's
+ * customer helper uses a different credential, and its merchant transport is private.
+ * Merchant tickets auto-process; only executed refund evidence authorizes reversal.
  *
  * Before activation: reconcile lost callbacks/expired idempotency keys, verify
  * project-specific store/product ownership and key environment in a real sandbox.
@@ -39,14 +40,14 @@ function reject(code: string): never { throw new PancakeError(code); }
 // Never log SDK message/errors, response bodies, buyer IDs, tokens or request data.
 export function safePancakeDiagnosticCode(error: unknown): string {
   if (error instanceof PancakeError && (
-    ["PANCAKE_REFUND_RESPONSE_MISMATCH", "PANCAKE_REFUND_SESSION_RESPONSE_MISMATCH", "PANCAKE_QUERY_UNCONFIRMED", "PANCAKE_REFUND_QUERY_TRUNCATED", "PANCAKE_QUERY_REVIEW_REQUIRED"].includes(error.code) ||
-    /^PANCAKE_REFUND_(SESSION|SUBMISSION|QUERY)_(HTTP_[1-5][0-9]{2}|SDK_REPORTED_STATUS_[1-5][0-9]{2}|TRANSPORT_UNCONFIRMED)$/.test(error.code)
+    ["PANCAKE_REFUND_RESPONSE_MISMATCH", "PANCAKE_REFUND_INVALID_COMMAND", "PANCAKE_REFUND_SUBMISSION_API_ERROR", "PANCAKE_QUERY_UNCONFIRMED", "PANCAKE_REFUND_QUERY_TRUNCATED", "PANCAKE_QUERY_REVIEW_REQUIRED"].includes(error.code) ||
+    /^PANCAKE_REFUND_(SUBMISSION|QUERY)_(HTTP_[1-5][0-9]{2}|SDK_REPORTED_STATUS_[1-5][0-9]{2}|TRANSPORT_UNCONFIRMED)$/.test(error.code)
   )) return error.code;
   if (error instanceof WaffoPancakeError && Number.isInteger(error.status) && error.status >= 100 && error.status <= 599)
     return `PANCAKE_SDK_HTTP_${error.status}`;
   return "PANCAKE_TRANSPORT_UNCONFIRMED";
 }
-function refundStageError(stage: "SESSION" | "SUBMISSION" | "QUERY", error: unknown): never {
+function refundStageError(stage: "SUBMISSION" | "QUERY", error: unknown): never {
   // SDK 0.26.0 uses layer=sdk for BOTH preflight validation (synthetic 400)
   // and non-JSON responses (actual HTTP status). Preserve its origin without
   // claiming either that the server rejected the request or that no POST ran.
@@ -258,7 +259,7 @@ export type PancakeOptions = PancakeWebhookScope & {
   /** Read a persisted local order creation time, never Date.now() or an in-memory
    * first-seen timestamp. Missing/old orders must be reconciled, not recreated. */
   getOrderCreatedAt(orderId: string): Promise<Date | null>;
-  /** Actual SDK transport injection for offline tests; no alternate SDK protocol. */
+  /** Shared fetch injection for SDK calls and documented merchant refund REST. */
   fetch?: typeof fetch;
 };
 
@@ -268,6 +269,8 @@ export class PancakeClient {
   readonly storeId: string;
   readonly checkoutHosts = Object.freeze(["pancake.waffo.ai", "checkout.waffo.ai"]);
   private readonly client: WaffoPancake;
+  private readonly merchantFetch: typeof fetch;
+  private readonly merchantSigningKey: KeyObject;
   private readonly options: PancakeOptions;
   constructor(options: PancakeOptions) {
     if (!reference.safeParse(options.merchantId).success || !reference.safeParse(options.storeId).success ||
@@ -303,6 +306,13 @@ export class PancakeClient {
     this.client = new WaffoPancake({ merchantId: options.merchantId, privateKey: options.privateKey,
       environment: options.environment === "live" ? "prod" : "test", fetch: checkedFetch,
       webhookPublicKey: options.platformPublicKey });
+    this.merchantFetch = checkedFetch;
+    // Accept the same PEM / escaped-PEM / bare PKCS#8 input forms as SDK 0.26.0.
+    let pem = options.privateKey.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
+    if (!pem.includes("-----BEGIN"))
+      pem = `-----BEGIN PRIVATE KEY-----\n${pem.replace(/\s+/g, "")}\n-----END PRIVATE KEY-----`;
+    this.merchantSigningKey = createPrivateKey(pem);
+    if (this.merchantSigningKey.asymmetricKeyType !== "rsa") reject("PANCAKE_INVALID_MERCHANT_KEY");
   }
   async createCheckout(command: CheckoutCommand): Promise<{ sessionId: string; checkoutUrl: string }> {
     z.uuid().parse(command.orderId); z.uuid().parse(command.userId);
@@ -376,24 +386,45 @@ export class PancakeClient {
     };
   }
   async requestRefund(command: RefundCommand): Promise<RefundResult> {
-    let session;
-    try { session = await this.client.auth.issueSessionToken({ storeId: this.storeId, buyerIdentity: command.userId }); }
-    catch (error) { refundStageError("SESSION", error); }
-    // unwrapAction in SDK 0.26.0 turns a missing data envelope into {} and
-    // customer(token) does not validate the token. Do not send Bearer undefined
-    // or use an expired session and then misdiagnose it as a refund POST failure.
-    const checkedSession = z.object({ token: z.string().regex(/^\S+$/), expiresAt: z.iso.datetime({ offset: true }) }).safeParse(session);
-    if (!checkedSession.success || Date.parse(checkedSession.data.expiresAt) <= Date.now())
-      reject("PANCAKE_REFUND_SESSION_RESPONSE_MISMATCH");
-    // Pinned SDK's actual public capability. It submits a customer ticket; no
-    // invented approval endpoint and no claim that pending means money returned.
-    const { ticket } = await this.client.customer(checkedSession.data.token).createRefundTicket({
+    // BillingService has already checked ownership, refund window and unused
+    // credits under lock. Retain local validation before any merchant write.
+    const checked = z.object({ orderId: z.uuid(), userId: z.uuid(), requestId: z.uuid(),
+      paymentId: z.string().regex(/^PAY_[0-9A-Za-z]{22}$/), amountMinor: minor, currency: currencySchema }).safeParse(command);
+    if (!checked.success) reject("PANCAKE_REFUND_INVALID_COMMAND");
+    // Official contract, verified 2026-10-23:
+    // https://docs.waffo.ai/api-reference/endpoints/refunds/create-refund-ticket.md
+    // https://docs.waffo.ai/api-reference/authentication#signing-algorithm-manual-integration
+    // SDK 0.26.0 has no public merchant POST transport. Do not reach into private
+    // SDK fields or issue a customer token. API-key environment comes from the key.
+    const path = "/v1/actions/refund-ticket/create-ticket";
+    const body = JSON.stringify({
       paymentId: command.paymentId, reason: "Full unused credit pack refund within 14 days",
       requestedAmount: { amount: pancakeDisplayAmount(command.amountMinor, command.currency), currency: command.currency },
       refundTicketMerchantExternalId: command.requestId,
-    }, { idempotencyKey: command.requestId }).catch((error: unknown) => refundStageError("SUBMISSION", error));
-    if (!ticket || ticket.subjectId !== command.paymentId || ticket.refundTicketMerchantExternalId !== command.requestId ||
-      !reference.safeParse(ticket.id).success) reject("PANCAKE_REFUND_RESPONSE_MISMATCH");
+    });
+    let response: Response;
+    try {
+      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const canonical = `POST\n${path}\n${timestamp}\n${createHash("sha256").update(body).digest("base64")}`;
+      response = await this.merchantFetch(`https://api.waffo.ai${path}`, {
+        method: "POST", redirect: "error", body,
+        headers: { "Content-Type": "application/json", "X-Merchant-Id": this.merchantId,
+          "X-Timestamp": timestamp, "X-Signature": sign("RSA-SHA256", Buffer.from(canonical), this.merchantSigningKey).toString("base64"),
+          "X-Idempotency-Key": command.requestId },
+      }); // Exactly one POST. Neither redirects nor retries may repeat the write.
+    } catch (error) { refundStageError("SUBMISSION", error); }
+    let envelope: unknown;
+    try { envelope = await response.json(); }
+    catch { reject("PANCAKE_REFUND_RESPONSE_MISMATCH"); }
+    const parsed = z.object({ data: z.object({ ticket: z.object({ id: reference,
+      subjectId: z.literal(command.paymentId), refundTicketMerchantExternalId: z.literal(command.requestId),
+      status: z.string().min(1) }) }).nullish(), errors: z.array(z.unknown()).optional() }).safeParse(envelope);
+    if (!parsed.success) reject("PANCAKE_REFUND_RESPONSE_MISMATCH");
+    if (parsed.data.errors?.length) reject("PANCAKE_REFUND_SUBMISSION_API_ERROR");
+    const ticket = parsed.data.data?.ticket;
+    if (!ticket) reject("PANCAKE_REFUND_RESPONSE_MISMATCH");
+    // Merchant submissions auto-process, not pending merchant approval. Even a
+    // ticket labelled succeeded is not executed cash evidence: keep credits frozen.
     return { ticketId: ticket.id, status: refundTicketState(ticket.status) };
   }
   async reconcileRefund(command: RefundCommand): Promise<RefundResult> {

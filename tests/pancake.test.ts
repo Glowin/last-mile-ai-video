@@ -1,12 +1,13 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
-import { TaxCategory, WaffoPancakeError, ErrorLayer } from "@waffo/pancake-ts";
+import { TaxCategory } from "@waffo/pancake-ts";
 import { PancakeError, PancakeClient, pancakeDisplayAmount, pancakeMinorAmount,
   verifyPancakePaymentEvidence, safePancakeDiagnosticCode, type PancakeOptions } from "../src/server/billing/pancake";
 import { defaultProviders, type CheckoutCommand } from "../src/server/billing/providers";
 
-// Offline protocol/client tests using the ACTUAL npm SDK, not sandbox acceptance.
+// Offline protocol tests: actual npm SDK plus documented merchant refund REST.
+// Signature checks run on serialized requests at the fetch boundary, not a mock SDK.
 // Fresh local RSA keys are unrelated to Waffo or any project credentials.
 const keys = () => generateKeyPairSync("rsa", { modulusLength: 2048,
   privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
@@ -66,21 +67,24 @@ const signed = (f = paymentFixture()) => signedRaw(JSON.stringify(f));
 const errorCode = (code: string) => (error: unknown) => error instanceof PancakeError && error.code === code;
 
 function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path: string, data: any, body?: any) => any) {
-  const calls: { path: string; headers: Headers; body: any }[] = [];
+  const calls: { path: string; headers: Headers; body: any; raw: string; method: string | undefined; redirect: RequestRedirect | undefined }[] = [];
   const transport: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     assert.equal(url.origin, "https://api.waffo.ai");
     const headers = new Headers(init?.headers), raw = String(init?.body);
-    if (url.pathname.endsWith("refund-ticket/create-ticket")) {
-      assert.equal(headers.get("authorization"), "Bearer offline-token");
-      assert.equal(headers.get("x-environment"), "test");
-    } else {
-      const canonical = `POST\n${url.pathname}\n${headers.get("x-timestamp")}\n${createHash("sha256").update(raw).digest("base64")}`;
-      assert.equal(verify("RSA-SHA256", Buffer.from(canonical), merchant.publicKey,
-        Buffer.from(headers.get("x-signature")!, "base64")), true, "real SDK request RSA signature");
-      assert.equal(headers.get("x-merchant-id"), merchantId);
-    }
-    calls.push({ path: url.pathname, headers, body: JSON.parse(raw) });
+    assert.equal(init?.method, "POST");
+    assert.equal(headers.get("content-type"), "application/json");
+    assert.equal(headers.get("authorization"), null);
+    assert.equal(headers.get("x-environment"), null);
+    assert.equal(headers.get("x-store-slug"), null);
+    const timestamp = headers.get("x-timestamp")!;
+    assert.match(timestamp, /^\d+$/);
+    assert.ok(Math.abs(Date.now() / 1000 - Number(timestamp)) < 5);
+    const canonical = `${init?.method}\n${url.pathname}\n${timestamp}\n${createHash("sha256").update(raw).digest("base64")}`;
+    assert.equal(verify("RSA-SHA256", Buffer.from(canonical), merchant.publicKey,
+      Buffer.from(headers.get("x-signature")!, "base64")), true, "wire request RSA signature");
+    assert.equal(headers.get("x-merchant-id"), merchantId);
+    calls.push({ path: url.pathname, headers, body: JSON.parse(raw), raw, method: init?.method, redirect: init?.redirect });
     let data: any;
     if (url.pathname === "/v1/actions/auth/issue-session-token")
       data = { token: "offline-token", expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
@@ -89,7 +93,7 @@ function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path
         expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
     else if (url.pathname === "/v1/graphql") data = {};
     else if (url.pathname === "/v1/actions/refund-ticket/create-ticket") data = { ticket: {
-      id: "TKT_fixture", status: "pending", subjectId: JSON.parse(raw).paymentId,
+      id: "TKT_fixture", status: "processing", subjectId: JSON.parse(raw).paymentId,
       refundTicketMerchantExternalId: JSON.parse(raw).refundTicketMerchantExternalId,
     } };
     else throw new Error("Unexpected SDK endpoint");
@@ -389,94 +393,130 @@ test("bridge preserves signed incomplete or partial financial facts as review ev
   assert.equal(p.amountMinor, 1000); assert.equal(p.originalPaidAmountMinor, 3190);
   assert.equal(p.reviewReason, "PANCAKE_PARTIAL_REFUND_REVIEW");
 });
-test("pinned SDK submits real customer refund ticket with stable key and full paid amount; pending is not success", async () => {
+const refundCommand = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190,
+  currency: "USD", requestId: "650e8400-e29b-41d4-a716-446655440012" };
+
+test("merchant refund sends one signed POST with stable key and full paid amount; processing is not success", async () => {
   const { client, calls } = harness();
-  const refundId = "650e8400-e29b-41d4-a716-446655440012";
-  const result = await client.requestRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: refundId });
-  assert.equal(result.status, "pending"); assert.equal(result.ticketId, "TKT_fixture");
-  assert.equal(calls.length, 2);
-  assert.deepEqual(calls[0].body, { storeId, buyerIdentity: userId });
-  assert.deepEqual(calls[1].body.requestedAmount, { amount: "31.90", currency: "USD" });
-  assert.equal(calls[1].body.refundTicketMerchantExternalId, refundId);
-  assert.equal(calls[1].headers.get("x-idempotency-key"), refundId);
+  assert.deepEqual(await client.requestRefund(refundCommand), { status: "processing", ticketId: "TKT_fixture" });
+  assert.equal(calls.length, 1);
+  const c = calls[0];
+  assert.equal(c.path, "/v1/actions/refund-ticket/create-ticket");
+  assert.equal(c.redirect, "error");
+  assert.deepEqual(c.body, { paymentId: refundCommand.paymentId,
+    reason: "Full unused credit pack refund within 14 days",
+    requestedAmount: { amount: "31.90", currency: "USD" }, refundTicketMerchantExternalId: refundCommand.requestId });
+  assert.equal(c.headers.get("x-idempotency-key"), refundCommand.requestId);
+  // Independent negative controls: the signature binds method/path/time/body and key.
+  const timestamp = c.headers.get("x-timestamp")!;
+  const canonical = (method: string, path: string, time: string, raw: string) =>
+    `${method}\n${path}\n${time}\n${createHash("sha256").update(raw).digest("base64")}`;
+  const signature = Buffer.from(c.headers.get("x-signature")!, "base64");
+  const valid = canonical(c.method!, c.path, timestamp, c.raw);
+  assert.equal(verify("RSA-SHA256", Buffer.from(valid), merchant.publicKey, signature), true);
+  for (const altered of [canonical("GET", c.path, timestamp, c.raw),
+    canonical("POST", c.path + "-different", timestamp, c.raw),
+    canonical("POST", c.path, String(Number(timestamp) + 1), c.raw),
+    canonical("POST", c.path, timestamp, c.raw.replace("31.90", "19.00"))])
+    assert.equal(verify("RSA-SHA256", Buffer.from(altered), merchant.publicKey, signature), false);
+  assert.equal(verify("RSA-SHA256", Buffer.from(valid), otherPlatform.publicKey, signature), false);
 });
-test("refund ticket query distinguishes failure/rejection from ambiguous/executed status; no false success", async () => {
-  const refundId = "650e8400-e29b-41d4-a716-446655440012";
-  for (const [status, expected] of [["pending", "pending"], ["under_review", "pending"], ["approved", "processing"], ["processing", "processing"],
-    ["succeeded", "processing"], ["rejected", "rejected"], ["failed", "failed"], ["returned", "unknown"], ["cancelled", "unknown"], ["future", "unknown"]]) {
-    const { client } = harness({}, (path, data) => path !== "/v1/graphql" ? data : { refundTickets: [{ id: "TKT_fixture", subjectId: "PAY_6eYCunG3IMmIgcQOnaXdoA", status,
-      refundTicketMerchantExternalId: refundId, versionData: { requestedAmount: { amount: "31.90", currency: "USD" } } }] });
-    assert.equal((await client.reconcileRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: refundId })).status, expected);
+
+test("merchant refund supports existing SDK key encodings without exposing key material", async () => {
+  const pem = merchant.privateKey;
+  for (const privateKey of [pem.replace(/\n/g, "\\n"),
+    pem.replace(/-----[^\n]+-----/g, "").replace(/\s/g, "")]) {
+    const { client, calls } = harness({ privateKey });
+    assert.equal((await client.requestRefund(refundCommand)).status, "processing");
+    assert.equal(calls.length, 1); // Harness cryptographically verifies each outgoing signature.
   }
 });
 
-test("refund diagnostics distinguish session, submission, and response validation without exposing SDK details", async () => {
-  const command = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: "650e8400-e29b-41d4-a716-446655440012" };
-  for (const [endpoint, expected] of [["issue-session-token", "PANCAKE_REFUND_SESSION_HTTP_403"], ["create-ticket", "PANCAKE_REFUND_SUBMISSION_HTTP_403"]]) {
-    const { client } = harness({}, (path, data) => {
-      if (path.endsWith(endpoint)) throw new WaffoPancakeError(403, [{ message: "sensitive-provider-details-must-not-escape", layer: ErrorLayer.Gateway }]);
-      return data;
-    });
-    await assert.rejects(client.requestRefund(command), (error: unknown) => safePancakeDiagnosticCode(error) === expected);
+test("refund ticket states never authorize cash reversal; query and submission agree", async () => {
+  for (const [status, expected] of [["pending", "pending"], ["under_review", "pending"], ["approved", "processing"], ["processing", "processing"],
+    ["succeeded", "processing"], ["rejected", "rejected"], ["failed", "failed"], ["returned", "unknown"], ["cancelled", "unknown"], ["future", "unknown"]]) {
+    const ticket = { id: "TKT_fixture", subjectId: refundCommand.paymentId, status,
+      refundTicketMerchantExternalId: refundCommand.requestId, versionData: { requestedAmount: { amount: "31.90", currency: "USD" } } };
+    const { client } = harness({}, (path, data) => path === "/v1/graphql" ? { refundTickets: [ticket] }
+      : path.endsWith("create-ticket") ? { ticket } : data);
+    assert.equal((await client.requestRefund(refundCommand)).status, expected);
+    assert.equal((await client.reconcileRefund(refundCommand)).status, expected);
   }
-  const { client } = harness({}, (path, data) => path.endsWith("create-ticket") ? { ticket: { ...data.ticket, subjectId: "wrong" } } : data);
-  await assert.rejects(client.requestRefund(command), (error: unknown) => safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_RESPONSE_MISMATCH");
-  assert.equal(safePancakeDiagnosticCode(new Error("sensitive-network-details")), "PANCAKE_TRANSPORT_UNCONFIRMED");
+});
+
+test("merchant refund validates identities, payment ID, amount and currency before any request", async () => {
+  for (const change of [{ orderId: "private-invalid-id" }, { userId: "private-invalid-id" },
+    { requestId: "private-invalid-id" }, { requestId: "x".repeat(129) }, { paymentId: "private-invalid-id" },
+    { paymentId: "ORD_6eYCunG3IMmIgcQOnaXdoA" }, { amountMinor: 0 }, { amountMinor: -1 },
+    { amountMinor: 19.5 }, { amountMinor: 2_147_483_648 }, { amountMinor: NaN }, { currency: "usd" }, { currency: "ZZZ" }]) {
+    const { client, calls } = harness();
+    await assert.rejects(client.requestRefund({ ...refundCommand, ...change }), errorCode("PANCAKE_REFUND_INVALID_COMMAND"));
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("HTTP 403 remains a safe status for JSON, non-JSON and misleading success bodies; never retry", async () => {
+  const secret = "private-provider-message-must-not-escape";
+  for (const response of [Response.json({ errors: [{ message: secret, layer: "gateway" }] }, { status: 403 }),
+    Response.json({ error: secret }, { status: 403 }), new Response(secret, { status: 403 }),
+    Response.json({ data: { ticket: { id: "TKT_fixture", subjectId: refundCommand.paymentId,
+      refundTicketMerchantExternalId: refundCommand.requestId, status: "succeeded" } } }, { status: 403 })]) {
+    const { client, calls } = harness({}, () => response);
+    await assert.rejects(client.requestRefund(refundCommand), (error: unknown) => {
+      assert.ok(error instanceof PancakeError);
+      assert.equal(safePancakeDiagnosticCode(error), "PANCAKE_REFUND_SUBMISSION_HTTP_403");
+      assert.doesNotMatch(String(error) + JSON.stringify(error), /private-provider|gateway|PAY_|TKT_/);
+      return true;
+    });
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("merchant refund does not retry server errors, redirects or transport failures", async () => {
+  for (const status of [302, 409, 500, 503]) {
+    const { client, calls } = harness({}, () => new Response("private-response", { status }));
+    await assert.rejects(client.requestRefund(refundCommand), errorCode(`PANCAKE_REFUND_SUBMISSION_HTTP_${status}`));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].redirect, "error");
+  }
+  const { client, calls } = harness({}, () => { throw new Error("private-network-details"); });
+  await assert.rejects(client.requestRefund(refundCommand), errorCode("PANCAKE_REFUND_SUBMISSION_TRANSPORT_UNCONFIRMED"));
+  assert.equal(calls.length, 1);
+});
+
+test("merchant refund rejects malformed, missing or mismatched envelopes without leaking response data", async () => {
+  const valid = { id: "TKT_fixture", subjectId: refundCommand.paymentId,
+    refundTicketMerchantExternalId: refundCommand.requestId, status: "processing" };
+  for (const response of [new Response("private non-JSON response", { status: 200 }), Response.json({}),
+    Response.json(null), Response.json({ data: null }), Response.json({ data: {} }),
+    ...[{ id: "" }, { subjectId: "wrong" }, { refundTicketMerchantExternalId: "wrong" }, { status: null }]
+      .map(change => Response.json({ data: { ticket: { ...valid, ...change } } }))]) {
+    const { client, calls } = harness({}, () => response);
+    await assert.rejects(client.requestRefund(refundCommand), errorCode("PANCAKE_REFUND_RESPONSE_MISMATCH"));
+    assert.equal(calls.length, 1);
+  }
+  const { client, calls } = harness({}, () => Response.json({ data: { ticket: valid },
+    errors: [{ message: "private-server-error", layer: "refund" }] }));
+  await assert.rejects(client.requestRefund(refundCommand), (error: unknown) => {
+    assert.equal(safePancakeDiagnosticCode(error), "PANCAKE_REFUND_SUBMISSION_API_ERROR");
+    assert.doesNotMatch(String(error), /private-server-error/);
+    return true;
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(safePancakeDiagnosticCode(new Error("private-network-details")), "PANCAKE_TRANSPORT_UNCONFIRMED");
   assert.equal(safePancakeDiagnosticCode(new PancakeError("PRIVATE_DATA")), "PANCAKE_TRANSPORT_UNCONFIRMED");
 });
 
-test("non-2xx without SDK errors envelope remains an HTTP rejection, never a fabricated ticket; no retry", async () => {
-  const { client, calls } = harness({}, (path, data) => path.endsWith("create-ticket")
-    ? Response.json({ error: "private-gateway-message" }, { status: 403 }) : data);
-  await assert.rejects(client.requestRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: userId }),
-    (error: unknown) => safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SUBMISSION_HTTP_403");
-  assert.equal(calls.filter((c) => c.path.endsWith("create-ticket")).length, 1);
-});
-
-test("refund rejects malformed or expired session responses before submitting a ticket", async () => {
-  const c = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 1900, currency: "USD", requestId: userId };
-  const future = new Date(Date.now() + 300_000).toISOString();
-  for (const response of [Response.json({}), null, {}, { token: "", expiresAt: future },
-    { token: "   ", expiresAt: future }, { token: 123, expiresAt: future },
-    { token: "offline-token" }, { token: "offline-token", expiresAt: "invalid" },
-    { token: "offline-token", expiresAt: new Date(Date.now() - 60_000).toISOString() }]) {
-    const { client, calls } = harness({}, (path, data) => path.endsWith("issue-session-token") ? response : data);
-    await assert.rejects(client.requestRefund(c), (error: unknown) =>
-      safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SESSION_RESPONSE_MISMATCH");
-    assert.deepEqual(calls.map((call) => call.path), ["/v1/actions/auth/issue-session-token"]);
-  }
-});
-
-test("refund diagnostics preserve SDK origin without claiming a server HTTP rejection", async () => {
-  const { client, calls } = harness();
-  await assert.rejects(client.requestRefund({ orderId, userId, paymentId: "invalid-private-payment-id",
-    amountMinor: 1900, currency: "USD", requestId: userId }), (error: unknown) =>
-    safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SUBMISSION_SDK_REPORTED_STATUS_400");
-  // The real pinned SDK rejects this payment ID before its customer transport runs.
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].path, "/v1/actions/auth/issue-session-token");
-
-  const malformed = harness({}, (path, data) => path.endsWith("create-ticket")
-    ? new Response("private non-JSON response", { status: 200 }) : data);
-  await assert.rejects(malformed.client.requestRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA",
-    amountMinor: 1900, currency: "USD", requestId: userId }), (error: unknown) =>
-    safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SUBMISSION_SDK_REPORTED_STATUS_200");
-  // SDK also uses layer=sdk for response decoding; that layer alone never proves no submission.
-  assert.equal(malformed.calls.filter((call) => call.path.endsWith("create-ticket")).length, 1);
-});
-
-test("USD19 buyer refund uses the same identity as checkout and empty ticket query stays unknown", async () => {
-  const c = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 1900, currency: "USD", requestId: userId };
+test("USD19 merchant refund uses paid amount and empty ticket query stays unknown", async () => {
+  const c = { ...refundCommand, amountMinor: 1900 };
   const { client, calls } = harness({}, (path, data) => path === "/v1/graphql" ? { refundTickets: [] } : data);
   await client.requestRefund(c);
-  assert.deepEqual(calls[0].body, { storeId, buyerIdentity: userId });
-  assert.deepEqual(calls[1].body.requestedAmount, { amount: "19.00", currency: "USD" });
-  assert.equal(calls[1].body.paymentId, c.paymentId);
-  assert.equal(calls[1].headers.get("authorization"), "Bearer offline-token");
-  assert.equal(calls[1].headers.get("x-environment"), "test");
+  assert.deepEqual(calls[0].body.requestedAmount, { amount: "19.00", currency: "USD" });
+  assert.equal(calls[0].body.paymentId, c.paymentId);
+  assert.equal(calls[0].body.buyerIdentity, undefined);
   assert.deepEqual(await client.reconcileRefund(c), { ticketId: null, status: "unknown" });
-  assert.equal(calls.length, 3);
-  assert.equal(calls[2].path, "/v1/graphql");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].path, "/v1/graphql");
 });
 
 function refundDiagnosticFixture(): any {
