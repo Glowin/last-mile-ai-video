@@ -12,8 +12,8 @@ import { users, authSessions } from "../src/server/schema";
 import { issueSession } from "../src/server/auth";
 import { migrate } from "../scripts/migrate.mjs";
 import { createBillingModule, isBillingWebhookRequest } from "../src/server/billing/routes";
-import type { BillingOptions } from "../src/server/billing/service";
-import type { BillingProvider, CheckoutCommand, VerifiedPaymentEvent } from "../src/server/billing/providers";
+import { BillingService, type BillingOptions } from "../src/server/billing/service";
+import type { BillingProvider, CheckoutCommand, VerifiedPaymentEvent, CheckoutPaymentEvent, PancakePaymentEvent, RefundCommand, RefundResult } from "../src/server/billing/providers";
 import type { CreditPack } from "../src/server/billing/catalog";
 
 const integration = !!process.env.BILLING_TEST_DATABASE_URL;
@@ -57,6 +57,32 @@ class MockProvider implements BillingProvider {
     return JSON.parse(Buffer.from(rawBody).toString()) as VerifiedPaymentEvent;
   }
 }
+class BridgeMock extends MockProvider {
+  refundCalls: RefundCommand[] = [];
+  refundResult: RefundResult = { ticketId: "ticket-test", status: "pending" };
+  refundUnknown = false;
+  recovered: VerifiedPaymentEvent[] = [];
+  async requestRefund(command: RefundCommand) {
+    this.refundCalls.push(command);
+    if (this.refundUnknown) throw new Error("lost refund response");
+    return this.refundResult;
+  }
+  async reconcile() { return this.recovered; }
+  async reconcileRefund() { return this.refundResult; }
+}
+function bridgeEvent(provider: BridgeMock, orderId: string, changes: Partial<PancakePaymentEvent> = {}): PancakePaymentEvent {
+  const c = provider.commands.get(orderId)!;
+  return { evidenceType: "pancake", eventId: `paid-${orderId}`, environment: "test", merchantAccountId: provider.merchantAccountId,
+    orderId, userId: c.userId, productId: c.productId, providerProductId: c.providerProductId, priceVersion: c.priceVersion,
+    providerOrderId: `external-${orderId}`, paymentId: `payment-${orderId}`, kind: "payment.succeeded", currency: "USD",
+    amountMinor: 1375, subtotalMinor: 1250, taxMinor: 125, totalMinor: 1375, originalPaidAmountMinor: 1375,
+    reviewReason: null, paidAt: new Date().toISOString(), ...changes };
+}
+function bridge() {
+  const provider = new BridgeMock();
+  const options = { salesEnabled: true, providers: { pancake: provider }, catalog: [pack()] };
+  return { provider, app: harness(options), service: new BillingService(options) };
+}
 function harness(options: BillingOptions = {}) {
   const app = new Hono().basePath("/api");
   app.use("*", async (c, next) => {
@@ -98,7 +124,7 @@ async function checkout(app: TestApp, who: Actor, body = input()) {
   assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
   return (await response.json()).order as { id: string; amountMinor: number; currency: string; credits: number; status: string };
 }
-function event(provider: MockProvider, orderId: string, changes: Partial<VerifiedPaymentEvent> = {}): VerifiedPaymentEvent {
+function event(provider: MockProvider, orderId: string, changes: Partial<CheckoutPaymentEvent> = {}): CheckoutPaymentEvent {
   const command = provider.commands.get(orderId)!;
   assert.ok(command);
   return { eventId: randomUUID(), environment: "test", merchantAccountId: provider.merchantAccountId,
@@ -154,7 +180,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     const rows = await database().execute(sql`SELECT owner FROM video_jobs WHERE id=${legacyJob}::uuid`);
     assert.equal(rows[0].owner, legacyUser);
     const versions = await database().execute(sql`SELECT name FROM schema_migrations ORDER BY name`);
-    assert.deepEqual(versions.map((r) => r.name), ["0001-init.sql", "0002-google-auth.sql", "0003-billing.sql"]);
+    assert.deepEqual(versions.map((r) => r.name), ["0001-init.sql", "0002-google-auth.sql", "0003-billing.sql", "0004-credit-wallet.sql", "0005-pancake-bridge.sql"]);
     const count = await database().execute(sql`SELECT count(*)::int AS n FROM credit_ledger`);
     assert.equal(count[0].n, 0);
   });
@@ -177,7 +203,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     assert.equal(r.headers.get("cache-control"), "no-store");
     const catalog = await r.json();
     assert.equal(catalog.checkoutEnabled, false);
-    assert.ok(catalog.products.every((p: { price: unknown; available: boolean }) => p.price === null && !p.available));
+    assert.ok(catalog.products.every((p: { price: unknown; available: boolean }) => p.price !== null && !p.available));
     for (const provider of ["pancake", "waffo", "stripe", "antom"]) {
       const response = await request(app, who, "/billing/checkout", "POST", { ...input(), provider });
       assert.equal(response.status, 503);
@@ -186,7 +212,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     }
     assert.deepEqual((await (await request(app, who, "/billing/orders")).json()).orders, []);
     const summary = await (await request(app, who, "/billing")).json();
-    assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, previewAccess: false });
+    assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
   });
   await t.test("Google sessions required, expired sessions refreshable, owner mandatory for checkout and checked for reads", async () => {
     const { app } = enabled(), who = await actor();
@@ -357,4 +383,141 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     }
     assert.equal((await webhook(app, payment)).status, 200); assert.equal((await totals(order.id)).credits, 80);
   });
+  await t.test("Pancake tax-exclusive evidence funds before checkout response binding; exact tax and receipt persist", async () => {
+    const { app, provider } = bridge(), who = await actor();
+    let release!: () => void, entered!: () => void;
+    const waiting = new Promise<void>((r) => { release = r; }), started = new Promise<void>((r) => { entered = r; });
+    provider.gate = async () => { entered(); await waiting; };
+    const pending = request(app, who, "/billing/checkout", "POST", input());
+    let orderId!: string;
+    try {
+      await started; orderId = [...provider.commands.keys()][0];
+      const response = await webhook(app, bridgeEvent(provider, orderId));
+      assert.equal(response.status, 200, await response.text());
+      assert.equal((await totals(orderId)).credits, 80);
+    } finally { release(); }
+    assert.equal((await pending).status, 200);
+    const order = (await (await request(app, who, `/billing/orders/${orderId}`)).json()).order;
+    assert.equal(order.subtotalMinor, 1250); assert.equal(order.taxMinor, 125);
+    assert.equal(order.totalMinor, 1375); assert.equal(order.paidAmountMinor, 1375);
+    assert.equal(order.taxBehavior, "exclusive");
+  });
+  await t.test("missing actual receipt persists review evidence and holds only test wallet; query restores exactly once", async () => {
+    const { app, provider, service } = bridge(), who = await actor(), order = await checkout(app, who);
+    const original = bridgeEvent(provider, order.id, { amountMinor: null, originalPaidAmountMinor: null, reviewReason: "PANCAKE_MISSING_ACTUAL_AMOUNT" });
+    assert.equal((await webhook(app, original)).status, 200);
+    assert.equal((await totals(order.id)).credits, 0);
+    const before = await (await request(app, who, "/billing")).json();
+    assert.equal(before.testBlocked, true); assert.equal(before.blocked, false);
+    provider.recovered = [bridgeEvent(provider, order.id)];
+    await service.reconcile(order.id); await service.reconcile(order.id);
+    assert.equal((await webhook(app, original)).status, 200, "original delayed delivery is acknowledged after query enrichment");
+    assert.deepEqual(await totals(order.id), { n: 1, credits: 80 });
+    const after = await (await request(app, who, "/billing")).json();
+    assert.equal(after.testBlocked, false);
+  });
+  await t.test("signed changed subtotal/priceVersion cannot fund; partial external refund is retained and blocks spending", async () => {
+    const { app, provider } = bridge(), who = await actor(), order = await checkout(app, who);
+    assert.equal((await webhook(app, bridgeEvent(provider, order.id, { priceVersion: "changed" }))).status, 409);
+    assert.equal((await webhook(app, bridgeEvent(provider, order.id, { subtotalMinor: 1000 }))).status, 200);
+    assert.equal((await totals(order.id)).n, 0);
+    const paid = await checkout(app, who);
+    assert.equal((await webhook(app, bridgeEvent(provider, paid.id))).status, 200);
+    const partial = bridgeEvent(provider, paid.id, { eventId: "partial-refund", kind: "payment.refunded", amountMinor: 100, reviewReason: "PANCAKE_PARTIAL_REFUND_REVIEW" });
+    assert.equal((await webhook(app, partial)).status, 200);
+    const result = (await (await request(app, who, `/billing/orders/${paid.id}`)).json()).order;
+    assert.equal(result.refundStatus, "review_required"); assert.equal(result.reviewRequired, true);
+    assert.equal((await totals(paid.id)).credits, 80, "no invented proportional credit reversal");
+    assert.equal((await (await request(app, who, "/billing")).json()).testBlocked, true);
+  });
+  await t.test("full pack refund enforces CSRF/owner, freezes once, requests tax-inclusive paid amount, reverses on event only", async () => {
+    const { app, provider } = bridge(), who = await actor(), other = await actor(), order = await checkout(app, who);
+    assert.equal((await webhook(app, bridgeEvent(provider, order.id))).status, 200);
+    const path = `/billing/orders/${order.id}/refund`;
+    assert.equal((await request(app, other, path, "POST", {})).status, 404);
+    assert.equal((await request(app, who, path, "POST", {}, { origin: "https://evil.invalid" })).status, 403);
+    assert.equal((await request(app, who, path, "POST", {}, { "X-KakaReel-Owner": "" })).status, 409);
+    assert.equal((await request(app, who, path, "POST", { amountMinor: 1 })).status, 400);
+    const replies = await Promise.all([request(app, who, path, "POST", {}), request(app, who, path, "POST", {})]);
+    assert.ok(replies.every((r) => r.status === 200));
+    assert.equal(provider.refundCalls.length, 1); assert.equal(provider.refundCalls[0].amountMinor, 1375);
+    assert.equal((await totals(order.id)).credits, 80);
+    assert.equal((await (await request(app, who, "/billing")).json()).testAvailableCredits, 0);
+    const refund = bridgeEvent(provider, order.id, { eventId: "full-refund", kind: "payment.refunded" });
+    assert.equal((await webhook(app, refund)).status, 200); assert.equal((await webhook(app, refund)).status, 200);
+    assert.deepEqual(await totals(order.id), { n: 2, credits: 0 });
+    assert.equal((await (await request(app, who, path.replace("/refund", ""))).json()).order.refundStatus, "succeeded");
+  });
+  await t.test("refund ambiguity stays frozen without resubmitting; query-confirmed rejection releases", async () => {
+    const { app, provider, service } = bridge(), who = await actor(), order = await checkout(app, who);
+    assert.equal((await webhook(app, bridgeEvent(provider, order.id))).status, 200);
+    provider.refundUnknown = true;
+    const path = `/billing/orders/${order.id}/refund`;
+    const result = await request(app, who, path, "POST", {});
+    assert.equal(result.status, 200); assert.equal((await result.json()).refundStatus, "unknown");
+    await request(app, who, path, "POST", {}); assert.equal(provider.refundCalls.length, 1);
+    assert.equal((await (await request(app, who, "/billing")).json()).testAvailableCredits, 0);
+    provider.refundResult = { ticketId: "rejected-ticket", status: "rejected" };
+    await service.reconcile(order.id);
+    assert.equal((await (await request(app, who, "/billing")).json()).testAvailableCredits, 80);
+  });
+  await t.test("refund refuses used/reserved packs and closed window; external refund beyond spending commits debt", async () => {
+    for (const field of ["consumed", "reserved"] as const) {
+      const { app, provider } = bridge(), who = await actor(), order = await checkout(app, who);
+      assert.equal((await webhook(app, bridgeEvent(provider, order.id))).status, 200);
+      if (field === "consumed") await database().execute(sql`UPDATE credit_batches SET consumed=1 WHERE order_id=${order.id}::uuid`);
+      else await database().execute(sql`UPDATE credit_batches SET reserved=1 WHERE order_id=${order.id}::uuid`);
+      assert.equal((await request(app, who, `/billing/orders/${order.id}/refund`, "POST", {})).status, 409);
+      assert.equal(provider.refundCalls.length, 0);
+      const external = bridgeEvent(provider, order.id, { eventId: `refund-${order.id}`, kind: "payment.refunded" });
+      assert.equal((await webhook(app, external)).status, 200);
+      assert.deepEqual(await totals(order.id), { n: 2, credits: 0 });
+      assert.equal((await (await request(app, who, "/billing")).json()).testBlocked, true);
+    }
+    const { app, provider } = bridge(), who = await actor(), old = await checkout(app, who);
+    assert.equal((await webhook(app, bridgeEvent(provider, old.id, { paidAt: new Date(Date.now() - 15 * 86400_000).toISOString() }))).status, 200);
+    const response = await request(app, who, `/billing/orders/${old.id}/refund`, "POST", {});
+    assert.equal(response.status, 409); assert.equal((await response.json()).code, "REFUND_WINDOW_CLOSED");
+  });
+  await t.test("old unknown checkout never calls create again; live adapter never sells even with code option", async () => {
+    const { app, provider } = bridge(), who = await actor(), body = input(), order = await checkout(app, who, body);
+    await database().execute(sql`UPDATE billing_orders SET created_at=now()-interval '24 hours',checkout_status='unknown' WHERE id=${order.id}::uuid`);
+    const response = await request(app, who, "/billing/checkout", "POST", body);
+    assert.equal(response.status, 409); assert.equal((await response.json()).code, "CHECKOUT_RECONCILIATION_REQUIRED");
+    assert.equal(provider.calls, 1);
+    Object.defineProperty(provider, "environment", { value: "live" });
+    assert.equal((await request(app, who, "/billing/checkout", "POST", input())).status, 503);
+    const c = await (await request(app, undefined, "/billing/catalog")).json();
+    assert.equal(c.environment, "live"); assert.equal(c.checkoutEnabled, false);
+  });
+
+  await t.test("late payment query enriches both order and batch time so refund retains full 14-day window", async () => {
+    const { app, provider, service } = bridge(), who = await actor(), order = await checkout(app, who);
+    await database().execute(sql`UPDATE billing_orders SET created_at=now()-interval '15 days' WHERE id=${order.id}::uuid`);
+    const payment = bridgeEvent(provider, order.id, { paidAt: null });
+    assert.equal((await webhook(app, payment)).status, 200);
+    const before = await request(app, who, `/billing/orders/${order.id}/refund`, "POST", {});
+    assert.equal(before.status, 409); assert.equal((await before.json()).code, "REFUND_PAYMENT_TIME_REQUIRED");
+    const paidAt = new Date(Date.now() - 3600_000).toISOString();
+    provider.recovered = [{ ...payment, paidAt }];
+    await service.reconcile(order.id);
+    const [row] = await database().execute(sql`SELECT paid_at FROM credit_batches WHERE order_id=${order.id}::uuid`);
+    assert.equal(new Date(String(row.paid_at)).toISOString(), paidAt);
+    const response = await request(app, who, `/billing/orders/${order.id}/refund`, "POST", {});
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal((await response.json()).refundStatus, "pending");
+    assert.equal(provider.refundCalls.length, 1);
+  });
+
+  await t.test("refund cannot overwrite a previously proven tax or paid receipt", async () => {
+    const { app, provider } = bridge(), who = await actor(), order = await checkout(app, who);
+    assert.equal((await webhook(app, bridgeEvent(provider, order.id))).status, 200);
+    const changed = bridgeEvent(provider, order.id, { eventId: "changed-tax-refund", kind: "payment.refunded",
+      taxMinor: 250, totalMinor: 1500, amountMinor: 1500, originalPaidAmountMinor: 1500 });
+    assert.equal((await webhook(app, changed)).status, 200);
+    const data = (await (await request(app, who, `/billing/orders/${order.id}`)).json()).order;
+    assert.equal(data.paidAmountMinor, 1375); assert.equal(data.taxMinor, 125);
+    assert.equal(data.refundStatus, "review_required"); assert.equal((await totals(order.id)).credits, 80);
+  });
+
 });

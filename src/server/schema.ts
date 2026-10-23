@@ -6,6 +6,7 @@ import {
   jsonb,
   integer,
   index,
+  boolean,
 } from "drizzle-orm/pg-core";
 import type { JobStatus } from "../lib/models";
 export const jobs = pgTable(
@@ -21,6 +22,16 @@ export const jobs = pgTable(
     fingerprint: text("fingerprint").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>(),
     status: text("status").$type<JobStatus>().notNull(),
+    billingMode: text("billing_mode").$type<"preview" | "paid">().notNull().default("preview"),
+    creditEnvironment: text("credit_environment").$type<"test" | "live">(),
+    credits: integer("credits").notNull().default(0),
+    creditState: text("credit_state").$type<"none" | "reserved" | "consumed" | "released">().notNull().default("none"),
+    leaseToken: uuid("lease_token"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    submissionStartedAt: timestamp("submission_started_at", { withTimezone: true }),
+    nextPollAt: timestamp("next_poll_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewRequired: boolean("review_required").notNull().default(false),
+    deliveryVerifiedAt: timestamp("delivery_verified_at", { withTimezone: true }),
     upstreamId: text("upstream_id"),
     resultUrl: text("result_url"),
     createdAt: timestamp("created_at", { withTimezone: true })

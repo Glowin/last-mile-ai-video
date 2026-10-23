@@ -17,7 +17,7 @@ function handleError(error: Error) {
     ? { body: { error: error.message, code: error.code }, status: error.status }
     : { body: { error: "Billing is temporarily unavailable. Please try again.", code: "BILLING_UNAVAILABLE" }, status: 503 as const };
 }
-export function createBillingModule(options: BillingOptions = {}) {
+export function createBillingModule(options?: BillingOptions) {
   const service = new BillingService(options);
   const routes = new Hono<{ Variables: { billingUser: Account; billingPreview: boolean } }>();
   routes.onError((error, c) => { const r = handleError(error); return c.json(r.body, r.status); });
@@ -47,6 +47,11 @@ export function createBillingModule(options: BillingOptions = {}) {
   routes.get("/", async (c) => c.json(await service.summary(c.get("billingUser").id, c.get("billingPreview"))));
   routes.get("/orders", async (c) => c.json(await service.list(c.get("billingUser").id)));
   routes.get("/orders/:id", async (c) => c.json(await service.get(c.get("billingUser").id, c.req.param("id"))));
+  routes.post("/orders/:id/refund", bodyLimit({ maxSize: 1024, onError: (c) => c.json({ error: "Refund request is too large.", code: "BODY_TOO_LARGE" }, 413) }), async (c) => {
+    const input = z.object({}).strict().safeParse(await c.req.json().catch(() => null));
+    if (!input.success) throw new BillingError(400, "INVALID_REFUND_REQUEST", "Send an empty object; refund amount and ownership are determined by the server.");
+    return c.json(await service.requestRefund(c.get("billingUser").id, c.req.param("id")));
+  });
   routes.post("/checkout", bodyLimit({ maxSize: 4096, onError: (c) => c.json({ error: "Checkout request is too large.", code: "BODY_TOO_LARGE" }, 413) }), async (c) => {
     const input = checkoutInput.safeParse(await c.req.json().catch(() => null));
     if (!input.success) throw new BillingError(400, "INVALID_CHECKOUT", "Choose a product and provider with a valid request ID; no pricing or account fields are accepted.");

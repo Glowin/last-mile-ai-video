@@ -36,7 +36,7 @@ export function SiteFooter() {
         <Link href="/pricing">Pricing</Link>
         <Link href="/account">Account</Link>
         <Link href="/privacy">Privacy</Link>
-        <Link href="/terms">Preview terms</Link>
+        <Link href="/terms">Terms</Link>
         <a
           href="https://github.com/Glowin/last-mile-ai-video"
           target="_blank"

@@ -2,7 +2,7 @@ services:
   web:
     build: .
     restart: unless-stopped
-    environment:
+    environment: &app-environment
       DATABASE_URL: ${DATABASE_URL:?Set the project database URL in Dokploy}
       VIBETOKEN_API_KEY: ${VIBETOKEN_API_KEY:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -12,6 +12,15 @@ services:
       GENERATION_DAILY_LIMIT: ${GENERATION_DAILY_LIMIT:-10}
     expose:
       - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    environment: *app-environment
     depends_on:
       db:
         condition: service_healthy

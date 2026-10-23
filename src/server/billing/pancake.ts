@@ -1,8 +1,10 @@
 import { createPublicKey } from "node:crypto";
-import { WaffoPancake, verifyWebhook, type TaxCategory } from "@waffo/pancake-ts";
+import { WaffoPancake, WaffoPancakeError, verifyWebhook, ErrorLayer, type TaxCategory } from "@waffo/pancake-ts";
 import { z } from "zod";
+import { diagnosePancakeRefund } from "./refund-diagnostics";
+import { queryPancakeOrder, inspectPancakeSchema } from "./pancake-query";
 import type { BillingEnvironment } from "../../lib/billing";
-import type { CheckoutCommand } from "./providers";
+import type { BillingProvider, CheckoutCommand, PancakePaymentEvent, RefundCommand, RefundResult } from "./providers";
 
 /** Audited npm release (not GitHub main): @waffo/pancake-ts@0.26.0,
  * gitHead 800e01025473a11b868e7c2f4681dd1f234cff94, 2026-10-21.
@@ -12,15 +14,10 @@ import type { CheckoutCommand } from "./providers";
  * https://docs.waffo.ai/api-reference/endpoints/graphql/orders-and-payments
  * SDK dist/index.{js,d.ts}: authenticated.create, verifyWebhook, WebhookEventData.
  *
- * SDK integration layer only: no BillingProvider registration or sales activation.
- * Service bridge TODO: locate the persisted order using signed external order ID,
- * then compare buyer identity, store/environment, exact amount/currency, and the
- * merchant-authored metadata (product, provider product, price version) against
- * its immutable snapshot. Bind providerOrderId and paymentId with uniqueness and
- * event deduplication inside the ledger transaction; preserve tax evidence.
- * Checkout's sessionId is a creation reference, NOT a webhook-observed field.
- * merchantId signs API requests; storeId is the independently verified webhook
- * scope. API-key environment comes from the key, not the SDK environment option.
+ * The bridge binds signed external order IDs, store, buyer and merchant metadata
+ * in the billing transaction. A checkout session ID is never fabricated.
+ * SDK 0.26.0 exposes customer refund tickets (pending review), not merchant
+ * approval. Keep pending until authenticated executed refund evidence arrives.
  *
  * Before activation: reconcile lost callbacks/expired idempotency keys, verify
  * project-specific store/product ownership and key environment in a real sandbox.
@@ -28,11 +25,33 @@ import type { CheckoutCommand } from "./providers";
  * official endpoint documents it. Offline forwarding is not sandbox acceptance.
  */
 export const PANCAKE_SDK_VERSION = "0.26.0";
+export const PANCAKE_REFUND_TICKET_QUERY = `query($paymentId: String!) {
+  refundTickets(filter: { subjectId: { eq: $paymentId } }, limit: 100) {
+    id subjectId status refundTicketMerchantExternalId versionData { requestedAmount { amount currency } }
+  }
+}`;
 
 export class PancakeError extends Error {
   constructor(readonly code: string) { super(code); this.name = "PancakeError"; }
 }
 function reject(code: string): never { throw new PancakeError(code); }
+// Only locally assigned codes and integer HTTP status escape to server logs.
+// Never log SDK message/errors, response bodies, buyer IDs, tokens or request data.
+export function safePancakeDiagnosticCode(error: unknown): string {
+  if (error instanceof PancakeError && (
+    ["PANCAKE_REFUND_RESPONSE_MISMATCH", "PANCAKE_QUERY_UNCONFIRMED", "PANCAKE_REFUND_QUERY_TRUNCATED", "PANCAKE_QUERY_REVIEW_REQUIRED"].includes(error.code) ||
+    /^PANCAKE_REFUND_(SESSION|SUBMISSION|QUERY)_(HTTP_[1-5][0-9]{2}|TRANSPORT_UNCONFIRMED)$/.test(error.code)
+  )) return error.code;
+  if (error instanceof WaffoPancakeError && Number.isInteger(error.status) && error.status >= 100 && error.status <= 599)
+    return `PANCAKE_SDK_HTTP_${error.status}`;
+  return "PANCAKE_TRANSPORT_UNCONFIRMED";
+}
+function refundStageError(stage: "SESSION" | "SUBMISSION" | "QUERY", error: unknown): never {
+  const suffix = error instanceof WaffoPancakeError && Number.isInteger(error.status) && error.status >= 100 && error.status <= 599
+    ? `HTTP_${error.status}` : "TRANSPORT_UNCONFIRMED";
+  reject(`PANCAKE_REFUND_${stage}_${suffix}`);
+}
+
 const reference = z.string().min(1).max(200);
 const display = z.string().max(32);
 const minor = z.number().int().positive().max(2_147_483_647);
@@ -143,8 +162,8 @@ export type PancakeWebhookScope = {
   platformPublicKey: string;
 };
 
-export function verifyPancakePaymentEvidence(input: { rawBody: Uint8Array; headers: Headers },
-  scope: PancakeWebhookScope): PancakePaymentEvidence {
+function verifyEnvelope(input: { rawBody: Uint8Array; headers: Headers },
+  scope: PancakeWebhookScope) {
   if (input.rawBody.byteLength === 0 || input.rawBody.byteLength > 262_144) reject("PANCAKE_INVALID_BODY");
   if (!["test", "live"].includes(scope.environment) || !reference.safeParse(scope.storeId).success ||
     !scope.platformPublicKey.trim()) reject("PANCAKE_INVALID_SCOPE");
@@ -190,6 +209,13 @@ export function verifyPancakePaymentEvidence(input: { rawBody: Uint8Array; heade
     d.originalChargedAmount !== undefined || d.originalPayment !== undefined)) reject("PANCAKE_EVENT_TYPE_MISMATCH");
   if (refund && (d.refundStatus !== "succeeded" || d.chargedAmount !== undefined || d.listPrice !== undefined ||
     e.eventId === d.paymentId)) reject("PANCAKE_EVENT_TYPE_MISMATCH");
+  return e;
+}
+
+export function verifyPancakePaymentEvidence(input: { rawBody: Uint8Array; headers: Headers },
+  scope: PancakeWebhookScope): PancakePaymentEvidence {
+  const e = verifyEnvelope(input, scope), d = e.data;
+  const refund = e.eventType === "refund.succeeded";
   const actual = refund ? d.refundedAmount : d.chargedAmount;
   const snapshot = refund ? d.originalPayment : d.listPrice;
   if (actual === undefined || snapshot === undefined || (refund && d.originalChargedAmount === undefined))
@@ -243,7 +269,9 @@ export class PancakeClient {
     if (key.asymmetricKeyType !== "rsa" || (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048)
       reject("PANCAKE_INVALID_PLATFORM_KEY");
     const url = new URL(options.successUrl);
-    if (url.protocol !== "https:" || url.username || url.password || url.port) reject("PANCAKE_INVALID_RETURN_URL");
+    if (url.protocol !== "https:" || url.username || url.password ||
+      (url.port && !(options.environment === "test" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))))
+      reject("PANCAKE_INVALID_RETURN_URL");
     const identities = new Set<string>();
     for (const product of options.products) {
       const identity = JSON.stringify([product.productId, product.priceVersion]);
@@ -255,8 +283,18 @@ export class PancakeClient {
     }
     this.environment = options.environment; this.merchantId = options.merchantId; this.storeId = options.storeId;
     this.options = { ...options, products: options.products.map((p) => Object.freeze({ ...p })) };
+    const transport = options.fetch ?? globalThis.fetch.bind(globalThis);
+    const checkedFetch: typeof fetch = async (input, init) => {
+      const response = await transport(input, init);
+      // SDK 0.26.0 unwrapAction checks errors[], not HTTP status. Preserve a
+      // non-2xx rejection even when the gateway omits the standard error envelope.
+      // This wrapper does not alter auth, body, idempotency, or retry any request.
+      if (!response.ok) throw new WaffoPancakeError(response.status,
+        [{ message: "Pancake HTTP request was not successful", layer: ErrorLayer.Gateway }]);
+      return response;
+    };
     this.client = new WaffoPancake({ merchantId: options.merchantId, privateKey: options.privateKey,
-      environment: options.environment === "live" ? "prod" : "test", fetch: options.fetch,
+      environment: options.environment === "live" ? "prod" : "test", fetch: checkedFetch,
       webhookPublicKey: options.platformPublicKey });
   }
   async createCheckout(command: CheckoutCommand): Promise<{ sessionId: string; checkoutUrl: string }> {
@@ -272,7 +310,7 @@ export class PancakeClient {
     // Official endpoint documents taxIncluded; 0.26.0's narrower PriceSnapshot
     // type omits it, but its authenticated wrapper forwards this object unchanged.
     const priceSnapshot = { amount: pancakeDisplayAmount(command.amountMinor, command.currency),
-      taxCategory: product.taxCategory, taxIncluded: true };
+      taxCategory: product.taxCategory, taxIncluded: false };
     const metadata: z.infer<typeof metadataSchema> = {
       kakareel_schema: "one-time-v1", kakareel_order_id: command.orderId, kakareel_user_id: command.userId,
       kakareel_product_id: command.productId, kakareel_provider_product_id: command.providerProductId,
@@ -299,12 +337,108 @@ export class PancakeClient {
       return { sessionId: result.sessionId, checkoutUrl: result.checkoutUrl };
     } catch { reject("PANCAKE_INVALID_CHECKOUT_RESPONSE"); }
   }
+  normalizeWebhook(input: { rawBody: Uint8Array; headers: Headers }): PancakePaymentEvent {
+    const e = verifyEnvelope(input, this.options), d = e.data;
+    const refund = e.eventType === "refund.succeeded";
+    const snapshot = refund ? d.originalPayment : d.listPrice;
+    const actual = refund ? d.refundedAmount : d.chargedAmount;
+    const convert = (value: string | undefined) => value === undefined ? null : pancakeMinorAmount(value, d.currency);
+    let amountMinor: number | null = null, totalMinor: number | null = null, taxMinor: number | null = null;
+    let subtotalMinor: number | null = null, originalPaidAmountMinor: number | null = null, reviewReason: string | null = null;
+    try {
+      amountMinor = convert(actual); totalMinor = convert(snapshot?.total); taxMinor = convert(snapshot?.taxAmount);
+      subtotalMinor = convert(snapshot?.subtotal);
+      originalPaidAmountMinor = refund ? convert(d.originalChargedAmount) : amountMinor;
+      if (amountMinor === null || totalMinor === null || taxMinor === null || subtotalMinor === null || originalPaidAmountMinor === null)
+        reviewReason = "PANCAKE_MISSING_ACTUAL_AMOUNT";
+      else if (amountMinor <= 0 || totalMinor !== subtotalMinor + taxMinor || totalMinor !== originalPaidAmountMinor ||
+        (!refund && amountMinor !== totalMinor) || (d.amount !== undefined && convert(d.amount) !== amountMinor))
+        reviewReason = "PANCAKE_AMOUNT_MISMATCH";
+      else if (refund && amountMinor !== originalPaidAmountMinor) reviewReason = "PANCAKE_PARTIAL_REFUND_REVIEW";
+    } catch { reviewReason = "PANCAKE_INVALID_AMOUNT"; }
+    return {
+      evidenceType: "pancake", eventId: e.eventId, environment: this.environment, merchantAccountId: this.storeId,
+      orderId: d.orderMerchantExternalId, userId: d.merchantProvidedBuyerIdentity,
+      productId: d.orderMetadata.kakareel_product_id, providerProductId: d.orderMetadata.kakareel_provider_product_id,
+      priceVersion: d.orderMetadata.kakareel_price_version, providerOrderId: d.orderId, paymentId: d.paymentId,
+      kind: refund ? "payment.refunded" : "payment.succeeded", currency: d.currency,
+      amountMinor, totalMinor, taxMinor, subtotalMinor, originalPaidAmountMinor, reviewReason,
+      // A delivery timestamp is not the payment time. GraphQL recovers the exact
+      // time for refund eligibility; never extend the window on a delayed callback.
+      paidAt: null,
+    };
+  }
+  async requestRefund(command: RefundCommand): Promise<RefundResult> {
+    let token: string;
+    try { ({ token } = await this.client.auth.issueSessionToken({ storeId: this.storeId, buyerIdentity: command.userId })); }
+    catch (error) { refundStageError("SESSION", error); }
+    // Pinned SDK's actual public capability. It submits a customer ticket; no
+    // invented approval endpoint and no claim that pending means money returned.
+    const { ticket } = await this.client.customer(token).createRefundTicket({
+      paymentId: command.paymentId, reason: "Full unused credit pack refund within 14 days",
+      requestedAmount: { amount: pancakeDisplayAmount(command.amountMinor, command.currency), currency: command.currency },
+      refundTicketMerchantExternalId: command.requestId,
+    }, { idempotencyKey: command.requestId }).catch((error: unknown) => refundStageError("SUBMISSION", error));
+    if (!ticket || ticket.subjectId !== command.paymentId || ticket.refundTicketMerchantExternalId !== command.requestId ||
+      !reference.safeParse(ticket.id).success) reject("PANCAKE_REFUND_RESPONSE_MISMATCH");
+    return { ticketId: ticket.id, status: refundTicketState(ticket.status) };
+  }
+  async reconcileRefund(command: RefundCommand): Promise<RefundResult> {
+    const result = await this.client.graphql.query<{ refundTickets: Array<{
+      id: string; subjectId: string; status: string; refundTicketMerchantExternalId: string;
+      versionData: { requestedAmount: { amount: string; currency: string } };
+    }> }>({ query: PANCAKE_REFUND_TICKET_QUERY, variables: { paymentId: command.paymentId } })
+      .catch((error: unknown) => refundStageError("QUERY", error));
+    if (result.errors?.length || !result.data) reject("PANCAKE_QUERY_UNCONFIRMED");
+    if (result.data.refundTickets.length >= 100) reject("PANCAKE_REFUND_QUERY_TRUNCATED");
+    const matches = result.data.refundTickets.filter((t) => t.refundTicketMerchantExternalId === command.requestId);
+    if (matches.length !== 1) return { ticketId: null, status: "unknown" };
+    const t = matches[0], amount = t.versionData?.requestedAmount;
+    if (t.subjectId !== command.paymentId || !reference.safeParse(t.id).success || !amount || amount.currency !== command.currency ||
+      pancakeMinorAmount(amount.amount, amount.currency) !== command.amountMinor) reject("PANCAKE_REFUND_RESPONSE_MISMATCH");
+    return { ticketId: t.id, status: refundTicketState(t.status) };
+  }
+  async diagnoseRefund(command: RefundCommand) { return diagnosePancakeRefund(this.client, this.options, command); }
+  async inspectRecoverySchema() { return inspectPancakeSchema(this.client); }
+  async reconcile(orderId: string): Promise<PancakePaymentEvent[]> {
+    return queryPancakeOrder(this.client, this.options, orderId);
+  }
   verifyPaymentEvidence(input: { rawBody: Uint8Array; headers: Headers }): PancakePaymentEvidence {
     const evidence = verifyPancakePaymentEvidence(input, this.options);
     const m = evidence.checkoutMetadata;
     const product = this.options.products.find((p) => p.productId === m.kakareel_product_id && p.priceVersion === m.kakareel_price_version);
-    if (!product || product.providerProductId !== m.kakareel_provider_product_id || product.amountMinor !== evidence.amountMinor ||
+    if (!product || product.providerProductId !== m.kakareel_provider_product_id || product.amountMinor !== (evidence.price.totalMinor - evidence.price.taxMinor) ||
       product.currency !== evidence.currency) reject("PANCAKE_PRODUCT_SNAPSHOT_MISMATCH");
     return evidence;
   }
+}
+
+function refundTicketState(status: string): RefundResult["status"] {
+  // Actual 2026-10-23 GraphQL enum has returned, not cancelled. A returned
+  // ticket is not proof of rejection; retain the freeze pending review. Future
+  // states (including the SDK-only cancelled) must not silently release credits.
+  if (status === "rejected") return "rejected";
+  if (status === "failed") return "failed";
+  if (["approved", "processing", "succeeded"].includes(status)) return "processing";
+  if (["pending", "under_review"].includes(status)) return "pending";
+  return "unknown";
+}
+
+export class PancakeBillingProvider implements BillingProvider {
+  readonly id = "pancake" as const;
+  readonly capabilities = { hostedCheckout: true, fullRefundEvents: true, subscriptions: false } as const;
+  readonly client: PancakeClient;
+  constructor(options: PancakeOptions) { this.client = new PancakeClient(options); }
+  get environment() { return this.client.environment; }
+  get merchantAccountId() { return this.client.storeId; }
+  get checkoutHosts() { return this.client.checkoutHosts; }
+  isConfigured() { return true; }
+  async createCheckout(command: CheckoutCommand) {
+    const r = await this.client.createCheckout(command);
+    return { checkoutId: r.sessionId, checkoutUrl: r.checkoutUrl };
+  }
+  async verifyAndNormalizeWebhook(input: { rawBody: Uint8Array; headers: Headers }) { return this.client.normalizeWebhook(input); }
+  reconcile(orderId: string) { return this.client.reconcile(orderId); }
+  requestRefund(command: RefundCommand) { return this.client.requestRefund(command); }
+  reconcileRefund(command: RefundCommand) { return this.client.reconcileRefund(command); }
 }

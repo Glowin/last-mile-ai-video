@@ -2,8 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, IDENTITY_CHANGED_KEY, SESSION_ENDED, IDENTITY_CHANGED_EVENT } from "@/lib/api";
+import { api, prepareStarterCheckout, starterCheckoutEnvironment, starterCheckoutProvider, billingMoney, IDENTITY_CHANGED_KEY, SESSION_ENDED, IDENTITY_CHANGED_EVENT } from "@/lib/api";
 import { GoogleSignIn } from "./google-sign-in";
+import type { BillingCatalogResponse, BillingSummaryResponse, BillingOrder, BillingOrdersResponse, BillingRefundStatus } from "@/lib/billing";
+import styles from "./pricing.module.css";
+
+const refundLabel: Record<BillingRefundStatus, string> = {
+  none: "Not requested", submitting: "Request being submitted", pending: "Pending confirmation",
+  processing: "Processing", unknown: "Outcome unconfirmed", rejected: "Request rejected",
+  failed: "Request failed", succeeded: "Refund confirmed", review_required: "Review required",
+};
+type CreditSummary = BillingSummaryResponse;
+type CreditOrder = BillingOrder;
 
 type Profile = {
   user: { id: string; name: string | null; email: string; createdAt: string };
@@ -22,6 +32,10 @@ export function AccountPanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [billing, setBilling] = useState<CreditSummary | null>(null);
+  const [orders, setOrders] = useState<CreditOrder[]>([]);
+  const [catalog, setCatalog] = useState<BillingCatalogResponse | null>(null);
+  const [billingError, setBillingError] = useState("");
   const epoch = useRef(0);
   const pending = useRef(false);
   const hasProfile = useRef(false);
@@ -34,6 +48,10 @@ export function AccountPanel() {
     setBusy(false);
     hasProfile.current = false;
     setProfile(null);
+    setBilling(null);
+    setOrders([]);
+    setCatalog(null);
+    setBillingError("");
     setState("loading");
     setError("");
     setMessage("");
@@ -54,6 +72,18 @@ export function AccountPanel() {
       setProfile(data);
       setState("ready");
       setMessage(notice);
+      try {
+        const headers = { "X-KakaReel-Owner": data.user.id };
+        const [summary, history, available]: [CreditSummary, BillingOrdersResponse, BillingCatalogResponse] = await Promise.all([
+          api("/billing", { headers }), api("/billing/orders", { headers }), api("/billing/catalog"),
+        ]);
+        if (version !== epoch.current) return;
+        setBilling(summary);
+        setOrders(history.orders);
+        setCatalog(available);
+      } catch (cause) {
+        if (version === epoch.current) setBillingError((cause as Error).message);
+      }
     } catch (cause) {
       if (version !== epoch.current) return;
       setError((cause as Error).message);
@@ -68,6 +98,10 @@ export function AccountPanel() {
       setBusy(false);
       hasProfile.current = false;
       setProfile(null);
+      setBilling(null);
+      setOrders([]);
+      setCatalog(null);
+      setBillingError("");
       setState("signed-out");
       setMessage("");
       setError("Your session has ended. Please sign in again.");
@@ -136,6 +170,34 @@ export function AccountPanel() {
     }
   }
 
+  async function billingAction(action: "checkout" | "refund", orderId?: string) {
+    if (!profile || pending.current) return;
+    if (displayedMarker.current !== identityMarker()) { await load(); return; }
+    const owner = profile.user.id;
+    const version = epoch.current;
+    const headers = { "X-KakaReel-Owner": owner };
+    pending.current = true;
+    setBusy(true);
+    setMessage("");
+    setBillingError("");
+    try {
+      if (action === "checkout") {
+        const result = await prepareStarterCheckout(owner);
+        if (version !== epoch.current || displayedMarker.current !== identityMarker()) return;
+        window.location.assign(result.checkoutUrl);
+      } else {
+        await api(`/billing/orders/${encodeURIComponent(orderId!)}/refund`, { method: "POST", headers, body: JSON.stringify({}) });
+        if (version !== epoch.current) return;
+        await load("Refund request received. Review the current order status below; a request is not confirmation that funds have been returned.");
+      }
+    } catch (cause) {
+      if (version === epoch.current) setBillingError((cause as Error).message);
+    } finally {
+      if (version === epoch.current) { pending.current = false; setBusy(false); }
+    }
+  }
+
+  const testCheckout = starterCheckoutEnvironment(catalog) === "test";
   const others = profile?.sessions.filter((session) => !session.current).length ?? 0;
   return (
     <div aria-busy={state === "loading" || busy}>
@@ -143,7 +205,7 @@ export function AccountPanel() {
       <div role="status" aria-live="polite">
         {state === "loading" && <p>Loading your account…</p>}
         {message && <p>{message}</p>}
-        {busy && <p>Signing out…</p>}
+        {busy && <p>Working…</p>}
       </div>
       {state === "error" && (
         <button className="button secondary" onClick={() => void load()}>Retry account details</button>
@@ -157,6 +219,51 @@ export function AccountPanel() {
         </section>
       )}
       {state === "ready" && profile && (
+        <>
+        <section className="controls-panel" aria-labelledby="account-credits" style={{ marginBottom: 24 }}>
+          <h2 id="account-credits">Credits & orders</h2>
+          {billingError && <p className="error-message" role="alert">{billingError}</p>}
+          {!billing && <p>Credit balance is not available yet. Refresh to check again.</p>}
+          {billing && <>
+            <p className={styles.balance}><strong>{billing.availableCredits ?? "—"}</strong> available credits</p>
+            <p>{billing.reservedCredits ?? "—"} credits reserved for pending generations.</p>
+            <p className="micro">Purchased credits do not expire. Preview allowance is separate.</p>
+            {billing.blocked && <p role="alert">Credit spending is blocked. Review pending orders and refunds before generating.</p>}
+            {!billing.generationChargingEnabled && <p>Paid generation is not yet available. Preview access is separate.</p>}
+            {(testCheckout || billing.testBalanceCredits > 0 || billing.testReservedCredits > 0 || billing.testBlocked) &&
+              <p className={styles.testNotice}>Sandbox only: {billing.testAvailableCredits ?? "—"} available / {billing.testReservedCredits ?? "—"} reserved test credits. These are not purchased credits.{billing.testBlocked ? " Test credit spending is blocked." : ""}</p>}
+          </>}
+          <p><strong>Starter Pack · US$19 + applicable taxes · 150 credits</strong><br />One-time purchase · No expiry · No automatic renewal</p>
+          <p className="micro">Buy again to add credits. A wholly unused pack is refundable within 14 days, including tax, with no additional KakaReel fee. Review the final tax and total before payment.</p>
+          {testCheckout && <p className={styles.testNotice}><strong>Test mode · No real payment</strong><br />This checkout is a sandbox test. The Starter Pack is not yet on sale. Test credits cannot be used for live generation.</p>}
+          <button className="button" disabled={busy || !starterCheckoutProvider(catalog)} onClick={() => void billingAction("checkout")}>
+            {testCheckout ? "Continue to test checkout" : starterCheckoutProvider(catalog) ? "Continue to checkout" : "Not yet on sale"}
+          </button>{" "}
+          <button className="button secondary" disabled={busy} onClick={() => void load()}>Refresh balance & orders</button>
+          <p><Link href="/pricing">View pricing</Link> · <Link href="/terms">Offer & refund terms</Link></p>
+          <h3>Your orders</h3>
+          {billing && !orders.length && <p>No orders yet.</p>}
+          <ul className={styles.orderList}>
+            {orders.map((order) => <li key={order.id} className={styles.orderCard}>
+              <h3>{order.productName} · {order.credits} credits</h3>
+              {order.environment === "test" && <p className={styles.testNotice}>Test mode · No real payment</p>}
+              <p><strong>Status: {order.status}</strong>{order.refundStatus !== "none" && <> · Refund: {refundLabel[order.refundStatus]}</>}</p>
+              {order.reviewRequired && <p role="status">This order needs review. Do not start another payment to resolve it.</p>}
+              {order.status === "pending" && <p>Payment is not confirmed. Refresh this order before starting another checkout.</p>}
+              <dl className={styles.orderDetails}>
+                <div><dt>Order</dt><dd>{order.id}</dd></div>
+                <div><dt>Created</dt><dd><time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString("en-US")}</time></dd></div>
+                <div><dt>Before tax</dt><dd>{billingMoney(order.subtotalMinor, order.currency)}</dd></div>
+                <div><dt>Tax</dt><dd>{billingMoney(order.taxMinor, order.currency)}</dd></div>
+                <div><dt>Total</dt><dd>{billingMoney(order.totalMinor, order.currency)}</dd></div>
+                <div><dt>Amount paid</dt><dd>{billingMoney(order.paidAmountMinor, order.currency)}</dd></div>
+              </dl>
+              <Link className="button secondary small" href={`/billing/return?orderId=${encodeURIComponent(order.id)}`}>Check order status</Link>{" "}
+              {order.status === "paid" && <button className="button secondary small" disabled={busy || !["none", "failed", "rejected"].includes(order.refundStatus)}
+                onClick={() => { if (confirm("Request a refund for this wholly unused pack? Eligibility and the amount actually paid will be checked. A pending request is not a completed refund.")) void billingAction("refund", order.id); }}>Request unused-pack refund</button>}
+            </li>)}
+          </ul>
+        </section>
         <div className="workspace">
           <section className="controls-panel" aria-labelledby="account-profile">
             <h2 id="account-profile">Profile</h2>
@@ -193,7 +300,9 @@ export function AccountPanel() {
             <button className="button small secondary" disabled={busy} onClick={() => void load()}>Refresh sessions</button>
           </section>
         </div>
+        </>
       )}
+      <p className="micro">For billing, refunds, or account help, email <a href="mailto:support@kakareel.com">support@kakareel.com</a>.</p>
     </div>
   );
 }

@@ -31,13 +31,33 @@ import {
   type PublicJob,
 } from "@/lib/models";
 
-import { api, SESSION_ENDED, IDENTITY_CHANGED_KEY, IDENTITY_CHANGED_EVENT } from "@/lib/api";
+import { api, generationRequestId, paidGenerationAllowed, usableGenerationQuote, type GenerationQuote, SESSION_ENDED, IDENTITY_CHANGED_KEY, IDENTITY_CHANGED_EVENT } from "@/lib/api";
 import {
-  pendingRequestId, clearPendingRequest, adoptLegacyPendingRequest,
+  clearPendingRequest, adoptLegacyPendingRequest,
   DamagedPendingRequest, resetDamagedPendingRequest,
 } from "@/lib/pending-request";
 import { GoogleSignIn } from "./google-sign-in";
+import type { BillingSummaryResponse } from "@/lib/billing";
+import { videoCredits } from "@/lib/video-credit-rates";
 
+type StudioJob = PublicJob & {
+  billingMode?: "preview" | "paid";
+  credits?: number;
+  creditState?: "none" | "reserved" | "consumed" | "released";
+  reviewRequired?: boolean;
+};
+const creditStateLabel = {
+  none: "No purchased credits used",
+  reserved: "Credits reserved · outcome pending",
+  consumed: "Credits used · delivery confirmed",
+  released: "Reservation released · no credits consumed",
+};
+const quoteReason: Record<string, string> = {
+  GENERATION_CHARGING_DISABLED: "Paid generation is not yet available.",
+  WALLET_BLOCKED: "Credit spending is blocked for this account. Review your orders.",
+  INSUFFICIENT_CREDITS: "You do not have enough available credits for this generation.",
+  UNVERIFIED_VIDEO_PRICE: "Paid pricing has not been verified for these settings.",
+};
 const statusLabel: Record<string, string> = {
   submitting: "Submitting",
   pending: "Generating",
@@ -76,9 +96,17 @@ export function Studio() {
     name: string | null;
   } | null>(null);
   const [canGenerate, setCanGenerate] = useState(false);
+  const [billingMode, setBillingMode] = useState<"preview" | "paid">("preview");
+  const [billing, setBilling] = useState<BillingSummaryResponse | null>(null);
+  const [billingError, setBillingError] = useState("");
+  const [quote, setQuote] = useState<(GenerationQuote & { payloadKey: string; requestId: string }) | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const quoteFlight = useRef(false);
+  const generationFlight = useRef(false);
+  const [now, setNow] = useState(() => Date.now());
   const identityEpoch = useRef(0);
   const sessionOwner = useRef<string | null>(null);
-  const [jobs, setJobs] = useState<PublicJob[]>([]),
+  const [jobs, setJobs] = useState<StudioJob[]>([]),
     [selected, setSelected] = useState<string>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -90,8 +118,24 @@ export function Studio() {
     jobsRef.current = jobs;
   }, [jobs]);
   const f = getFamily(family)!;
+  const generationPayload = {
+    family, mode, prompt, duration, resolution, ratio, audio,
+    ...(mode === "image" ? { image } : {}),
+  };
+  const payloadKey = JSON.stringify(generationPayload);
+  const currentPayloadKey = useRef(payloadKey);
+  currentPayloadKey.current = payloadKey;
+  const estimatedCredits = videoCredits(generationPayload);
+  const currentQuote = quote?.payloadKey === payloadKey ? quote : null;
+  const paidEnabled = !!user && billing?.generationChargingEnabled === true && billing.blocked === false;
+  const insufficientCredits = billing !== null && (currentQuote?.credits ?? estimatedCredits ?? 0) > billing.availableCredits;
+  const paidReady = !!user && estimatedCredits !== null && paidGenerationAllowed(billing, currentQuote, now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const focused = jobs.find((j) => j.id === selected) ?? jobs[0];
-  function update(j: PublicJob) {
+  function update(j: StudioJob) {
     setJobs((old) =>
       [j, ...old.filter((x) => x.id !== j.id)].sort((a, b) =>
         b.createdAt.localeCompare(a.createdAt),
@@ -104,6 +148,14 @@ export function Studio() {
     setAuthenticated(false);
     setUser(null);
     setCanGenerate(false);
+    setBilling(null);
+    setBillingError("");
+    setBillingMode("preview");
+    setQuote(null);
+    setQuoting(false);
+    quoteFlight.current = false;
+    generationFlight.current = false;
+    setBusy(false);
     setJobs([]);
     setSelected(undefined);
     setPollError("");
@@ -113,6 +165,21 @@ export function Studio() {
     const epoch = identityEpoch.current;
     const d = await api("/jobs");
     if (epoch === identityEpoch.current) setJobs(d.jobs);
+  }
+  async function refreshBilling() {
+    const epoch = identityEpoch.current;
+    const owner = sessionOwner.current;
+    if (!owner) return;
+    try {
+      const summary: BillingSummaryResponse = await api("/billing", { headers: { "X-KakaReel-Owner": owner } });
+      if (epoch !== identityEpoch.current) return;
+      setBilling(summary);
+      setBillingError("");
+    } catch (cause) {
+      if (epoch !== identityEpoch.current) return;
+      setBilling(null);
+      setBillingError((cause as Error).message);
+    }
   }
   async function loadSession() {
     const epoch = identityEpoch.current;
@@ -130,6 +197,7 @@ export function Studio() {
     setChecked(true);
     if (s.authenticated) await refresh();
     else setJobs([]);
+    if (s.user && sessionOwner.current === s.owner) await refreshBilling();
   }
   useEffect(() => {
     let live = true;
@@ -145,7 +213,7 @@ export function Studio() {
       setError("Your session has ended. Please sign in again.");
     };
     const changed = (e: StorageEvent) => {
-      if (e.key === IDENTITY_CHANGED_KEY) {
+      if (e.key === IDENTITY_CHANGED_KEY || e.key === null) {
         clearIdentity();
         void load();
       }
@@ -186,10 +254,10 @@ export function Studio() {
           if (active && epoch === identityEpoch.current) update(d.job);
         }
         failures = 0;
-        if (active) setPollError("");
+        if (active && epoch === identityEpoch.current) { setPollError(""); if (user) await refreshBilling(); }
       } catch {
         failures++;
-        if (active && failures >= 3)
+        if (active && epoch === identityEpoch.current && failures >= 3)
           setPollError(
             "Status checks paused after connection errors. Refresh history to check again.",
           );
@@ -249,49 +317,69 @@ export function Studio() {
       setBusy(false);
     }
   }
+  async function requestQuote() {
+    const owner = sessionOwner.current;
+    if (!owner || !user || quoteFlight.current || busy || !prompt.trim() || (mode === "image" && !image)) return;
+    quoteFlight.current = true;
+    setQuoting(true);
+    setQuote(null);
+    setError("");
+    const epoch = identityEpoch.current;
+    const requestedPayload = payloadKey;
+    try {
+      const requestId = await generationRequestId(owner, generationPayload, "paid");
+      if (epoch !== identityEpoch.current || requestedPayload !== currentPayloadKey.current) return;
+      const result: GenerationQuote = await api("/jobs/quote", {
+        method: "POST", headers: { "X-KakaReel-Owner": owner },
+        body: JSON.stringify({ ...generationPayload, requestId }),
+      });
+      if (epoch !== identityEpoch.current || requestedPayload !== currentPayloadKey.current) return;
+      setNow(Date.now());
+      setQuote({ ...result, payloadKey: requestedPayload, requestId });
+      await refreshBilling();
+    } catch (cause) {
+      if (epoch === identityEpoch.current) {
+        if (cause instanceof DamagedPendingRequest) setDamagedPending(cause);
+        setError((cause as Error).message);
+      }
+    } finally {
+      if (epoch === identityEpoch.current) { quoteFlight.current = false; setQuoting(false); }
+    }
+  }
   async function generate(e: React.FormEvent) {
     e.preventDefault();
     const owner = sessionOwner.current;
-    if (busy || !owner) return;
+    if (busy || generationFlight.current || !owner) return;
+    if (billingMode === "paid" && (!paidReady || !usableGenerationQuote(currentQuote))) {
+      setError(insufficientCredits ? "Insufficient available credits. Add credits before submitting this generation." : "Review a current quote before using paid credits.");
+      return;
+    }
+    if (billingMode === "preview" && !canGenerate) return;
+    generationFlight.current = true;
     setBusy(true);
     setError("");
     const epoch = identityEpoch.current;
     // Persist a stable id before the network call. Reusing identical input after a
     // network interruption cannot accidentally create and bill a second video.
-    const body = {
-      family,
-      mode,
-      prompt,
-      duration,
-      resolution,
-      ratio,
-      audio,
-      ...(mode === "image" ? { image } : {}),
-    };
+    const body = { ...generationPayload, billingMode };
     try {
-      const digest = Array.from(
-        new Uint8Array(
-          await crypto.subtle.digest(
-            "SHA-256",
-            new TextEncoder().encode(JSON.stringify(body)),
-          ),
-        ),
-      )
-        .map((x) => x.toString(16).padStart(2, "0"))
-        .join("");
+      const requestId = billingMode === "paid" ? currentQuote!.requestId
+        : await generationRequestId(owner, generationPayload, "preview");
       if (epoch !== identityEpoch.current) return;
-      const requestId = pendingRequestId(owner, digest);
       const d = await api("/jobs", {
         method: "POST",
         headers: { "X-KakaReel-Owner": owner },
-        body: JSON.stringify({ ...body, requestId }),
+        body: JSON.stringify({ ...body, requestId, ...(billingMode === "paid" ? { quoteId: currentQuote!.quoteId } : {}) }),
       });
       if (epoch !== identityEpoch.current) return;
       update(d.job);
       setSelected(d.job.id);
       setTab("preview");
       clearPendingRequest(owner, requestId);
+      setQuote(null);
+      if (user) await refreshBilling();
     } catch (e) {
+      if (epoch !== identityEpoch.current) return;
       if (e instanceof DamagedPendingRequest) setDamagedPending(e);
       setError((e as Error).message);
       try {
@@ -300,7 +388,7 @@ export function Studio() {
         /* Keep the original error. */
       }
     } finally {
-      setBusy(false);
+      if (epoch === identityEpoch.current) { generationFlight.current = false; setBusy(false); }
     }
   }
   return (
@@ -426,6 +514,20 @@ export function Studio() {
                 </button>
               </div>
               <form onSubmit={generate}>
+                <label className="field-label" htmlFor="billing-mode">Generation access</label>
+                <select id="billing-mode" value={billingMode} disabled={busy} onChange={(event) => {
+                  setBillingMode(event.target.value as "preview" | "paid");
+                  setQuote(null);
+                  setError("");
+                }}>
+                  <option value="preview">Preview · invitation allowance</option>
+                  <option value="paid" disabled={!paidEnabled}>Paid · purchased credits{paidEnabled ? "" : " · unavailable"}</option>
+                </select>
+                <p className="micro">{billingMode === "preview" ? "Preview uses the invitation allowance, not your purchased credits." : "Paid mode uses your purchased credits. Review the quote, then submit explicitly."}</p>
+                {!paidEnabled && <p className="micro">Paid generation is not yet available for this account. <Link href="/pricing">View the published offer</Link>.</p>}
+                {billing && <p className="micro">{billing.availableCredits} available credits · {billing.reservedCredits} reserved{billing.blocked ? " · Spending blocked" : ""}</p>}
+                {billingError && <p className="micro" role="status">Credit balance unavailable. <button type="button" className="text-link" onClick={() => void refreshBilling()}>Check again</button></p>}
+
                 <label className="field-label" htmlFor="model">
                   Model<span>01</span>
                 </label>
@@ -562,6 +664,16 @@ export function Studio() {
                     MiniMax H3 handles audio through its model defaults.
                   </p>
                 )}
+                {billingMode === "paid" && <div className="access-panel" aria-live="polite">
+                  <b>Review credit cost</b>
+                  <p>{estimatedCredits === null ? "Paid pricing is not verified for these settings. Image-to-video paid generation is unavailable." : `Published rate: ${estimatedCredits} credits. Request a quote for your exact inputs.`}</p>
+                  {currentQuote && <p>{currentQuote.available
+                    ? `${currentQuote.credits} credits · ${usableGenerationQuote(currentQuote, now) ? `Quote expires at ${new Date(currentQuote.expiresAt).toLocaleTimeString("en-US")}` : "Quote expired. Request a new quote."}`
+                    : quoteReason[currentQuote.reason ?? ""] || "A paid quote is not available for these settings."}</p>}
+                  {insufficientCredits && <p role="alert">Insufficient available credits. This generation needs {currentQuote?.credits ?? estimatedCredits} credits; you have {billing?.availableCredits}. A Starter Pack contains 150 credits. <Link href="/account">View your balance and packs</Link>.</p>}
+                  <button type="button" className="button secondary small" disabled={!paidEnabled || busy || quoting || estimatedCredits === null || !prompt.trim() || (mode === "image" && !image)} onClick={() => void requestQuote()}>{quoting ? "Checking quote…" : "Get current quote"}</button>
+                  <p className="micro">Quotes last five minutes. Credits are reserved during generation. Unknown outcomes remain pending; no automatic retry. Download completed videos promptly: storage is not permanent.</p>
+                </div>}
                 {error && (
                   <p role="alert" className="error-message">
                     {error}
@@ -583,18 +695,18 @@ export function Studio() {
                   type="submit"
                   disabled={
                     busy ||
-                    !canGenerate ||
+                    (billingMode === "paid" ? !paidReady : !canGenerate) ||
                     !ready ||
                     !prompt.trim() ||
                     (mode === "image" && !image)
                   }
                 >
                   <Sparkles size={18} />
-                  {busy ? "Working…" : "Generate video"}
+                  {busy ? "Working…" : billingMode === "paid" ? `Generate · ${currentQuote?.credits ?? estimatedCredits ?? "—"} credits` : "Generate preview video"}
                   <ArrowUpRight size={18} />
                 </button>
                 <p className="micro centered">
-                  Uses the limited project demo allowance. No checkout.
+                  {billingMode === "preview" ? "Uses the limited preview allowance. No purchased credits spent." : "Submitting reserves the quoted credits. Check pending tasks before starting another generation."}
                 </p>
               </form>
               {!user && (
@@ -740,7 +852,7 @@ export function Studio() {
                           {focused.status === "failed"
                             ? "The provider could not finish this task. You can edit your prompt and create a new generation."
                             : focused.status === "unknown"
-                              ? "The request may already be running. Recover it with the same ID to avoid a duplicate generation."
+                              ? "The request may already be running. This is not a confirmed failure; any credit reservation remains pending. Recover this task to check it without automatically starting another video."
                               : user
                                 ? "Your idea is with the model. This may take a few minutes. Sign in to this account to check it later on any device."
                                 : "Your idea is with the model. This may take a few minutes. You can safely leave this tab and return in the same browser."}
@@ -794,8 +906,13 @@ export function Studio() {
                       )}
                     </div>
                     <p>{focused.prompt}</p>
+                    {focused.billingMode && <p className="micro">
+                      {focused.billingMode === "paid" ? `Paid generation · ${focused.credits ?? "—"} credits` : "Preview generation"}
+                      {focused.creditState && <> · {creditStateLabel[focused.creditState]}</>}
+                    </p>}
+                    {focused.reviewRequired && <p className="micro" role="status">This task needs review. Check its status before submitting another generation.</p>}
                     <small>
-                      Save completed videos promptly. Provider links may expire.
+                      Save completed videos promptly. Provider links may expire; permanent storage is not included.
                       {user
                         ? " Your video history is saved to your account."
                         : " History belongs to this browser session. Sign in with Google to keep it with your account."}

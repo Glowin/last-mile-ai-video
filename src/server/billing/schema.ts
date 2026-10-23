@@ -1,6 +1,6 @@
-import { pgTable, uuid, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { users } from "../schema";
-import type { BillingProviderId, BillingEnvironment, BillingOrderStatus } from "../../lib/billing";
+import type { BillingProviderId, BillingEnvironment, BillingOrderStatus, BillingRefundStatus } from "../../lib/billing";
 const time = (name: string) => timestamp(name, { withTimezone: true });
 // Database constraints/indexes live in 0003-billing.sql; no changes to auth schema.
 export const billingOrders = pgTable("billing_orders", {
@@ -15,6 +15,13 @@ export const billingOrders = pgTable("billing_orders", {
   merchantAccountId: text("merchant_account_id").notNull(),
   providerProductId: text("provider_product_id").notNull(),
   amountMinor: integer("amount_minor").notNull(),
+  subtotalMinor: integer("subtotal_minor").notNull(),
+  taxMinor: integer("tax_minor"), totalMinor: integer("total_minor"), paidAmountMinor: integer("paid_amount_minor"),
+  taxBehavior: text("tax_behavior").$type<"exclusive">().notNull().default("exclusive"),
+  providerOrderId: text("provider_order_id"), paidAt: time("paid_at"),
+  refundStatus: text("refund_status").$type<BillingRefundStatus>().notNull().default("none"),
+  refundRequestId: uuid("refund_request_id"), refundTicketId: text("refund_ticket_id"),
+  refundRequestedAt: time("refund_requested_at"), reviewReason: text("review_reason"),
   currency: text("currency").notNull(),
   credits: integer("credits").notNull(),
   status: text("status").$type<BillingOrderStatus>().notNull().default("pending"),
@@ -36,8 +43,9 @@ export const billingEvents = pgTable("billing_events", {
   providerPaymentId: text("provider_payment_id"),
   orderId: uuid("order_id").notNull().references(() => billingOrders.id),
   fingerprint: text("fingerprint").notNull(),
+  evidence: jsonb("evidence"),
   kind: text("kind").notNull(),
-  outcome: text("outcome").$type<"applied" | "ignored">().notNull(),
+  outcome: text("outcome").$type<"applied" | "ignored" | "review_required">().notNull(),
   createdAt: time("created_at").notNull().defaultNow(),
 });
 export const creditLedger = pgTable("credit_ledger", {

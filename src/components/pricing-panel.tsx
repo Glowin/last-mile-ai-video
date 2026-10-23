@@ -1,3 +1,11 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { api, starterCheckoutEnvironment, starterCheckoutProvider } from "@/lib/api";
+import type { BillingCatalogResponse } from "@/lib/billing";
+import { VIDEO_CREDIT_RATES } from "@/lib/video-credit-rates";
+import { getFamily } from "@/lib/models";
+import { STARTER_CREDIT_OFFER } from "@/lib/credit-offer";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, Check, Film, SlidersHorizontal, UserRound } from "lucide-react";
@@ -10,15 +18,15 @@ const questions = [
   },
   {
     question: "Can I buy credits now?",
-    answer: "Not yet. Paid checkout is not open. Pack prices, credit quantities, eligible models and any expiry terms will be published before launch. Signing in today does not reserve a pack or create a purchase.",
+    answer: "The Starter Pack price is published: US$19 plus applicable taxes for 150 credits. Sales have not opened yet. Signing in does not reserve a pack or create a purchase. Availability is checked before checkout.",
   },
   {
     question: "Will I need a subscription?",
-    answer: "The planned paid option is a one-time credit pack. There is no annual plan or unlimited-generation offer. The exact pack details are still being finalized.",
+    answer: "No. The Starter Pack is a one-time purchase with no automatic renewal and no expiry. You can buy it again to add another 150 credits to your balance when sales open.",
   },
   {
     question: "How many videos will a credit pack make?",
-    answer: "There is no confirmed video count yet. Credit use will depend on the model, clip duration and resolution you choose. A credit is a usage unit, not a promise of one video; the usage rates will be published with pricing.",
+    answer: "It depends on the model, duration and resolution. Review the text-to-video rates below and request an exact quote in the studio. One credit does not mean one video. Some settings need more than the 150 credits in one pack.",
   },
   {
     question: "Why sign in with Google?",
@@ -26,11 +34,35 @@ const questions = [
   },
   {
     question: "What happens if a generation fails or I need a refund?",
-    answer: "Paid-generation and refund terms are still being finalized. Those terms will be published before checkout opens, including how failed generations and unused credits are handled. No automatic credit return or refund policy is promised at this stage.",
+    answer: "Under the paid offer, a confirmed failed generation consumes no credits. An uncertain status stays pending until resolved; it is not automatically retried or treated as a failure. A wholly unused pack is refundable within 14 days for the full amount paid, including tax, with no KakaReel refund fee. A delivered video that does not suit your taste does not qualify for an automatic refund. These are the paid-offer rules; sales have not opened yet.",
   },
 ];
 
+export function StarterPackAction({ catalog, notice = "Not yet on sale" }: { catalog: BillingCatalogResponse | null; notice?: string }) {
+  const testMode = starterCheckoutEnvironment(catalog) === "test";
+  const available = !!starterCheckoutProvider(catalog) && !testMode;
+  return <div className={styles.cardActions}>
+    <p className={testMode ? styles.testNotice : styles.checkoutNotice} role="status">
+      {testMode ? "Test mode · No real payment. Not yet on sale." : available ? "Available to purchase" : notice}
+    </p>
+    <Link className={styles.secondaryButton} href="/account">{testMode ? "View test checkout in your account" : available ? "Continue to your account" : "Sign in to prepare"} <ArrowUpRight size={18} aria-hidden="true" /></Link>
+  </div>;
+}
+
 export function PricingPanel() {
+  const [catalog, setCatalog] = useState<BillingCatalogResponse | null>(null);
+  const [catalogState, setCatalogState] = useState("Checking sale availability…");
+  useEffect(() => {
+    let active = true;
+    api("/billing/catalog").then((data: BillingCatalogResponse) => {
+      if (!active) return;
+      setCatalog(data);
+      setCatalogState("Not yet on sale");
+    }).catch(() => { if (active) setCatalogState("Sale availability could not be checked. Checkout is unavailable."); });
+    return () => { active = false; };
+  }, []);
+  const testMode = starterCheckoutEnvironment(catalog) === "test";
+  const available = !!starterCheckoutProvider(catalog) && !testMode;
   return (
     <div className={`shell ${styles.page}`}>
       <section className={styles.hero} aria-labelledby="pricing-title">
@@ -38,8 +70,8 @@ export function PricingPanel() {
           <span className={styles.eyebrow}>PRICING & ACCESS</span>
           <h1 id="pricing-title">A little idea.<br /><em>Room to take flight.</em></h1>
           <p className={styles.lead}>
-            Explore the studio in our invite-only preview. One-time credit
-            packs are next, with prices announced before paid access opens.
+            One simple pack for your next ideas. Published pricing, no subscription.
+            Explore the invite-only preview while paid access is being prepared.
           </p>
           <a className={styles.inlineLink} href="#access-options">
             Explore your options <ArrowRight size={17} aria-hidden="true" />
@@ -85,42 +117,54 @@ export function PricingPanel() {
           <article className={`${styles.card} ${styles.plannedCard}`} aria-labelledby="credits-title">
             <div className={styles.cardTop}>
               <span className={styles.packIcon} aria-hidden="true"><span /><span /><span /></span>
-              <span className={`${styles.badge} ${styles.plannedBadge}`}>Planned</span>
+              <span className={`${styles.badge} ${styles.plannedBadge}`}>{available ? "One-time purchase" : "Not yet on sale"}</span>
             </div>
-            <h3 id="credits-title">Credit packs</h3>
+            <h3 id="credits-title">{STARTER_CREDIT_OFFER.name}</h3>
             <p className={styles.cardIntro}>One-time packs for the clips you want to make.</p>
             <div className={styles.offer}>
-              <p className={styles.offerTitle}>Price announced<br />before launch</p>
-              <p>Pack sizes and usage rates to be confirmed.</p>
+              <p className={styles.offerTitle}>US$19 <small>+ applicable taxes</small></p>
+              <p><strong>{STARTER_CREDIT_OFFER.credits} credits</strong> · One-time purchase</p>
             </div>
             <ul className={styles.features}>
-              <li><ArrowRight size={17} aria-hidden="true" />One-time purchase planned</li>
-              <li><ArrowRight size={17} aria-hidden="true" />Usage varies by model and video settings</li>
-              <li><ArrowRight size={17} aria-hidden="true" />Review pack details and total before paying</li>
+              <li><ArrowRight size={17} aria-hidden="true" />No expiry · No automatic renewal</li>
+              <li><ArrowRight size={17} aria-hidden="true" />Buy again to add another 150 credits</li>
+              <li><ArrowRight size={17} aria-hidden="true" />14-day refund for a wholly unused pack</li>
             </ul>
-            <div className={styles.cardActions}>
-              <p className={styles.checkoutNotice}>Paid checkout is not yet open.</p>
-              <Link className={styles.secondaryButton} href="/account">Sign in to prepare <ArrowUpRight size={18} aria-hidden="true" /></Link>
-            </div>
+            <StarterPackAction catalog={catalog} notice={catalogState} />
             <p className={styles.small}>Signing in creates no order or payment commitment.</p>
           </article>
         </div>
+      </section>
+
+      <section className={styles.rates} aria-labelledby="video-rates">
+        <span className={styles.eyebrow}>PLAN YOUR NEXT CLIP</span>
+        <h2 id="video-rates">Text-to-video credit rates</h2>
+        <p className={styles.small}>Paid-offer rates. Sales have not opened yet. Request a current quote in the studio before generating.</p>
+        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Text-to-video credit rates">
+          <table>
+            <thead><tr><th scope="col">Model</th><th scope="col">Resolution</th><th scope="col">Length</th><th scope="col">Credits</th></tr></thead>
+            <tbody>{VIDEO_CREDIT_RATES.map((rate) => <tr key={`${rate.family}-${rate.resolution}-${rate.duration}`}>
+              <td>{getFamily(rate.family)?.name}</td><td>{rate.resolution}</td><td>{rate.duration}s</td><td>{rate.credits}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <p className={styles.small}>Seedance 1080p for 10 seconds costs 160 credits, more than one Starter Pack. You need sufficient available credits; repeat purchases add to your balance. Image-to-video pricing is not yet verified and paid image generation is unavailable.</p>
       </section>
 
       <section className={styles.explainer} aria-labelledby="credits-explained">
         <div className={styles.explainerHeading}>
           <span className={styles.eyebrow}>UNDERSTANDING CREDITS</span>
           <h2 id="credits-explained">Different clips.<br /><em>Different possibilities.</em></h2>
-          <p>Credit packs are still in preparation. Here is what to look for when pricing is announced.</p>
+          <p>The paid offer is published; sales have not opened yet. Your quote makes the credit cost clear before you generate.</p>
         </div>
         <div className={styles.explainerItems}>
           <article>
             <SlidersHorizontal size={20} aria-hidden="true" />
-            <div><h3>Your settings shape usage</h3><p>Model, duration and resolution affect how many credits a generation uses. Rates are not yet published.</p></div>
+            <div><h3>Your settings shape usage</h3><p>Model, duration and resolution affect the credit cost. Studio quotes are valid for five minutes and apply to the exact inputs you choose.</p></div>
           </article>
           <article>
             <Film size={20} aria-hidden="true" />
-            <div><h3>Know the total before you pay</h3><p>At launch, review the pack price, included credits and final total, including any applicable taxes, before confirming a payment.</p></div>
+            <div><h3>Know the total before you pay</h3><p>US$19 is before tax. Applicable tax and the final total are shown before you confirm payment. Repeat purchases add credits; they never start a subscription.</p></div>
           </article>
           <article>
             <UserRound size={20} aria-hidden="true" />
@@ -133,7 +177,8 @@ export function PricingPanel() {
         <div>
           <span className={styles.eyebrow}>BEFORE YOUR FIRST CLIP</span>
           <h2 id="pricing-questions">A few good<br />questions.</h2>
-          <Link className={styles.inlineLink} href="/terms">Read preview terms <ArrowUpRight size={16} aria-hidden="true" /></Link>
+          <Link className={styles.inlineLink} href="/terms">Read the offer terms <ArrowUpRight size={16} aria-hidden="true" /></Link>
+          <p className={styles.small}>Questions about pricing or refunds? Email <a className={styles.inlineLink} href="mailto:support@kakareel.com">support@kakareel.com</a>.</p>
         </div>
         <div className={styles.faq}>
           {questions.map(({ question, answer }) => (

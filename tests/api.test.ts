@@ -2,11 +2,20 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { app } from "../src/server/app";
+import { createApp } from "../src/server/app";
+import { providerRequest } from "../src/server/provider";
+// Exercise the actual provider HTTP adapter against mocked fetch. Delivery-network
+// behavior is tested separately; this legacy API suite must not fetch example.com.
+const app = createApp({ videoProvider: {
+  kind: "fake",
+  request: providerRequest,
+  verifyDelivery: async () => true,
+} });
 import { database, closeDatabase } from "../src/server/db";
 const integration = !!process.env.DATABASE_URL;
 const originalFetch = global.fetch;
 let calls = 0,
+  lookups = 0,
   failNext = false;
 const upstream = new Map<
   string,
@@ -51,7 +60,7 @@ before(async () => {
     "Integration tests require the dedicated loopback QA DB",
   );
   assert.equal(u.pathname, "/video_qa");
-  await database().execute(sql`TRUNCATE video_jobs,demo_login_attempts`);
+  await database().execute(sql`TRUNCATE credit_allocations,credit_audit,video_quotes,video_jobs,demo_login_attempts`);
   global.fetch = async (url, init) => {
     assert.ok(
       String(url).startsWith("https://vibetoken.cn/v1/videos/generations"),
@@ -69,6 +78,7 @@ before(async () => {
       }
       return Response.json(upstream.get(key));
     }
+    lookups++;
     const parsed = new URL(String(url));
     const requestId = parsed.searchParams.get("client_request_id");
     const t = requestId
@@ -138,7 +148,7 @@ test(
       data: [{ url: "https://example.com/test-output.mp4" }],
     });
     await database().execute(
-      sql`UPDATE video_jobs SET updated_at=now()-interval '10 seconds' WHERE id=${i.requestId}::uuid`,
+      sql`UPDATE video_jobs SET next_poll_at=now()-interval '10 seconds' WHERE id=${i.requestId}::uuid`,
     );
     const complete = await (
       await request(`/jobs/${i.requestId}`, "GET", alice)
@@ -151,19 +161,21 @@ test(
       await request("/jobs", "POST", alice, second)
     ).json();
     assert.equal(unknown.job.status, "unknown");
+    const lookupsBeforeRecovery = lookups;
     const recovered = await (
       await request(`/jobs/${second.requestId}/recover`, "POST", alice)
     ).json();
     assert.equal(recovered.job.status, "pending");
+    assert.equal(lookups, lookupsBeforeRecovery + 1);
     assert.equal(upstream.size, 2);
-    assert.equal(calls, 3);
+    assert.equal(calls, 2);
     const rows = await database().execute(
       sql`SELECT count(*)::int AS n FROM video_jobs WHERE payload IS NOT NULL`,
     );
     assert.equal(rows[0].n, 0);
     process.env.GENERATION_DAILY_LIMIT = "2";
     assert.equal((await request("/jobs", "POST", alice, input())).status, 429);
-    assert.equal(calls, 3);
+    assert.equal(calls, 2);
     // Existing idempotent requests still work after the limit is reached.
     assert.equal((await request("/jobs", "POST", alice, i)).status, 200);
     assert.equal((await request("/jobs/not-a-uuid", "GET", alice)).status, 404);

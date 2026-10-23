@@ -314,3 +314,20 @@
 @media (prefers-reduced-motion: reduce) {
   .primaryButton, .secondaryButton { transition: none; }
 }
+.offerTitle small { display: block; font-size: 14px; font-weight: 400; line-height: 1.6; letter-spacing: 0; margin-top: 8px; }
+.rates { margin-top: 48px; }
+.rates h2 { font-size: 28px; letter-spacing: -.8px; }
+.tableScroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.rates table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+.rates th, .rates td { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.rates th { background: #eaf0df; font-weight: 600; }
+.rates tr:last-child td { border-bottom: 0; }
+.orderList { display: grid; gap: 20px; padding: 0; list-style: none; }
+.orderCard { border: 1px solid var(--line); border-radius: 10px; padding: 20px; overflow-wrap: anywhere; }
+.orderCard h3 { margin-top: 0; }
+.orderCard .orderDetails > div { grid-template-columns: minmax(100px, .7fr) minmax(0, 1fr); }
+.balance { font-size: 28px; margin-bottom: 8px; }
+@media (max-width: 480px) {
+  .rates th, .rates td { padding: 12px 10px; font-size: 12px; }
+  .orderCard .orderDetails > div { grid-template-columns: 1fr; }
+}

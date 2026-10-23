@@ -1,9 +1,9 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
-import { TaxCategory } from "@waffo/pancake-ts";
+import { TaxCategory, WaffoPancakeError, ErrorLayer } from "@waffo/pancake-ts";
 import { PancakeError, PancakeClient, pancakeDisplayAmount, pancakeMinorAmount,
-  verifyPancakePaymentEvidence, type PancakeOptions } from "../src/server/billing/pancake";
+  verifyPancakePaymentEvidence, safePancakeDiagnosticCode, type PancakeOptions } from "../src/server/billing/pancake";
 import { defaultProviders, type CheckoutCommand } from "../src/server/billing/providers";
 
 // Offline protocol/client tests using the ACTUAL npm SDK, not sandbox acceptance.
@@ -40,8 +40,8 @@ function paymentFixture(): Record<string, any> {
     data: { orderId: "ORD_5dXBtmF2HLlHfbPNm0Wcnz", orderStatus: "completed", buyerEmail: "customer@example.com",
       merchantProvidedBuyerIdentity: userId, orderMerchantExternalId: orderId,
       currency: "USD", orderMetadata: { ...metadata }, productMetadata: {},
-      chargedAmount: "29.00", amount: "29.00", taxAmount: "2.90", taxRate: 10, taxName: "Consumption Tax",
-      subtotal: "26.10", total: "29.00", listPrice: { total: "29.00", subtotal: "26.10", taxAmount: "2.90", taxRate: 10, taxName: "Consumption Tax" },
+      chargedAmount: "31.90", amount: "31.90", taxAmount: "2.90", taxRate: 10, taxName: "Consumption Tax",
+      subtotal: "29.00", total: "31.90", listPrice: { total: "31.90", subtotal: "29.00", taxAmount: "2.90", taxRate: 10, taxName: "Consumption Tax" },
       productName: "Pro Plan", paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", paymentStatus: "succeeded",
       paymentMethod: "card", paymentLast4: "4242", paymentDate: "2026-03-10" } };
 }
@@ -52,7 +52,7 @@ function refundFixture(): Record<string, any> {
   delete f.data.chargedAmount;
   f.data.originalPayment = f.data.listPrice;
   delete f.data.listPrice;
-  Object.assign(f.data, { refundedAmount: "29.00", originalChargedAmount: "29.00", taxAmount: "0.00",
+  Object.assign(f.data, { refundedAmount: "31.90", originalChargedAmount: "31.90", taxAmount: "0.00",
     refundTicketMerchantExternalId: "REF-2026-00891", refundStatus: "succeeded",
     refundReason: "Customer requested refund", refundCreatedAt: "2026-03-12T09:15:00.000Z" });
   return f;
@@ -65,16 +65,21 @@ function signedRaw(raw: string | Uint8Array, timestamp = Date.now(), privateKey 
 const signed = (f = paymentFixture()) => signedRaw(JSON.stringify(f));
 const errorCode = (code: string) => (error: unknown) => error instanceof PancakeError && error.code === code;
 
-function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path: string, data: any) => any) {
+function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path: string, data: any, body?: any) => any) {
   const calls: { path: string; headers: Headers; body: any }[] = [];
   const transport: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     assert.equal(url.origin, "https://api.waffo.ai");
     const headers = new Headers(init?.headers), raw = String(init?.body);
-    const canonical = `POST\n${url.pathname}\n${headers.get("x-timestamp")}\n${createHash("sha256").update(raw).digest("base64")}`;
-    assert.equal(verify("RSA-SHA256", Buffer.from(canonical), merchant.publicKey,
-      Buffer.from(headers.get("x-signature")!, "base64")), true, "real SDK request RSA signature");
-    assert.equal(headers.get("x-merchant-id"), merchantId);
+    if (url.pathname.endsWith("refund-ticket/create-ticket")) {
+      assert.equal(headers.get("authorization"), "Bearer offline-token");
+      assert.equal(headers.get("x-environment"), "test");
+    } else {
+      const canonical = `POST\n${url.pathname}\n${headers.get("x-timestamp")}\n${createHash("sha256").update(raw).digest("base64")}`;
+      assert.equal(verify("RSA-SHA256", Buffer.from(canonical), merchant.publicKey,
+        Buffer.from(headers.get("x-signature")!, "base64")), true, "real SDK request RSA signature");
+      assert.equal(headers.get("x-merchant-id"), merchantId);
+    }
     calls.push({ path: url.pathname, headers, body: JSON.parse(raw) });
     let data: any;
     if (url.pathname === "/v1/actions/auth/issue-session-token")
@@ -82,13 +87,19 @@ function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path
     else if (url.pathname === "/v1/actions/checkout/create-session")
       data = { sessionId, checkoutUrl: `https://pancake.waffo.ai/store/fixture/checkout/${sessionId}`,
         expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
+    else if (url.pathname === "/v1/graphql") data = {};
+    else if (url.pathname === "/v1/actions/refund-ticket/create-ticket") data = { ticket: {
+      id: "TKT_fixture", status: "pending", subjectId: JSON.parse(raw).paymentId,
+      refundTicketMerchantExternalId: JSON.parse(raw).refundTicketMerchantExternalId,
+    } };
     else throw new Error("Unexpected SDK endpoint");
-    return Response.json({ data: mutateResponse ? mutateResponse(url.pathname, data) : data });
+    const response = mutateResponse ? mutateResponse(url.pathname, data, JSON.parse(raw)) : data;
+    return response instanceof Response ? response : Response.json({ data: response });
   };
   const client = new PancakeClient({ ...scope, merchantId, privateKey: merchant.privateKey,
     successUrl: "https://example.com/billing/return",
     products: [{ productId: command.productId, providerProductId, priceVersion: command.priceVersion,
-      amountMinor: 2900, currency: "USD", credits: 80, taxCategory: TaxCategory.DigitalGoods }],
+      amountMinor: 2900, currency: "USD", credits: 80, taxCategory: TaxCategory.SaaS }],
     getOrderCreatedAt: async () => new Date(Date.now() - 60_000), fetch: transport, ...overrides });
   return { client, calls };
 }
@@ -114,7 +125,7 @@ test("actual SDK sends authenticated checkout, integer price and stable idempote
       assert.equal(c.body.orderMerchantExternalId, orderId);
       assert.equal(c.body.buyerEmail, command.buyerEmail);
       assert.equal(c.body.buyerIdentity, undefined);
-      assert.deepEqual(c.body.priceSnapshot, { amount: "29.00", taxCategory: "digital_goods", taxIncluded: true });
+      assert.deepEqual(c.body.priceSnapshot, { amount: "29.00", taxCategory: "saas", taxIncluded: false });
       assert.deepEqual(c.body.metadata, metadata);
       assert.equal(c.body.withTrial, undefined);
       assert.equal(c.body.successUrl, `https://example.com/billing/return?orderId=${orderId}`);
@@ -181,8 +192,8 @@ test("signed official-shaped success is evidence, never a fabricated normalized 
   assert.equal(e.orderId, orderId); assert.equal(e.userId, userId);
   assert.equal(e.providerOrderId, "ORD_5dXBtmF2HLlHfbPNm0Wcnz");
   assert.equal(e.paymentId, "PAY_6eYCunG3IMmIgcQOnaXdoA");
-  assert.equal(e.kind, "payment.succeeded"); assert.equal(e.amountMinor, 2900);
-  assert.deepEqual(e.price, { totalMinor: 2900, subtotalMinor: 2610, taxMinor: 290 });
+  assert.equal(e.kind, "payment.succeeded"); assert.equal(e.amountMinor, 3190);
+  assert.deepEqual(e.price, { totalMinor: 3190, subtotalMinor: 2900, taxMinor: 290 });
   assert.equal("checkoutId" in e, false); assert.equal("merchantAccountId" in e, false);
   assert.deepEqual(client.verifyPaymentEvidence(input), e, "same delivery returns stable evidence; database owns deduplication");
   const f = paymentFixture(); f.id = "850e8400-e29b-41d4-a716-446655440003";
@@ -191,7 +202,7 @@ test("signed official-shaped success is evidence, never a fabricated normalized 
 
 test("full refund identifies original payment, not the refund event ID; no partial/failed refunds", () => {
   const e = verifyPancakePaymentEvidence(signed(refundFixture()), scope);
-  assert.equal(e.kind, "payment.refunded"); assert.equal(e.amountMinor, 2900);
+  assert.equal(e.kind, "payment.refunded"); assert.equal(e.amountMinor, 3190);
   assert.equal(e.businessEventId, "REF_4cWAtlE1GKkGebONl9Xbnx");
   assert.equal(e.paymentId, "PAY_6eYCunG3IMmIgcQOnaXdoA");
   for (const mutate of [
@@ -215,11 +226,11 @@ test("RSA verifies exact raw body; tampering, wrong key, malformed UTF-8 and ove
   assert.throws(() => verifyPancakePaymentEvidence(signedRaw(Buffer.from([0xc3, 0x28])), scope));
   assert.throws(() => verifyPancakePaymentEvidence(signedRaw(" ".repeat(262145)), scope));
   const pretty = JSON.stringify(paymentFixture(), null, 2);
-  assert.equal(verifyPancakePaymentEvidence(signedRaw(pretty), scope).amountMinor, 2900);
+  assert.equal(verifyPancakePaymentEvidence(signedRaw(pretty), scope).amountMinor, 3190);
 });
 
 test("timestamp replay policy covers delayed retry and rejects stale/future/forged header variants", () => {
-  assert.equal(verifyPancakePaymentEvidence(signedRaw(JSON.stringify(paymentFixture()), Date.now() - 40 * 60_000), scope).amountMinor, 2900);
+  assert.equal(verifyPancakePaymentEvidence(signedRaw(JSON.stringify(paymentFixture()), Date.now() - 40 * 60_000), scope).amountMinor, 3190);
   for (const age of [46 * 60_000, -61_000])
     assert.throws(() => verifyPancakePaymentEvidence(signedRaw(JSON.stringify(paymentFixture()), Date.now() - age), scope));
   for (const age of [46 * 60_000, -61_000]) {
@@ -275,7 +286,7 @@ test("duplicate member names and mixed/invented schemas fail even with a valid R
   for (const duplicate of [
     raw.replace('"mode":"test"', '"mode":"prod","mode":"test"'),
     raw.replace('"mode":"test"', '"mo\\u0064e":"test","mode":"test"'),
-    raw.replace('"chargedAmount":"29.00"', '"chargedAmount":"28.00","chargedAmount":"29.00"'),
+    raw.replace('"chargedAmount":"31.90"', '"chargedAmount":"28.00","chargedAmount":"31.90"'),
     raw.replace('"kakareel_schema":"one-time-v1"', '"kakareel_schema":"other","kakareel_schema":"one-time-v1"'),
   ]) assert.throws(() => verifyPancakePaymentEvidence(signedRaw(duplicate), scope), errorCode("PANCAKE_DUPLICATE_JSON_MEMBER"));
   for (const mutate of [
@@ -299,7 +310,7 @@ test("opaque provider IDs, additive fields, and extensible signature headers rem
   input.headers.set("X-Waffo-Signature", `${sig}, ${t}, v2=future`);
   const e = verifyPancakePaymentEvidence(input, scope);
   assert.equal(e.paymentId, "charge:v2:123");
-  assert.equal(e.amountMinor, 2900);
+  assert.equal(e.amountMinor, 3190);
   assert.equal("futureField" in e.checkoutMetadata, false);
   assert.equal("extra" in e, false);
 });
@@ -314,4 +325,137 @@ test("checkout return URL carries this server order and preserves unrelated quer
   assert.equal(returned.searchParams.get("lang"), "en");
   assert.equal(returned.searchParams.has("status"), false);
   assert.equal(returned.searchParams.has("success"), false);
+});
+
+function recoveryFixture(): any {
+  return {
+    onetimeOrders: [{ id: "ORD_5dXBtmF2HLlHfbPNm0Wcnz", status: "completed", orderMerchantExternalId: orderId,
+      buyer: userId, scopeStore: storeId, testMode: true, metadata: JSON.stringify(metadata) }],
+    payments: [{ id: "PAY_6eYCunG3IMmIgcQOnaXdoA", orderId: "ORD_5dXBtmF2HLlHfbPNm0Wcnz", status: "succeeded",
+      orderMerchantExternalId: orderId, testMode: true, periodNumber: null, createdAt: "2026-10-01T00:00:00.000Z",
+      snapshotAmountDetails: { subtotal: "29.00", taxAmount: "2.90", total: "31.90", currency: "USD" },
+      pspAmountDetails: { amount: "31.90", currency: "USD" }, refunds: [] }],
+  };
+}
+function recoveryHarness(data = recoveryFixture()) {
+  return harness({}, (path, current, body) => {
+    if (path !== "/v1/graphql") return current;
+    assert.deepEqual(body.variables, { storeId, ref: orderId });
+    assert.match(body.query, /pspAmountDetails \{ amount currency \}/);
+    assert.match(body.query, /testMode/);
+    assert.doesNotMatch(body.query, /scopeEnvironment|buyerIdentity/);
+    return data;
+  });
+}
+test("real SDK authenticated GraphQL recovers stale callbacks from actual receipt, scoped identity and metadata", async () => {
+  const stale = paymentFixture(); stale.timestamp = "2026-01-01T00:00:00.000Z";
+  assert.throws(() => verifyPancakePaymentEvidence(signed(stale), scope));
+  const { client, calls } = recoveryHarness();
+  const result = await client.reconcile(orderId);
+  assert.equal(calls.length, 1); assert.ok(calls.every((c) => c.path === "/v1/graphql"));
+  assert.equal(result.length, 1); assert.equal(result[0].evidenceType, "pancake");
+  assert.equal(result[0].amountMinor, 3190); assert.equal(result[0].subtotalMinor, 2900);
+  assert.equal(result[0].reviewReason, null); assert.equal(result[0].eventId, "PAY_6eYCunG3IMmIgcQOnaXdoA");
+  assert.equal("checkoutId" in result[0], false);
+});
+test("query missing channel amount cannot substitute nonzero snapshot; missing scope/schema fails closed", async () => {
+  const fixture = recoveryFixture(); fixture.payments[0].pspAmountDetails = null;
+  const { client } = recoveryHarness(fixture);
+  const [result] = await client.reconcile(orderId);
+  assert.equal(result.amountMinor, null); assert.equal(result.totalMinor, 3190);
+  assert.equal(result.reviewReason, "PANCAKE_MISSING_ACTUAL_AMOUNT");
+  for (const change of [{ scopeStore: "STO_other" }, { testMode: false }, { buyer: orderId }]) {
+    const f = recoveryFixture(); Object.assign(f.onetimeOrders[0], change);
+    await assert.rejects(recoveryHarness(f).client.reconcile(orderId));
+  }
+
+});
+test("query returns successful refunds before purchases; partial refund retains actual amount for review", async () => {
+  for (const amount of ["31.90", "10.00"]) {
+    const f = recoveryFixture();
+    f.payments[0].refunds.push({ id: "RFD_fixture", paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", testMode: true, status: "succeeded", pspAmountDetails: { amount, currency: "USD" } });
+    const results = await recoveryHarness(f).client.reconcile(orderId);
+    assert.equal(results[0].kind, "payment.refunded"); assert.equal(results[1].kind, "payment.succeeded");
+    assert.equal(results[0].reviewReason, amount === "31.90" ? null : "PANCAKE_PARTIAL_REFUND_REVIEW");
+  }
+});
+test("bridge preserves signed incomplete or partial financial facts as review evidence; never invents receipt", async () => {
+  const { client } = harness();
+  const missing = paymentFixture(); delete missing.data.chargedAmount;
+  const m = client.normalizeWebhook(signed(missing));
+  assert.equal(m.amountMinor, null); assert.equal(m.reviewReason, "PANCAKE_MISSING_ACTUAL_AMOUNT");
+  const partial = refundFixture(); partial.data.refundedAmount = partial.data.amount = "10.00";
+  const p = client.normalizeWebhook(signed(partial));
+  assert.equal(p.amountMinor, 1000); assert.equal(p.originalPaidAmountMinor, 3190);
+  assert.equal(p.reviewReason, "PANCAKE_PARTIAL_REFUND_REVIEW");
+});
+test("pinned SDK submits real customer refund ticket with stable key and full paid amount; pending is not success", async () => {
+  const { client, calls } = harness();
+  const refundId = "650e8400-e29b-41d4-a716-446655440012";
+  const result = await client.requestRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: refundId });
+  assert.equal(result.status, "pending"); assert.equal(result.ticketId, "TKT_fixture");
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].body, { storeId, buyerIdentity: userId });
+  assert.deepEqual(calls[1].body.requestedAmount, { amount: "31.90", currency: "USD" });
+  assert.equal(calls[1].body.refundTicketMerchantExternalId, refundId);
+  assert.equal(calls[1].headers.get("x-idempotency-key"), refundId);
+});
+test("refund ticket query distinguishes failure/rejection from ambiguous/executed status; no false success", async () => {
+  const refundId = "650e8400-e29b-41d4-a716-446655440012";
+  for (const [status, expected] of [["pending", "pending"], ["under_review", "pending"], ["approved", "processing"], ["processing", "processing"],
+    ["succeeded", "processing"], ["rejected", "rejected"], ["failed", "failed"], ["returned", "unknown"], ["cancelled", "unknown"], ["future", "unknown"]]) {
+    const { client } = harness({}, (path, data) => path !== "/v1/graphql" ? data : { refundTickets: [{ id: "TKT_fixture", subjectId: "PAY_6eYCunG3IMmIgcQOnaXdoA", status,
+      refundTicketMerchantExternalId: refundId, versionData: { requestedAmount: { amount: "31.90", currency: "USD" } } }] });
+    assert.equal((await client.reconcileRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: refundId })).status, expected);
+  }
+});
+
+test("refund diagnostics distinguish session, submission, and response validation without exposing SDK details", async () => {
+  const command = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: "650e8400-e29b-41d4-a716-446655440012" };
+  for (const [endpoint, expected] of [["issue-session-token", "PANCAKE_REFUND_SESSION_HTTP_403"], ["create-ticket", "PANCAKE_REFUND_SUBMISSION_HTTP_403"]]) {
+    const { client } = harness({}, (path, data) => {
+      if (path.endsWith(endpoint)) throw new WaffoPancakeError(403, [{ message: "sensitive-provider-details-must-not-escape", layer: ErrorLayer.Gateway }]);
+      return data;
+    });
+    await assert.rejects(client.requestRefund(command), (error: unknown) => safePancakeDiagnosticCode(error) === expected);
+  }
+  const { client } = harness({}, (path, data) => path.endsWith("create-ticket") ? { ticket: { ...data.ticket, subjectId: "wrong" } } : data);
+  await assert.rejects(client.requestRefund(command), (error: unknown) => safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_RESPONSE_MISMATCH");
+  assert.equal(safePancakeDiagnosticCode(new Error("sensitive-network-details")), "PANCAKE_TRANSPORT_UNCONFIRMED");
+  assert.equal(safePancakeDiagnosticCode(new PancakeError("PRIVATE_DATA")), "PANCAKE_TRANSPORT_UNCONFIRMED");
+});
+
+test("non-2xx without SDK errors envelope remains an HTTP rejection, never a fabricated ticket; no retry", async () => {
+  const { client, calls } = harness({}, (path, data) => path.endsWith("create-ticket")
+    ? Response.json({ error: "private-gateway-message" }, { status: 403 }) : data);
+  await assert.rejects(client.requestRefund({ orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: userId }),
+    (error: unknown) => safePancakeDiagnosticCode(error) === "PANCAKE_REFUND_SUBMISSION_HTTP_403");
+  assert.equal(calls.filter((c) => c.path.endsWith("create-ticket")).length, 1);
+});
+function refundDiagnosticFixture(): any {
+  return { payment: { id: "PAY_6eYCunG3IMmIgcQOnaXdoA", status: "succeeded", testMode: true,
+    orderMerchantExternalId: orderId, pspAmountDetails: { amount: "31.90", currency: "USD" },
+    onetimeOrder: { storeId, testMode: true, merchantProvidedBuyerIdentity: userId, orderMerchantExternalId: orderId }, refunds: [] },
+    byPayment: [], byReference: [] };
+}
+test("refund diagnostics use one authenticated query, expose only safe facts, and never submit or unfreeze", async () => {
+  const c = { orderId, userId, paymentId: "PAY_6eYCunG3IMmIgcQOnaXdoA", amountMinor: 3190, currency: "USD", requestId: userId };
+  const fixture = refundDiagnosticFixture();
+  const { client, calls } = harness({}, (path, data, body) => {
+    if (path !== "/v1/graphql") throw new Error("Diagnosis may only query");
+    assert.deepEqual(body.variables, { paymentId: c.paymentId, reference: c.requestId });
+    return fixture;
+  });
+  const absent = await client.diagnoseRefund(c);
+  assert.equal(absent.code, "PANCAKE_REFUND_NO_TICKET_OBSERVED");
+  assert.equal(absent.automaticRetryAllowed, false);
+  for (const secret of [orderId, userId, storeId, c.paymentId]) assert.equal(JSON.stringify(absent).includes(secret), false);
+  fixture.byPayment.push({ id: "TKT_fixture", subjectId: c.paymentId, status: "pending", refundTicketMerchantExternalId: "another-reference" });
+  assert.equal((await client.diagnoseRefund(c)).code, "PANCAKE_REFUND_OTHER_TICKET_OBSERVED");
+  fixture.byPayment[0].refundTicketMerchantExternalId = c.requestId;
+  fixture.byReference = fixture.byPayment;
+  assert.equal((await client.diagnoseRefund(c)).code, "PANCAKE_REFUND_MATCHING_TICKET_OBSERVED");
+  fixture.payment.testMode = false;
+  assert.equal((await client.diagnoseRefund(c)).code, "PANCAKE_REFUND_DIAGNOSTIC_SCOPE_MISMATCH");
+  assert.ok(calls.every((call) => call.path === "/v1/graphql"));
 });

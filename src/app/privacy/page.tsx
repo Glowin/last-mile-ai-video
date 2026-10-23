@@ -1,12 +1,12 @@
 import { SiteHeader, SiteFooter } from "@/components/site-header";
-export const metadata = { title: "Preview privacy", robots: { index: false } };
+export const metadata = { title: "Privacy", robots: { index: false } };
 export default function Privacy() {
   return (
     <>
       <SiteHeader />
       <main id="main" className="shell prose">
-        <h1>Your preview data.</h1>
-        <p>This page describes the early preview, updated October 21, 2026.</p>
+        <h1>Your data.</h1>
+        <p>This page describes the preview and preparation for paid access, updated October 23, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For
@@ -57,19 +57,35 @@ export default function Privacy() {
         <p>
           Automatic retention periods and self-service deletion are not
           implemented yet. Account details, session security records, and
-          generation history are retained until deletion is arranged. Ask the
-          project owner through your preview invitation channel to request
-          deletion. If you do not have that contact, open a repository issue
-          asking for a private contact method. Do not post personal information
+          generation history are retained until deletion is arranged. For
+          privacy questions or deletion requests, email{" "}
+          <a href="mailto:support@kakareel.com">support@kakareel.com</a>.
+          Do not post personal information
           or credentials in a public issue. Provider retention is governed
           separately by its policies. Download completed videos promptly;
           provider links may expire.
         </p>
+        <h2>Orders, credits and payments</h2>
+        <p>
+          Packs are not yet on sale. When paid access opens, we will retain order
+          identifiers, purchased credits, prices, tax and payment amounts, payment
+          and refund status, and credit reservations and usage linked to your
+          account. These records help reconcile payments and resolve billing
+          questions. Sandbox transactions are labeled as tests and kept separate
+          from your purchased-credit balance.
+        </p>
+        <p>
+          Checkout will direct you to the available payment provider. Payment
+          details are collected by that provider, not in the studio's video
+          prompt or account forms. Do not send payment credentials through
+          prompts, public issues, or support messages. Order and payment records
+          may need to be retained to meet accounting and legal obligations even
+          if you request account deletion.
+        </p>
         <h2>Analytics and requests</h2>
         <p>
           The app does not include advertising or analytics SDKs. Hosting and
-          model providers may retain operational logs. There is no payment
-          information collection in this preview.
+          model providers may retain operational logs. Paid sales are not yet open; you do not need payment details to explore the preview.
         </p>
       </main>
       <SiteFooter />

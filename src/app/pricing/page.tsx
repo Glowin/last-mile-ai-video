@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import { PricingPanel } from "@/components/pricing-panel";
 import { SiteFooter, SiteHeader } from "@/components/site-header";
 
-const title = "AI Video Pricing & One-Time Credit Packs | KakaReel";
+const title = "150 AI Video Credits for US$19 + Tax | KakaReel";
 
 const description =
-  "Explore KakaReel's invite-only AI video preview and planned one-time credit packs. Public pricing will be announced before paid checkout opens.";
+  "Starter Pack: 150 AI video credits for US$19 plus applicable taxes. One-time purchase, no expiry or automatic renewal. Published offer; not yet on sale.";
 
 export const metadata: Metadata = {
   title: { absolute: title },

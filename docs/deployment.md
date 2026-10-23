@@ -1,13 +1,13 @@
 ---
 title: "本地开发与 Hostinger Dokploy 部署"
-date: 2026-10-20
-source: "项目实现；Dokploy Docker Compose 文档"
-status: "生产服务已部署；当前验收状态见 launch.md"
+date: 2026-10-23
+source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档"
+status: "既有预览已部署；本轮待发布验收；worker 镜像与空库启动通过；生产库备份目录可读"
 ---
 
 # 运行结构
 
-Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzle 存任务。共享 VPS 上先用一个应用构建，独立数据库，避免多个前后端构建同时争用资源。上游提供持久化异步任务，MVP 未引入 Redis 队列。
+Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzle 存任务。共享 VPS 上先用一个应用构建，独立数据库，避免多个前后端构建同时争用资源。上游提供持久化异步任务，MVP 未引入 Redis 队列。本轮准备代码新增同库持久化 worker，用于不依赖用户打开页面的轮询和恢复；Web 与 worker 启动都通过同一迁移锁。worker 镜像构建和空库 start → migrate → once 已验收，本轮代码尚待生产部署验收；有任务恢复和生产常驻不能由空库退出成功外推。
 
 ## 配置边界
 
@@ -31,7 +31,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 使用 Node.js 22 和 pnpm 10.27.0，先 `pnpm install --frozen-lockfile`。外部配置文件路径由操作者提供，以下占位路径不应直接执行：
 
 ```sh
-node --env-file=/absolute/external/runtime.env --import tsx scripts/migrate.ts
+node --env-file=/absolute/external/runtime.env --import tsx scripts/migrate.mjs
 node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next dev --hostname 127.0.0.1
 ```
 
@@ -59,11 +59,36 @@ Docker 生产阶段必须复制 `public/`，否则代码引用的鸮鹦鹉素材
 
 `pnpm typecheck`、`pnpm test`、`pnpm build`、`docker build -t kakareel:local .`。
 
-普通 `pnpm test` 不配置数据库时跳过数据库集成用例。完整集成测试须使用独立、可清空的本机 PostgreSQL，主机固定 `127.0.0.1`、库名固定 `video_qa`，外部测试配置提供随机签名密钥与邀请口令、测试假 API Key 和本机 APP_URL：
+### 完整测试的独立数据库
+
+普通 `pnpm test` 未提供相应变量时会跳过数据库集成用例，不能称为完整验收。2026-10-23 按当前 `tests/` 读取的入口如下；全部为可丢弃的本机测试库，不能连接生产库或保存官方支付记录的 Pancake 沙盒库。五个库须彼此独立，可由同一临时 PostgreSQL 实例承载。
+
+| 环境变量 | 使用测试 | 当前代码检查与准备要求 |
+|---|---|---|
+| `DATABASE_URL` | `tests/api.test.ts` | 主机 `127.0.0.1`，库名 `video_qa`；先应用全部迁移。测试会 TRUNCATE 任务、报价、分配和审计等表 |
+| `AUTH_TEST_DATABASE_URL` | `tests/auth.test.ts` | 主机 `127.0.0.1`，库名 `video_auth_qa`；测试自行 DROP／重建 public schema、构造旧版本并执行并发迁移 |
+| `BILLING_TEST_DATABASE_URL` | `tests/billing.test.ts` | 主机 `127.0.0.1`，库名 `video_billing_qa`；测试自行 DROP／重建 public schema、构造旧用户／任务并迁移 |
+| `ACCOUNT_TEST_DATABASE_URL` | `tests/account-profile.test.ts` | 协议 `postgresql:`，主机 `127.0.0.1`，库名 `video_account_qa`，角色 `account_test`；必须显式非 5432 端口，无 query／fragment；初始 public schema 无表。测试自行迁移，收尾清空自身 schema |
+| `CREDIT_TEST_DATABASE_URL` | `tests/credit-wallet.integration.test.ts`、`tests/credit-migration.integration.test.ts`、`tests/model-options.test.ts` 的 runner 集成用例 | 固定 `127.0.0.1:55439`，库名 `video_credit_qa`；先应用全部迁移。迁移回填测试另建随机 schema，验证后删除；其余用例会写测试用户、订单、钱包与任务 |
+
+上表库名、角色与端口是测试源码中的固定假设，不是生产配置。不要给五个变量填同一连接串；AUTH／BILLING 的 schema 重置会破坏其他测试的数据。ACCOUNT 库每次运行须保持空库前置条件。测试进程结束后由操作者回收自己创建的临时数据库／容器，不能据一次通过推断全部资源已清理。
+
+外部测试配置同时提供 `NODE_ENV`（test）、仅供测试的 `SESSION_SECRET`（至少 32 字符）、`DEMO_ACCESS_CODE`（至少 12 字符）、假 `VIBETOKEN_API_KEY`、假 `GOOGLE_CLIENT_ID`、本机 `APP_URL`；`GENERATION_DAILY_LIMIT` 使用测试值或默认值。不得载入真实上游、Google 或支付凭据。`BILLING_TEST_DATABASE_URL` 只是离线账单集成库入口，与开启官方隔离沙盒的 `BILLING_TEST_ENABLED` 不同；离线全测不启用后者。
+
+先由操作者创建上述五个可丢弃库并核对 URL 与角色。AUTH、BILLING、ACCOUNT 的迁移由各测试自行负责；只预迁移基础 API 库和 CREDIT 库。以下外部路径是占位，须换成经核对的**测试专用**配置文件，不可使用生产或官方支付沙盒配置：
 
 ```sh
-node --env-file=/absolute/external/test.env --import tsx scripts/migrate.ts
+node --env-file=/absolute/external/test.env scripts/migrate.mjs
+node --env-file=/absolute/external/test.env --input-type=module -e 'import { migrate } from "./scripts/migrate.mjs"; const url = process.env.CREDIT_TEST_DATABASE_URL; if (!url) throw new Error("Set CREDIT_TEST_DATABASE_URL for the disposable credit QA database"); await migrate(url);'
 node --env-file=/absolute/external/test.env --import tsx --test tests/*.test.ts
 ```
 
-集成用例会清空该测试库内任务表，使用 mock 上游，不产生真实生成费用。覆盖会话隔离、重复提交、超时恢复、参数映射、每日上限和来源校验。测试通过仍不能代替真实视频与生产部署验收。
+这里使用 Node 原生 test runner 加 `tsx` loader；数据库用例依赖真实 PostgreSQL，上游与付款调用使用 mock／fake provider，不产生真实视频或支付。必须检查日志的 pass／fail／skipped，而非只看退出码。主会话 2026-10-23 完整测试日志 `/private/tmp/kakareel-tests-final.log` 已核为 **168 passed、0 failed、0 skipped**；这是该次快照的结果，不替代 worker 容器运行、真实渠道或生产部署验收。
+
+## 一次性积分包 worker（2026-10-23）
+
+Compose 的 worker 使用 Dockerfile `worker` target，保留 TypeScript runtime，只运行任务恢复与结算；没有公网端口。2026-10-23 主会话确认该 target 镜像构建 passed，并以非 root UID 1000 在空 `video_worker_qa` 验证 start → 5 项迁移 → once，退出码 0、jobs 0，未配置上游 Key；本轮代码仍未 commit／deploy。应用服务仍是默认最终 runner target。生产数据库已由主会话经授权 `pg_dump` 到既有卷：26722 bytes，`pg_restore --list` 可读、输出 72 行，实际路径不写公开仓库；尚不代表完成恢复演练。发布时仍须验证生产 `0004`／`0005` 迁移、Web 与 worker 都存活及既有任务不会重新提交。正式销售和生成收费开关仍在代码层关闭。
+
+Pancake 沙盒只在独立部署和独立数据库配置 `.env.example` 的测试变量，生产 Compose 默认不传这些测试凭证。测试角色、数据库、OAuth／域名及回调需单独配置；详细契约和手动恢复命令见 [支付后端](billing-backend.md)。
+
+主会话接续验收：空库启动、5 项迁移及 once 退出已核；继续验证有任务时的持久恢复、重启幂等，再核真实部署版本、Web／worker 常驻存活及正式开关关闭。当前等待退款诊断代码停写后统一提交，尚未发布。只用获授权的已有任务或离线 fake provider，不为证明 worker 存活新建真实付费视频。镜像构建、离线测试和健康接口均不能单独证明上述行为。官方沙盒付款、退款与税费的当前证据见 [支付后端](billing-backend.md#2026-10-23-已验与未验)。

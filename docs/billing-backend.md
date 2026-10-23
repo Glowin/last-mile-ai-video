@@ -1,165 +1,103 @@
 ---
-title: "KakaReel 支付后端基础与接入边界"
-date: 2026-10-21
-status: "基础已部署，所有真实渠道关闭，尚不能收款"
+title: "KakaReel 一次性积分包与支付后端"
+date: 2026-10-23
+source: "主会话 2026-10-23 官方沙盒与邮箱回读；本地完整测试日志；当前代码"
+status: "168 项测试通过；首笔零税额官方沙盒付款已核；worker 空库启动与生产库备份已核；退款 unknown 冻结中，待发布验收，正式收费关闭"
 ---
 
-# 支付后端基础
+# 现行范围
 
-本轮只提供一次性积分包的订单、验签适配边界、事件状态机和整数积分账本。默认商品无价格、无积分数量、未开售；Pancake、Waffo、Stripe、Antom 的 provider registry 为空。已固定官方 Pancake SDK `0.26.0` 并准备独立 SDK 接入层；尚未接入订单事务、创建商户、执行真实／真实渠道沙盒交易或发放真实付费额度。不把 mock 验收写成生产支付可用。
+江昪已确认 Starter Pack：US$19／150 credits、一次性、无自动续费、积分不过期、税外标价、14 天内整包未使用可申请全额退款，本站不额外收退款手续费。只有一档商品。源码常量在 `src/lib/credit-offer.ts`，八项文生规格的公开费率在 `src/lib/video-credit-rates.ts`；成本与来源见[定价报告订正](research/2026-10-21-video-pricing.md#2026-10-23-现行决定与成本订正)。图生不外推文生报价。
 
-依据：[2026-10-21 支付接入研究](research/2026-10-21-payment-integration.md)；项目负责人 2026-10-21 的任务要求。app 挂载、账户及定价前端已集成；生成仍沿用邀请预览权限。江昪于 2026-10-21 明确确认 MVP 先做一次性付费、首渠道 Waffo Pancake，订阅后续接入，必须保留扩展性。售价与积分方案见[成本及失败测算](research/2026-10-21-video-pricing.md#11-vibetoken-成本复核失败损耗与首包建议2026-10-21)，尚未开售。
+本轮集成订单、Pancake adapter、权益批次、报价、预留、结算、退款申请和恢复工具。**实现、离线测试、真实渠道沙盒与上线验收是四个状态。** 正式销售仍被服务端禁止，`GENERATION_CHARGING_ENABLED=false`；生产不能仅靠添加环境变量开启收费。Pancake 测试商品的“销售中”不代表 KakaReel 正式开售。部署及最终验收看 [launch.md](launch.md)。
 
-## 前端契约
+## 2026-10-23 已验与未验
 
-浏览器安全类型统一在 `src/lib/billing.ts`，不包含 SDK、密钥或 provider 内部引用。所有响应 `Cache-Control: no-store`。
+以下是本轮主会话确认的验收快照；代码已准备提交，尚待生产部署验收，既有线上预览不等于已运行本轮补丁。
 
-| 方法与路径 | 请求／返回 | 权限与限制 |
+| 项目 | 已取得的证据 | 边界与下一步 |
 |---|---|---|
-| `GET /api/billing/catalog` | `{mode:"one-time-credits", checkoutEnabled, products, providers}` | 公开。默认商品 `credits:null`、`price:null`、`available:false`；四个渠道 `available:false` |
-| `GET /api/billing` | `{balanceCredits, testBalanceCredits, checkoutEnabled, generationChargingEnabled:false, previewAccess}` | Google 本人；正式／测试余额分别求和。previewAccess 仍来自现有邀请资格 |
-| `GET /api/billing/orders` | `{orders: BillingOrder[]}` | Google 本人最新 50 单；没有跨用户过滤器，未实现分页 |
-| `GET /api/billing/orders/:id` | `{order: BillingOrder}` | 非本人或不存在均 404 |
-| `POST /api/billing/checkout` | `{productId, provider, requestId}` → `{order, checkoutUrl}` | Google 账户、正确 Origin、`X-KakaReel-Owner` 必须等于当前会话 UUID；requestId 为 UUID |
-| `POST /api/billing/webhooks/:provider` | 原始 body；成功 `{ok:true,outcome:"applied"\|"ignored"\|"duplicate"}` | 仅四个确切渠道路径。渠道验签与作用域校验，不用浏览器 session／Origin 认证 |
+| 完整本地测试 | `/private/tmp/kakareel-tests-final.log`：168 passed、0 failed、0 skipped，已回读汇总 | 数据库与 mock／fake provider 测试不能替代官方渠道和实物视频交付；独立测试库入口见[部署说明](deployment.md#完整测试的独立数据库) |
+| worker 镜像与空库 runtime | Dockerfile `worker` target 构建 passed；非 root UID 1000；空 `video_worker_qa` 完成 start → 5 项迁移 → once，退出码 0、jobs 0，无上游 Key | 已验空库启动链路；有任务恢复、重启幂等与生产常驻仍须另验 |
+| 生产库备份 | 主会话经授权 `pg_dump` 到既有卷；26722 bytes，`pg_restore --list` 可读、输出 72 行 | 不公开实际路径；备份目录可读不等于已完成恢复演练 |
+| 公开客服 | [support@kakareel.com](mailto:support@kakareel.com) 的 Cloudflare 转发 Active；用户实际收信完成 Pancake 邮箱验证，主会话已回读 | 仅公开客服地址，不公开内部转发目标；处理责任和响应流程仍需明确 |
+| 官方 Pancake 沙盒付款 | 首笔 USD19 测试支付成功；authenticated GraphQL 查询原订单确认 paid，小计 1900、税额 0、总额 1900；本地已入 150 测试积分 | 金额为 USD 最小货币单位；不是正式收入。税额为 0 的交易不能证明有税结账正确，查询对账成功也不能证明 webhook 送达 |
+| 该单退款 | 当前状态 unknown；对应 150 测试积分冻结；只读诊断确认原付款成功、金额匹配，两种查询均未观察到工单或退款记录；未重复提交退款 | 未核退款终态／到账，不解冻、不冲销、不重提；主会话继续核原退款请求及原订单 |
+| 发布与放行 | 正式收款和生成收费保持关闭 | 本轮待发布验收，主会话等待退款诊断代码停写后统一提交；退款／webhook、有税交易、生产 worker 与正式视频交付仍未验收 |
 
-`provider` 为 `pancake | waffo | stripe | antom`。GET 如带 `X-KakaReel-Owner` 也校验一致性；前端读账单／订单时应带上当前用户 ID，避免切换标签后的旧账号显示。该头是身份一致性断言，不是授权来源。所有归属只取已验证会话，body 里的 owner、userId、金额、币种、积分、成功状态及其他额外字段都拒绝。
+验收记录只保留状态和金额，不记录实际订单、用户、商店、工单、部署等私有 ID，也不记录 checkout token、密钥、配置值或内部转发目标。上述日志为本机临时证据，不当作永久归档；正式发布后由主会话补部署版本与行为验收。
 
-`BillingOrder` 返回 ID、产品名／ID／价格版本、渠道／test 或 live、订单状态、结账准备状态、整数金额／币种／积分、创建与更新时间。没有 checkout token、用户邮箱、签名原文或 provider 内部标识。checkoutUrl 仅瞬时返回；不存数据库／日志。前端关闭付款页、返回页 query、按钮显示成功均不能发放积分。返回页只读取本人订单。
+## 前端契约与身份
 
-错误格式 `{error,code}`：
+公共类型位于 `src/lib/billing.ts`；不导出 SDK、签名、私钥或 checkout token。所有响应 no-store；身份取已验证 Google 会话，客户端 userId、价格、积分、付款结果均非可信来源。
 
-- 401：`GOOGLE_SIGN_IN_REQUIRED`；过期账号沿用 `SESSION_EXPIRED`，可用现有刷新流程。
-- 403：`GOOGLE_ACCOUNT_REQUIRED`、`ORIGIN_REJECTED`、`WEBHOOK_SCOPE_MISMATCH`。
-- 400：`INVALID_CHECKOUT`、`INVALID_WEBHOOK`；无效签名与不完整／不支持的事件均不进入交易。
-- 409：`ACCOUNT_CHANGED`、`PRODUCT_UNAVAILABLE`、`IDEMPOTENCY_CONFLICT`、`CHECKOUT_IN_PROGRESS`、`ORDER_NOT_PAYABLE`、`PAYMENT_MISMATCH`、`EVENT_ID_CONFLICT`。
-- 503：`PROVIDER_UNAVAILABLE`、`SALES_DISABLED`、`CHECKOUT_UNCONFIRMED`、`CHECKOUT_BINDING_PENDING` 等暂未确认状态；数据库异常返回 `BILLING_UNAVAILABLE`。数据库唯一约束冲突也失败关闭，不能把持续冲突当成付款失败后重新扣款，须对账处理。
+| 接口 | 行为 |
+|---|---|
+| `GET /api/billing/catalog` | 公开 US$19／150 积分和未开售状态；含 catalog／provider 的 test、live 或 null 环境 |
+| `GET /api/billing` | 本人正式／测试钱包分别展示可用、预留、blocked；测试异常不能阻断正式钱包 |
+| `GET /api/billing/orders` | 本人最新 50 单；尚无分页 |
+| `GET /api/billing/orders/:id` | 本人订单；越权与不存在同为 404 |
+| `POST /api/billing/checkout` | 仅开放的隔离测试环境可创建；服务端白名单商品与价格，固定 requestId 幂等 |
+| `POST /api/billing/orders/:id/refund` | 本人整包未用退款申请；冻结对应批次后提交渠道工单，不把 pending 当到账 |
+| `POST /api/billing/webhooks/:provider` | 原始 body 验签；仅四个确切 POST 路径豁免普通 Origin 检查，未知路径不豁免 |
+| `POST /api/jobs/quote` | Google 本人，完整生成参数、requestId、5 分钟报价；未核价／未开放／余额不足明确不可用 |
+| `POST /api/jobs` | 默认 preview；paid 必须显式选择、有效 quoteId、同账号及足额正式余额 |
 
-checkout 的价格和额度来自服务端商品白名单／渠道商品映射。未配置渠道在订单预留之前返回 503，无假订单、假 URL 或积分。默认没有环境变量可打开销售；接入真实 adapter、获批商品和显式 salesEnabled 都属于后续代码／运营放行。
+浏览器 mutation 保留 exact Origin、Sec-Fetch-Site 与 `X-KakaReel-Owner` 一致性校验；该头不是授权来源。前端切换账户后丢弃旧账单和报价。报价绑定 requestId、提示词、输入图片引用、模型、模式、时长、分辨率、声音等所有已验证参数；提交必须复用同一 requestId，改变参数或过期须重新报价。
 
-## API 精确挂载
+订单公开小计、税额、总额、实付，未知税额／实付用 null，不写成零。返回页只读本人订单，URL 的 success 参数不会发积分。渠道 checkout URL 只瞬时返回，不能入公开日志／文档。
 
-`src/server/billing/routes.ts` 导出 `billingRoutes`、`billingWebhookRoutes` 和 `isBillingWebhookRequest`。保留全局 body limit、no-store、onError。在既有 Origin middleware 的判断处只增加精确 method＋path 条件：
+## 支付、税与对账
 
-```ts
-import { billingRoutes, billingWebhookRoutes, isBillingWebhookRequest } from "./billing/routes";
+固定 `@waffo/pancake-ts@0.26.0`，使用真实 SDK authenticated checkout。商品税类别为 SaaS，`taxIncluded:false`。SDK 类型缺少该属性但运行时可转发；必须用真实沙盒核实结账与返回税额，不能只凭本地请求 fixture 宣称完成。`1900` 是未税 USD 小计，不是未知地区的最终实付。
 
-if (
-  !["GET", "HEAD", "OPTIONS"].includes(c.req.method) &&
-  !isBillingWebhookRequest(c.req.method, c.req.path)
-) {
-  // 保留现有 exact Origin 与 Sec-Fetch-Site 检查，不改变其他 mutation。
-}
+Pancake 验签使用显式项目环境的平台公钥，RSA-SHA256 验原始字节、严格签名时间窗、拒绝重复 JSON key。核 store、test/prod、外部订单、buyer UUID、币种、实际 chargedAmount／refundedAmount 与税额快照。商户 metadata 只是签名覆盖的商户回显，不能当渠道独立观察的商品证据。Pancake 事件没有 checkout session ID，使用独立 evidence 分支；其他渠道仍保留 checkout ID 绑定，不能伪造一个 ID 绕过。
 
-// 在全局 middleware 之后挂载，webhook 必须排在普通 billing router 之前。
-app.route("/billing/webhooks", billingWebhookRoutes);
-app.route("/billing", billingRoutes);
-```
+成功须满足小计＋税＝总额＝实付，且小计等于本地商品快照。实际金额缺失、部分退款或冲突写入 review 状态并阻断相应环境钱包，不补造收入或丢弃外部资金事实。完整外部退款在积分已消费时仍落账，记录债额／限制后续生成，不向用户自动补扣现金。
 
-根 app 使用 `.basePath("/api")`。豁免仅为四个完整的 POST 路径：`/api/billing/webhooks/pancake`、`/waffo`、`/stripe`、`/antom`（后三者替换同一末段）。不匹配尾斜线、附加路径、未知渠道或其他方法。禁止用 startsWith、全 `/billing` 前缀或全 POST 放宽。普通 billing router 还独立保留 Origin 检查；webhook 必须先挂载，否则会被普通 billing 的 Origin／账号 middleware 拦住。
+事务锁顺序为钱包 → 订单／任务 → 批次。订单、事件、付款唯一约束与 purchase／refund 账本保护重复及乱序；数据库错误整体回滚。供应商网络调用在事务外，checkout lease 为 60 秒，同订单始终用原幂等键。订单创建超过 23 小时停止创建请求，先查询原订单，不越过渠道幂等窗口重扣。
 
-webhook body 上限 256 KiB，checkout 上限 4 KiB；raw bytes 在验签前不做 JSON 解析或重编码。默认未配置 webhook 返回 503，不能先 200 再丢弃。真实 app 的匿名已知渠道 503、未知／伪造路径及 checkout 无 Origin 403 已有集成回归。
+GraphQL 恢复通过 SDK `graphql.query` 查询原订单和实际收款，不信返回页。2026-10-23 已用专用测试密钥取得真实 schema，确认实体环境字段为 `testMode`，不是推测的 `mode`／`environment`。恢复查退款优先于成功付款，避免已退款订单短暂给出可消费积分。实际 PSP 金额缺失仍待核，不拿 snapshot 代替实收。完整付款时间恢复须同步订单和权益批次，退款窗口按实际付款时间计算。
 
-## Provider 适配边界
+## 积分、生成与失败
 
-`src/server/billing/providers.ts` 定义 hosted `createCheckout` 和 `verifyAndNormalizeWebhook`。`createBillingModule` 接受 server-only 依赖注入以便测试；没有测试 HTTP 入口或配置绕过。测试 mock 仅存在于 `tests/billing.test.ts`，采用内存随机测试签名协议，不能拿它当任一真实渠道的签名实现。
+`0004-credit-wallet.sql` 新增钱包、购买批次、报价、任务预留分配及审计记录；`0005-pancake-bridge.sql` 增量扩展金额、退款与证据字段。历史迁移不改写，用户和视频保留。旧非终态预览任务在迁移中标记已开始提交，worker 只查原任务，不再次 POST。
 
-每个 adapter 固定渠道、test/live 环境、商户／店铺 ID、允许的 HTTPS checkout hostname。订单记录渠道商品映射、价格版本和金额／积分快照。所有 provider 幂等键固定为本地订单 UUID；超时／进程重启不能换键、换渠道、重建资金订单。返回地址、Google token、客户端价格都不是 adapter 的客户端输入。
+- 同一次请求的任务创建、报价使用和 FIFO 批次预留在同一事务中完成；并发不能超支。
+- 正常处理中保持 reserved。明确失败 release 一次；上游成功且结果经交付检查才 capture 一次。
+- 交付检查采用 HTTPS、有界 ranged GET、视频 MIME＋容器文件头；DNS 检查并固定连接地址，拒绝私网／重定向。它证明链接当下返回视频内容，不等于完整解码、内容安全审核或永久存储。
+- 网络超时不是失败；保持原任务 ID 查询，不新建付费任务。持久 lease＋token 防止过期 worker 结算。
+- 超过 24 小时仍不明转人工 review；操作者可查原任务或带原因释放。补偿后迟到成功不能自动重新扣积分。
+- 测试余额只可用于注入的 fake provider；真实 worker 拒绝 test 任务。预览继续按邀请权限和既有日次数限额。
+- 上游已收费但本站无法交付，未追回成本由本站承担。积分释放不调用现金退款；用户主动重新生成是新任务。
 
-- **Pancake**：SDK 接入层位于 `src/server/billing/pancake.ts`，使用固定版本 `@waffo/pancake-ts@0.26.0` 的 authenticated checkout；尚未注册到 billing service。buyerIdentity 映射本地用户 UUID、buyerEmail 只作预填，orderMerchantExternalId 映射本地订单；显式传幂等键。把整数最小货币单位精确转展示金额字符串，不能浮点运算或套用弃用 amount 字段。RSA-SHA256 原始 body／平台公钥、事件 id／eventType、mode、storeId、时间与重试窗口按锁定 SDK／真实沙盒载荷核验；不能混用通用页面与 SDK 两套事件格式或测试公钥兜底。
-- **Stripe**：独立 Checkout Session、签名 secret、原始 body、实际 payment_status／异步支付完成判据。
-- **Waffo 企业支付**：独立产品和 adapter；不能复用 Pancake SDK、字段或商户配置。
-- **Antom**：先确定合同产品及托管结账 API；RSA256／Client-Id／环境、通知和响应规则独立实现。
+`credit-worker.ts` 支持 `run`、`once`、`review`、`poll JOB_UUID`、`release JOB_UUID OPERATOR REASON`。`review` 列待处理任务，release 只接受超过 24 小时的未解决预留且追加审计记录。Compose 新增独立 worker，与 Web 共用数据库和迁移锁；没有公网 worker 端口或未认证操作 HTTP 接口。
 
-适配器只有在签名、重放政策、环境、商户作用域验证成功后才能返回 `VerifiedPaymentEvent`。业务层再次验证环境／商户、用户、订单、商品、渠道商品、checkout ID、整数金额／币种；成功与退款还需资金 payment ID。HTTP 客户端不能提交 normalized event 或 `verified:true` 直达状态机。
+## 现金退款
 
-`payment.succeeded` 必须表示**全额实际收款成功**；授权、部分成功、未知状态均不允许映射为它。`payment.failed` 是失败付款尝试，不表示该 checkout 永远不能成功；失败 attempt ID 只存事件审计。`checkout.canceled` 也不能推翻后来可信收款。确需不可恢复 order-level failure 的渠道语义需要后续独立状态／对账设计，不能混为 attempt failure。
+申请条件为付款后 14 天、整包未消费且无预留。先冻结购买批次，再用官方 customer refund ticket API 创建工单，幂等键固定。pending／processing／unknown 不释放冻结；明确失败或拒绝解冻，真实全额退款成功才冲销。商户审批仍由真实 Pancake 后台处理，不虚构 SDK 审批接口。
 
-`payment.refunded` 只表示**全额退款实际成功**，amountMinor 必须等于订单总额，paymentId 必须对应原资金支付。Pancake 创建退款工单、审核、pending、refund.failed 都不能映射成功。部分退款、退款发起、已消费额度退款和拒付尚未实现；当前不支持的事件拒绝／等待 adapter 提供完整证据，不猜测金额，不发放／冲销。
+退款工单、现金成功事件、积分消费是独立状态。重复回调不重复冲销；先退款后付款保持退款终态。人工 review hold 按订单记录，解除一个订单不能误清另一个订单的阻断。
 
-当前没有 queryPayment、queryRefund、定时对账或补发后台；接口可后续扩展，不伪造实现。渠道税费／折扣／金额字符串核对、付款记录、净结算和实际到账也未完成。金额字段是需精确相等的订单应付总额及实际收款／全额退款，不代表净到账；动态加税导致应付总额不确定时，必须先扩展正式税额快照流程，不能去掉金额相等判据以启售。
+## 测试配置与操作
 
-## 事务、幂等与乱序
+Pancake 测试商店、一次性商品与测试密钥已于 2026-10-23 创建。真实配置仅存库外受限目录或部署环境；公有仓库只列变量名。测试部署要求独立数据库、独立角色、明确 test 环境；代码既校验 URL，也查询实际 current_database/current_user。名称分别须以 `_billing_sandbox`、`_billing_test` 结尾。
 
-`0003-billing.sql` 只新增 billing_orders、billing_events、credit_ledger 和约束／索引，不修改 users、video_jobs 或既有迁移，不 seed 任何资金数据。
+环境变量见 `.env.example`。`sandbox-smoke.ts` 提供 `inspect / seed / checkout / reconcile / refund / refund-diagnose`：inspect 只读 schema，其他操作验证实际沙盒库身份。输出目录必须位于仓库外、0700；输出新建且0600，可能包含结账 token，不得截图、打印或提交。工具不会自己加载凭证，也不会自动开生产销售。
 
-- 订单 `(user_id,request_id)` 唯一；同键不同产品／渠道／环境／商户返回冲突。重试用订单原始价格快照，不取客户端价格或新价格。
-- 本地订单先提交，再在数据库事务之外调用 adapter。checkout lease 60 秒；并发第二个请求 409，未确认状态重试沿用原键；宕机后 lease 到期可重试。adapter 必须真实支持重复调用返回同一远端 checkout，否则不能启用。
-- 不持有数据库事务等待支付网络。provider 返回的 HTTPS hostname 必须在配置 allowlist，无 userinfo／自定义端口。URL 与 token 不持久化。
-- 事件 `(provider,environment,merchant_account_id,provider_event_id)` 唯一，canonical fingerprint 检测同事件 ID 改内容。不同投递 ID 也受订单状态和 ledger `(order_id,kind)` 约束，不能重复入账。
-- 资金支付 ID 在 `(provider,environment,merchant_account_id)` 下唯一；只有成功／退款建立此绑定。失败 attempt 不能阻止同 checkout 另一 attempt 的真实成功。
-- 每个 webhook 锁订单行，并在同一事务中完成事件、状态与 ledger；事务失败全部回滚，不能先确认事件再发货。异步 fire-and-forget 未使用。
-- credit ledger 只追加 purchase／refund；整数正值／负值，订单、用户、环境有复合外键。正式／测试分开求和，安全整数边界检查；没有余额直接改写接口，也没有视频预留／扣减／释放。
+退款／原任务恢复是可用的操作入口，不是已经建立持续运营值班。首笔零税额官方沙盒付款与 authenticated 查询入账已验；退款仍 unknown、150 测试积分冻结，未重提。带税结账、回调送达、退款到账与生产实物视频交付仍须分别验收，由主会话接续；本轮文档更新不操作渠道或部署。
 
-| 原状态 | 可信事件 | 结果与积分变化 |
-|---|---|---|
-| pending／failed／canceled | payment.succeeded | paid；只追加一次 purchase |
-| pending | payment.failed／checkout.canceled | failed／canceled；无资金绑定、无积分 |
-| paid | 迟到 failed／canceled／重复 succeeded | 保持 paid；无第二笔积分 |
-| paid | payment.refunded | refunded；只追加一次全额负积分 |
-| pending／failed／canceled | payment.refunded | refunded；从未入账则不产生负余额 |
-| refunded | 迟到 succeeded／重复 refunded | 保持 refunded；不恢复积分 |
+## 开售前仍需完成
 
-同一 payment 被用于另一订单触发唯一约束，事件／状态／积分全部回滚；需要对账，不能认定收入已到账。已付订单收到不同资金 payment ID 也拒绝，不能静默接受可能的二次收款。
+1. 首笔零税额官方沙盒成功付款已核；继续完成拒绝、重复／丢失回调、重启恢复、有税交易、退款闭环与跨用户隔离的真实渠道验收。当前退款 unknown 保持原请求和冻结，不以再次申请替代查询。
+2. 各开放视频规格的真实生成交付；新费用预算须另行批准，不能复用已因失败停止的旧授权。
+3. 原子全局金额预算、成本记录与供应商涨价停用流程；当前日次数限额不能代替金额预算。
+4. 生成前输入审核、展示前输出审核、公开 AUP／举报处置、素材授权和本业务商户准入。
+5. `support@kakareel.com` 已验证可收信；继续明确支持处理责任、响应流程和结果保留策略，不承诺永久存储。
+6. 所有验收通过后，另行正式放行销售和生成收费；测试密钥不用于生产。
 
-**早到或丢失回调不是已经解决的生产能力。** 如果 verified webhook 早于 checkout ID 的本地绑定，返回 `503 CHECKOUT_BINDING_PENDING`，不记 processed、不发积分；渠道必须按支持的窗口重试。checkout 创建响应丢失，可用原 requestId 重试 adapter 后建立绑定，但没有后台自动 query／对账。若渠道不重试、回调丢失或重试耗尽，就需要后续查询／人工对账流程；激活前必须实现并验收该恢复路径。
+## 订阅扩展边界
 
-## 激活 gate（本轮均不代替完成）
+订阅后续新增独立状态、周期、取消生效时刻、渠道 customer／subscription 关联和每周期付款／发放唯一键。继续复用用户、订单、付款事件和权益批次；生成只消费统一钱包，不判断订阅供应商。一次性购买不会被改成自动续费，退款不等于取消订阅。
 
-1. 用户批准 SKU、价格版本、积分数量、有效期、成本／税费／渠道费／失败重试与退款毛利口径。当前商品无金额、不开售。
-2. 独立本项目商户、适用个人／企业主体与地区、渠道及 AI 视频业务准入书面确认；不得复用其他项目密钥。
-3. 实施**生成前提示词审核＋展示前输出审核**，以及 AUP、举报／处置和真人素材授权约束；仅提示词审核或假定上游风控均不足。此模块不实现它们。
-4. 锁定真实 adapter／SDK，核签名／环境／店铺／时间窗口、真实金额／税费字段、异步付款、全额退款、重试与查询对账；资源在库外或部署平台。
-5. 用户批准付费权益与 preview 并存规则，并另行实现生成预留／扣减／失败释放。当前无论支付账本如何，生成仍只认既有 preview 权限。
-6. 条款、退款、部分退款／已消费额度／拒付规则、客服入口、对账责任、监控与人工解除路径就绪。
-7. 完成独立真实渠道沙盒的付款、拒付、迟到／丢失回调、重试、重启、退款及跨用户隔离；测试积分不可换真实付费推理。
-8. 获准后独立开启正式配置与商品，首次真实交易另获明确授权。生产配置存在不自动打开本模块。
-
-## 验证与资源清理
-
-`tests/billing.test.ts` 只允许 `BILLING_TEST_DATABASE_URL` hostname 为 `127.0.0.1`、database 为 `video_billing_qa`。测试会清空该库 public schema，必须是专用一次性数据库；不能指向保留数据。配置留库外，目录 0700、文件 0600。未提供该变量会显式 skip，**skip 不算验证通过**。
-
-在独立临时 PostgreSQL 16 容器上设置该测试变量后运行：
-
-```sh
-node --import tsx --test tests/billing.test.ts
-pnpm exec tsc --noEmit --incremental false
-git diff --check
-```
-
-测试使用测试库的本地用户／真实应用 JWT，会话照常查数据库；无生产认证绕过。mock provider 只在测试文件内注入，所有 fetch 被拒绝，不调用真实支付或视频。实际运行覆盖新增迁移保留用户／视频、真实 app 挂载、默认全关闭、越权与强 owner、CSRF、客户端改价、订单幂等并发／超时／过期 lease、验签前原文篡改与重放、环境／店铺、金额／币种、失败后成功、退款先到、重复回调／重复 payment、早到回调重试，以及 ledger 写入故障导致整个事务回滚再恢复。
-
-2026-10-21 专项集成运行：16 passed（15 子项＋父测试），0 failed、0 skipped。本轮临时容器脚本设 EXIT 清理，停止容器并删除临时卷；应用 pool 在 after 中关闭。测试模拟签名不等于 Pancake／Stripe／Waffo／Antom 真实 SDK 已验收；真实渠道、真实交易和生产支付仍未启用。
-
-2026-10-21 生产验收：`9ae7ca4` 部署 Done；公开 catalog 返回未开售与 null 价格／额度，匿名 billing 401，未配置 Pancake webhook 503，无 Origin checkout 403。返回页忽略 URL success 参数。生产只读 SQL 确认三条迁移已应用，原任务及归属保留；订单、事件与账本均为零。没有执行真实支付操作，资金链路仍只经过 mock 集成验收。
-
-## 一次性优先、订阅后续的架构约束（2026-10-21）
-
-用户已决定先做一次性支付，后做订阅。以下区分已经存在的基础与未来增量，不通过给一次性订单加一个 `isSubscription` 字段冒充订阅支持。
-
-| 边界 | 当前复用 | 后续订阅增量 |
-|---|---|---|
-| 身份 | 本地 users.id，渠道无关 | provider／环境／店铺维度的 customer／buyer 关联；不按邮箱合并用户 |
-| 商品 | 本地 SKU、priceVersion、渠道商品映射和订单快照 | 显式 one-time／recurring 商品类型；每个周期单独渠道商品／价格版本；旧一次性订单不改价 |
-| 资金 | 每次真实付款对应独立订单／支付标识、事件幂等 | 首付与每次续费各有独立付款记录；不能让同一 subscription ID 成为所有续费的唯一 payment ID |
-| 订阅状态 | 当前不实现，capabilities.subscriptions=false | 独立 subscriptions 记录周期、状态、取消生效时刻；不能把 paid 当 active、把 refunded 当 canceled |
-| 权益 | 一次性 purchase／refund 账本与用户绑定 | 独立积分来源批次，来源为一次性订单／订阅周期；唯一键阻止激活和支付事件双发同一周期积分 |
-| 生成消费 | quote／reserve／capture／release 待实现 | 消费统一权益层；优先级、有效期、失败归还至原批次；生成代码不直接判断订阅供应商 |
-| 生命周期 | 一次性无自动续费 | 取消续费与当期权益失效分开；补缴、续费失败、升级补差各自处理；不向已有一次性买家自动扣款 |
-
-Pancake [商品](https://docs.waffo.ai/features/products)与[订阅](https://docs.waffo.ai/features/subscriptions)官方说明于 2026-10-21 核对：月付／年付通常是独立订阅商品；取消和现金退款是不同动作。将来开通前重新核对版本及状态语义，不以本轮一次性 adapter 宣称订阅可用。
-
-生成收费按用户确认报价持久化：报价包含模型参数指纹、积分、版本及失效时刻；预留与任务建立同一事务；同任务最多一个终态结算。失败释放与资金退款各走独立账务。预留存在时退款要冻结对应购买批次，防止同时生成和退现金；若供应商迟到成功但本站已向用户终结返还，则只记本站损耗，不再自动追扣。
-
-上述订阅表、权益批次与生成预留不是当前已部署能力；需新增迁移与并发／重启／乱序验收后逐项更新。本轮不预建未接线的空表，也不改变已有用户或视频数据。
-
-## Pancake SDK 接入层边界（2026-10-21）
-
-`PancakeClient` 负责官方 SDK 的 authenticated checkout、精确金额字符串和项目选择的平台公钥验签，返回 `PancakePaymentEvidence`。它不是已经可收款的 BillingProvider，不以始终 false 的配置判断或始终抛错的 normalized webhook 冒充完成适配。默认 registry 仍为空，销售仍关闭。
-
-`merchantId` 与 `storeId` 各司其职；本地商品／价格版本只接受服务端白名单。回调保留渠道订单、资金支付、投递／业务事件、店铺与环境，核对整数实收、原始付款、退款、税额及身份元数据。不完整付款、部分退款、订阅事件和过期签名均不作为本轮一次性支付成功。创建时固定本地订单为幂等键，老于 23 小时的订单停止创建请求，避免超过渠道 24 小时幂等缓存后重扣；恢复查询与对账尚需完成。
-
-完整接线仍需：扩展订单关联以分别保存渠道 orderId 和 checkout sessionId；在事务中比对签名覆盖的外部订单、用户、店铺／环境、金额／币种和服务端元数据快照；保留付款唯一与账本幂等；加入丢失回调恢复与真实沙盒验收。不能把本接入层的离线验签成功当作用户已付款，且不能把商户元数据包装成供应商独立核验的商品 ID。税含模式目前在 SDK 请求中传 `taxIncluded:true`，实际商户接受和金额回传仍须沙盒确认。
-
-
-接入层验证：`tests/pancake.test.ts` 14/14 通过、0 跳过；全项目 TypeScript 与生产构建通过。测试运行实际 SDK 的本地 transport 与 RSA 验签，使用临时生成的非生产密钥及官方结构改编的 fixture，真实网络被禁止。覆盖精确金额、税额、错店铺／环境、签名篡改、时间窗口、完整退款、部分退款拒绝、重复 JSON 字段、旧订单幂等窗口、同键重试与每单返回链接。订单事务桥接、真实商户／税额回传、真实沙盒和生成扣费／释放均未因此完成；本次没有数据库迁移或真实资金动作。
+历史基线：2026-10-21 基础版本 `9ae7ca4` 已上线，74 项测试通过；当时商品无价格、SDK 未桥接、没有生成钱包。其状态已被本文的 2026-10-23 工程进度取代，不将旧验收数量套用到本次改动。

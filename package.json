@@ -12,7 +12,8 @@
     "start": "node scripts/start.mjs next start",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "credits:worker": "tsx scripts/credit-worker.ts"
   },
   "dependencies": {
     "@waffo/pancake-ts": "0.26.0",

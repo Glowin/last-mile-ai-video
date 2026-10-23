@@ -5,6 +5,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS dependencies
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
+FROM dependencies AS worker
+ENV NODE_ENV=production
+COPY --chown=node:node src ./src
+COPY --chown=node:node scripts ./scripts
+COPY --chown=node:node db ./db
+COPY --chown=node:node tsconfig.json ./tsconfig.json
+USER node
+CMD ["node", "scripts/start.mjs", "node", "--import", "tsx", "scripts/credit-worker.ts", "run"]
 FROM base AS builder
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .

@@ -1,7 +1,10 @@
-import { test } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { randomUUID } from "node:crypto";
+import { eq, inArray } from "drizzle-orm";
+import { database, closeDatabase } from "../src/server/db";
+import { jobs } from "../src/server/schema";
+import { processJob, type VideoProvider } from "../src/server/jobs/runner";
 import { families, resolutions, type Mode } from "../src/lib/models";
 import { generationSchema, providerPayload } from "../src/server/input";
 import { providerRequest, ProviderError, ProviderSubmissionBlockedError } from "../src/server/provider";
@@ -150,86 +153,146 @@ test("provider still permits status lookup and never retries an upstream rejecti
   assert.equal(sent.body, body);
 });
 
-// Execute the current production submit function, not a copied error classifier.
-// Only its database/SQL collaborators are mocked; app.ts remains untouched.
-const appSource = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
-const submitHeader = "async function submit(j: typeof jobs.$inferSelect) {";
-const submitEnd = "\nconst uuidPattern =";
-assert.equal(appSource.split(submitHeader).length, 2, "Expected one submit declaration");
-assert.equal(appSource.split(submitEnd).length, 2, "Expected one submit end boundary");
-const submitStart = appSource.indexOf(submitHeader);
-const submitStop = appSource.indexOf(submitEnd);
-assert.ok(submitStop > submitStart, "Production submit boundaries changed");
-// Strip only the known parameter type. Execute the complete, unchanged JS body.
-// Fail closed on source shape changes instead of silently testing an old copy.
-const submitCode = appSource.slice(submitStart, submitStop)
-  .replace(submitHeader, "async function submit(j) {") + "\nsubmit;";
-
-type StoredJob = {
-  id: string;
-  status: string;
-  payload: Record<string, unknown> | null;
-  upstreamId: string | null;
+// Exercise the production runner and real database state, never extracted source.
+// Keep this suite on the credit QA database even when the legacy API uses video_qa.
+const creditTestDatabaseUrl = process.env.CREDIT_TEST_DATABASE_URL;
+const originalDatabaseUrl = process.env.DATABASE_URL;
+const originalProviderKey = process.env.VIBETOKEN_API_KEY;
+const runnerJobs: string[] = [];
+before(() => {
+  if (!creditTestDatabaseUrl) return;
+  const u = new URL(creditTestDatabaseUrl);
+  assert.equal(u.hostname, "127.0.0.1");
+  assert.equal(u.port, "55439");
+  assert.equal(u.pathname, "/video_credit_qa");
+  process.env.DATABASE_URL = creditTestDatabaseUrl;
+});
+after(async () => {
+  try {
+    if (runnerJobs.length)
+      await database().delete(jobs).where(inArray(jobs.id, runnerJobs));
+  } finally {
+    await closeDatabase();
+    if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = originalDatabaseUrl;
+    if (originalProviderKey === undefined) delete process.env.VIBETOKEN_API_KEY;
+    else process.env.VIBETOKEN_API_KEY = originalProviderKey;
+  }
+});
+const runnerProvider: VideoProvider = {
+  kind: "fake",
+  request: providerRequest,
+  verifyDelivery: async () => assert.fail("Rejected submissions cannot verify a delivery"),
 };
-async function runProductionSubmit(row: StoredJob) {
-  const writes: Partial<StoredJob>[] = [];
-  const submit = runInNewContext(submitCode, {
-    providerRequest,
-    ProviderError,
-    storeTask: () => assert.fail("Rejected submission cannot store a remote task"),
-    database: () => ({
-      update: () => ({
-        set: (update: Partial<StoredJob>) => {
-          writes.push(update);
-          return { where: () => ({ returning: async () => [{ ...row, ...update }] }) };
-        },
-      }),
-    }),
-    jobs: { id: "id", status: "status" },
-    and: (...conditions: unknown[]) => conditions,
-    eq: (...values: unknown[]) => values,
-    sql: (...values: unknown[]) => values,
-  }) as (job: StoredJob) => Promise<StoredJob>;
-  return { result: await submit(row), writes };
+async function storedJob(payload: Record<string, unknown>) {
+  const id = randomUUID();
+  await database().insert(jobs).values({
+    id, owner: randomUUID(), family: "seedance",
+    mode: String(payload.model).endsWith("i2v") ? "image" : "text",
+    prompt: base.prompt, duration: 4, resolution: String(payload.resolution),
+    fingerprint: `model-regression-${id}`, payload, status: "submitting",
+    // Only this test's force claim may take a new fixture; another test's worker
+    // can run concurrently in the same isolated database.
+    nextPollAt: new Date(Date.now() + 3600_000),
+  });
+  runnerJobs.push(id);
+  return id;
+}
+async function readJob(id: string) {
+  const row = await database().query.jobs.findFirst({ where: eq(jobs.id, id) });
+  assert.ok(row, "Persisted runner job must exist");
+  return row;
 }
 
-test("production submit preserves unknown and payload when a local 480p block stops recovery", async (t) => {
-  delete process.env.VIBETOKEN_API_KEY;
-  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
-    assert.fail("Local recovery block must not send any request");
-  });
+test("production runner preserves unknown and payload after local 480p block; recovery only looks up original task", { skip: !creditTestDatabaseUrl }, async (t) => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () =>
+    new Response(null, { status: 404 }));
+  let localBlocks = 0;
+  const provider: VideoProvider = {
+    ...runnerProvider,
+    request: async (path, options) => {
+      try { return await providerRequest(path, options); }
+      catch (error) {
+        if (error instanceof ProviderSubmissionBlockedError) localBlocks++;
+        throw error;
+      }
+    },
+  };
   for (const model of ["bytedance/seedance-2-5-t2v", "bytedance/seedance-2-5-i2v"]) {
-    // recover claims unknown as submitting before calling submit.
-    for (const status of ["unknown", "submitting"]) {
-      const payload = { model, duration: 4, resolution: "480p" };
-      const row = { id: base.requestId, status, payload, upstreamId: null };
-      const { result, writes } = await runProductionSubmit(row);
-      assert.equal(result.status, "unknown");
-      assert.equal(result.payload, payload);
-      assert.equal(result.id, row.id);
-      assert.equal(result.upstreamId, row.upstreamId);
-      assert.equal(writes.length, 1);
-      assert.equal(writes[0].status, "unknown");
-      assert.equal(Object.hasOwn(writes[0], "payload"), false);
-    }
+    delete process.env.VIBETOKEN_API_KEY;
+    const payload = { model, duration: 4, resolution: "480p" };
+    const id = await storedJob(payload);
+    const callsBefore = fetchMock.mock.callCount(), blocksBefore = localBlocks;
+    await processJob(id, provider, true);
+    const blocked = await readJob(id);
+    assert.equal(localBlocks, blocksBefore + 1, "Production provider must reject 480p locally");
+    assert.equal(fetchMock.mock.callCount(), callsBefore, "Local policy block must not fetch");
+    assert.equal(blocked.status, "unknown");
+    assert.deepEqual(blocked.payload, payload);
+    assert.equal(blocked.upstreamId, null);
+    assert.equal(blocked.resultUrl, null);
+    assert.equal(blocked.creditState, "none");
+    assert.ok(blocked.submissionStartedAt);
+    assert.equal(blocked.leaseToken, null);
+
+    // An unknown remote task must remain unknown after a lookup miss. Never
+    // re-POST the stored 480p payload, upgrade it, or pretend remote failure.
+    process.env.VIBETOKEN_API_KEY = "offline-test-key";
+    await processJob(id, provider, true);
+    const recovered = await readJob(id);
+    assert.equal(recovered.status, "unknown");
+    assert.deepEqual(recovered.payload, payload);
+    assert.equal(recovered.id, id);
+    assert.equal(recovered.upstreamId, null);
+    assert.equal(localBlocks, blocksBefore + 1);
+    assert.equal(fetchMock.mock.callCount(), callsBefore + 1);
+    const [url, sent] = fetchMock.mock.calls[callsBefore].arguments as unknown as [string, RequestInit];
+    assert.equal(url, `https://vibetoken.cn/v1/videos/generations?client_request_id=${id}`);
+    assert.equal(sent.method ?? "GET", "GET");
+    assert.equal(sent.body, undefined);
   }
-  assert.equal(fetchMock.mock.callCount(), 0);
 });
 
-test("production submit still distinguishes explicit upstream rejection from uncertainty", async (t) => {
+test("production runner persists 400 submission as failed but 503 and lookup errors as unknown", { skip: !creditTestDatabaseUrl }, async (t) => {
   process.env.VIBETOKEN_API_KEY = "offline-test-key";
   let remoteStatus = 400;
   const fetchMock = t.mock.method(globalThis, "fetch", async () =>
     new Response(null, { status: remoteStatus }));
   const payload = providerPayload(generationSchema.parse(base));
-  const row = { id: base.requestId, status: "submitting", payload, upstreamId: null };
-  const rejected = await runProductionSubmit(row);
-  assert.equal(rejected.result.status, "failed");
-  assert.equal(rejected.result.payload, null);
+  const rejectedId = await storedJob(payload);
+  await processJob(rejectedId, runnerProvider, true);
+  const rejected = await readJob(rejectedId);
+  assert.equal(rejected.status, "failed");
+  assert.equal(rejected.payload, null);
+  assert.equal(rejected.upstreamId, null);
+  assert.equal(rejected.leaseToken, null);
   assert.equal(fetchMock.mock.callCount(), 1);
+  await processJob(rejectedId, runnerProvider, true);
+  assert.equal(fetchMock.mock.callCount(), 1, "Terminal rejection must not retry");
+
   remoteStatus = 503;
-  const uncertain = await runProductionSubmit(row);
-  assert.equal(uncertain.result.status, "unknown");
-  assert.equal(uncertain.result.payload, payload);
+  const uncertainId = await storedJob(payload);
+  await processJob(uncertainId, runnerProvider, true);
+  const uncertain = await readJob(uncertainId);
+  assert.equal(uncertain.status, "unknown");
+  assert.deepEqual(uncertain.payload, payload);
+  assert.equal(uncertain.upstreamId, null);
+  assert.equal(uncertain.leaseToken, null);
   assert.equal(fetchMock.mock.callCount(), 2);
+  for (const [index, id] of [[0, rejectedId], [1, uncertainId]] as const) {
+    const [url, sent] = fetchMock.mock.calls[index].arguments as unknown as [string, RequestInit];
+    assert.equal(url, "https://vibetoken.cn/v1/videos/generations");
+    assert.equal(sent.method, "POST");
+    assert.deepEqual(JSON.parse(String(sent.body)), payload);
+    assert.equal(new Headers(sent.headers).get("Idempotency-Key"), id);
+  }
+  remoteStatus = 400;
+  await processJob(uncertainId, runnerProvider, true);
+  const lookupError = await readJob(uncertainId);
+  assert.equal(lookupError.status, "unknown", "A lookup HTTP 400 cannot prove generation failed");
+  assert.deepEqual(lookupError.payload, payload);
+  assert.equal(fetchMock.mock.callCount(), 3);
+  const [url, sent] = fetchMock.mock.calls[2].arguments as unknown as [string, RequestInit];
+  assert.equal(url, `https://vibetoken.cn/v1/videos/generations?client_request_id=${uncertainId}`);
+  assert.equal(sent.method ?? "GET", "GET");
 });

@@ -64,7 +64,7 @@ export default function Home() {
               </a>
             </div>
             <span className="micro">
-              Early preview · Invite access for generation
+              Invite-only preview · Starter Pack: US$19 + applicable taxes / 150 credits · Not yet on sale
             </span>
           </div>
           <div
@@ -271,7 +271,7 @@ export default function Home() {
               ],
               [
                 "What does a generation cost?",
-                "There is no checkout in this preview. Invited generations use the project's limited demo allowance. The underlying model APIs are paid services; public prices will be published before paid access opens.",
+                "The published Starter Pack is US$19 plus applicable taxes for 150 credits, with no expiry or automatic renewal. It is not yet on sale. Invited preview generations use a separate limited allowance. Credit usage depends on the model and settings; see Pricing for the offer and rates.",
               ],
               [
                 "How long will it take?",

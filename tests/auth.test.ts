@@ -154,6 +154,7 @@ before(async () => {
       String(url).startsWith("https://vibetoken.cn/v1/videos/generations"),
       "Unexpected network access blocked",
     );
+    if (init?.method !== "POST") return Response.json({ error: "not found" }, { status: 404 });
     providerCalls++;
     assert.equal(init?.method, "POST");
     return Response.json({ id: `mock-${randomUUID()}`, status: "pending" });
@@ -180,7 +181,7 @@ test(
         const versions = await database().execute(
           sql`SELECT count(*)::int AS n FROM schema_migrations`,
         );
-        assert.equal(versions[0].n, 3);
+        assert.equal(versions[0].n, 5);
         await migrate();
       },
     );
@@ -395,7 +396,7 @@ test(
       },
     );
     await t.test(
-      "Google account alone cannot spend or recover; explicit invitation unlocks only that account",
+      "Google account cannot submit without invitation; recovery only queries its own task",
       async () => {
         const before = providerCalls;
         assert.equal(
@@ -405,7 +406,7 @@ test(
         const recovery = await seedJob(aliceId, randomUUID(), "unknown");
         assert.equal(
           (await alice.request(`/jobs/${recovery}/recover`, "POST")).status,
-          403,
+          200,
         );
         assert.equal(providerCalls, before);
         assert.equal(
