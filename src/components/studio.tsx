@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { HomeLink } from "./home-link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import {
@@ -394,10 +395,10 @@ export function Studio() {
   return (
     <div className="studio-layout">
       <aside className="studio-sidebar">
-        <a className="brand" href="/#top">
+        <HomeLink className="brand">
           <Image src="/brand/kakapo-logo.png" width={34} height={34} alt="" />{" "}
           <span>KakaReel</span>
-        </a>
+        </HomeLink>
         <span className="eyebrow">WORKSPACE</span>
         <button className="side-nav active" onClick={() => setTab("preview")}>
           <Sparkles size={18} />

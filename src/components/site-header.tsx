@@ -1,17 +1,18 @@
 import { AnalyticsSettings } from "./analytics";
 import Image from "next/image";
 import Link from "next/link";
+import { HomeLink } from "./home-link";
 import { ArrowUpRight } from "lucide-react";
 import { HeaderAccount } from "./google-auth-provider";
 export function SiteHeader() {
   return (
     <header className="site-header">
-      <a className="brand" href="/#top">
+      <HomeLink className="brand">
         <Image src="/brand/kakapo-logo.png" width={36} height={36} alt="" />
         <span>
           KakaReel<span className="brand-dot">.</span>
         </span>
-      </a>
+      </HomeLink>
       <nav aria-label="Main navigation">
         <a href="/#models">Models</a>
         <a href="/pricing#access-options">Pricing</a>
@@ -29,9 +30,9 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      <a className="brand" href="/#top">
+      <HomeLink className="brand">
         KakaReel
-      </a>
+      </HomeLink>
       <span>An independent, open-source video studio.</span>
       <div>
         <a href="/pricing#access-options">Pricing</a>
