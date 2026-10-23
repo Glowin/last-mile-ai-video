@@ -120,7 +120,17 @@ Google 与 Bing 的具体操作证据、失败边界与下一步见 [搜索平�
 
 现行 Logo 统一使用 `HomeLink`，实际 href 为 `/`，跨页使用 Next 普通导航；已在首页时直接滚回顶部，如已有查询／锚点则导航回 `/`，不加入替代锚点。定价与模型锚点仍采用原生链接，跨页会完整加载文档；不增加全局滚动监听或改写历史恢复策略。
 
-本地生产构建含类型检查通过；真实浏览器验证 Pricing／工作台 → Logo、首页底部重复 Logo、`#models` → Logo，均为 hash 空、y=0。前轮还验证了首次／重复定价入口、Models、普通跨页与前进／后退。未改数据库、支付、登录逻辑或运行配置；并行 GA4 更新已保留。生产验收截图留库外。
+本地生产构建含类型检查通过；本地真实浏览器验证 Pricing／工作台 → Logo、首页底部重复 Logo、`#models` → Logo，均为 hash 空、y=0。前轮还验证了首次／重复定价入口、Models、普通跨页与前进／后退。未改数据库、支付、登录逻辑或运行配置；并行 GA4 更新已保留。生产验收截图留库外。
+
+修复提交 `0ea1cb1` 已通过合并提交 `3bd49cf` 推入 `main` 并上线。以下为主会话于 2026-10-23 通过真实浏览器直接核实的线上验收证据：
+
+- Pricing 链接落到 `/pricing#access-options`；滚动稳定后 y=503，套餐模块距视口顶部 31.96875px。
+- Pricing → 页头 Logo：完整 URL 为 `https://kakareel.com/`，y=0。
+- 首页底部重复点击页脚 Logo：最终完整 URL 同为 `https://kakareel.com/`，y=0。
+- 从 `/#models` 点击 Logo：清除 hash 并回到首页顶部，y=0。
+- 工作台 `/create` 实际加载后点击侧栏 KakaReel Logo：`waitForURL https://kakareel.com/` 通过，DOM 读取的完整 URL 为 `https://kakareel.com/`，y=0。
+
+线上验收覆盖 header／footer／studio Logo，符合首页不添加 `#top`、返回干净 `/` 并回顶的要求。
 
 ## 2026-10-23 GA4 接入
 
