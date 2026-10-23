@@ -2,7 +2,7 @@
 title: "KakaReel 一次性积分包与支付后端"
 date: 2026-10-23
 source: "主会话 2026-10-23 官方沙盒与邮箱回读；本地完整测试日志；当前代码"
-status: "168 项测试通过；首笔零税额官方沙盒付款已核；worker 空库启动与生产库备份已核；退款 unknown 冻结中，待发布验收，正式收费关闭"
+status: "715e6b0 已部署；168 全测及诊断 27 项、最终 build／tsc 通过；线上 catalog 收费关闭；退款 unknown 冻结，worker 常驻与生产迁移数待回读"
 ---
 
 # 现行范围
@@ -13,19 +13,20 @@ status: "168 项测试通过；首笔零税额官方沙盒付款已核；worker 
 
 ## 2026-10-23 已验与未验
 
-以下是本轮主会话确认的验收快照；代码已准备提交，尚待生产部署验收，既有线上预览不等于已运行本轮补丁。
+以下是主会话 2026-10-23 确认的验收快照：`715e6b0` 已推送 main，Dokploy 完整日志为 `Docker Compose Deployed ✅`，新 Web／worker 显示 Started。线上定价与接口已核；worker 常驻状态和生产迁移数仍未回读。
 
 | 项目 | 已取得的证据 | 边界与下一步 |
 |---|---|---|
-| 完整本地测试 | `/private/tmp/kakareel-tests-final.log`：168 passed、0 failed、0 skipped，已回读汇总 | 数据库与 mock／fake provider 测试不能替代官方渠道和实物视频交付；独立测试库入口见[部署说明](deployment.md#完整测试的独立数据库) |
+| 完整本地测试 | `/private/tmp/kakareel-tests-final.log`：168 passed、0 failed、0 skipped，已回读汇总；新增诊断另有 27 项定向测试通过，最终 build／tsc 通过 | 数据库与 mock／fake provider 测试不能替代官方渠道和实物视频交付；独立测试库入口见[部署说明](deployment.md#完整测试的独立数据库) |
 | worker 镜像与空库 runtime | Dockerfile `worker` target 构建 passed；非 root UID 1000；空 `video_worker_qa` 完成 start → 5 项迁移 → once，退出码 0、jobs 0，无上游 Key | 已验空库启动链路；有任务恢复、重启幂等与生产常驻仍须另验 |
 | 生产库备份 | 主会话经授权 `pg_dump` 到既有卷；26722 bytes，`pg_restore --list` 可读、输出 72 行 | 不公开实际路径；备份目录可读不等于已完成恢复演练 |
 | 公开客服 | [support@kakareel.com](mailto:support@kakareel.com) 的 Cloudflare 转发 Active；用户实际收信完成 Pancake 邮箱验证，主会话已回读 | 仅公开客服地址，不公开内部转发目标；处理责任和响应流程仍需明确 |
 | 官方 Pancake 沙盒付款 | 首笔 USD19 测试支付成功；authenticated GraphQL 查询原订单确认 paid，小计 1900、税额 0、总额 1900；本地已入 150 测试积分 | 金额为 USD 最小货币单位；不是正式收入。税额为 0 的交易不能证明有税结账正确，查询对账成功也不能证明 webhook 送达 |
-| 该单退款 | 当前状态 unknown；对应 150 测试积分冻结；只读诊断确认原付款成功、金额匹配，两种查询均未观察到工单或退款记录；未重复提交退款 | 未核退款终态／到账，不解冻、不冲销、不重提；主会话继续核原退款请求及原订单 |
-| 发布与放行 | 正式收款和生成收费保持关闭 | 本轮待发布验收，主会话等待退款诊断代码停写后统一提交；退款／webhook、有税交易、生产 worker 与正式视频交付仍未验收 |
+| 该单退款 | 当前状态 unknown；对应 150 测试积分冻结；只读 diagnosis 实际成功，结果 0 tickets／0 refund；payment succeeded、金额匹配；未重复提交退款 | 未核退款终态／到账，不解冻、不冲销、不重提；主会话继续核原退款请求及原订单 |
+| 发布与放行 | `715e6b0` 已部署；线上 catalog 为 USD 1900 最小货币单位／150 credits，`checkoutEnabled=false`，全部 provider unavailable；服务端实际收费保持关闭 | Web／worker 仅有 Started 日志；观察到 Dokploy 标签页在本会话未操作时连续切换，为避免干扰，主会话停止该页，worker 常驻状态及生产迁移数待回读。退款／webhook、有税交易和正式视频交付仍未验收 |
+| 线上页面与 probe | `/pricing` 已视觉验收 US$19＋适用税费、八项费率及客服链接；`/pricing`、`/terms`、`/privacy`、`/create`、`/api/health`、`/api/billing/catalog` 均 200；前三页 support mailto 命中，create 的 `Generate preview video` 命中；匿名 billing／jobs 均 401 | 页面／接口验收不等于真实收费或生产 worker 常驻已验 |
 
-验收记录只保留状态和金额，不记录实际订单、用户、商店、工单、部署等私有 ID，也不记录 checkout token、密钥、配置值或内部转发目标。上述日志为本机临时证据，不当作永久归档；正式发布后由主会话补部署版本与行为验收。
+验收记录只保留状态和金额，不记录实际订单、用户、商店、工单、部署等私有 ID，也不记录 checkout token、密钥、配置值或内部转发目标。上述日志为本机临时证据，不当作永久归档；本轮部署版本与已验行为如上；待确认 Dokploy 页面空闲后由主会话回读 worker 常驻状态及生产迁移数。测试 dev 已停；排除 auth 数据的沙盒账本已库外备份，本轮临时 PostgreSQL 容器与 worker 测试镜像已清理，其他项目容器保留。
 
 ## 前端契约与身份
 

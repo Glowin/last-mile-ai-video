@@ -2,12 +2,12 @@
 title: "本地开发与 Hostinger Dokploy 部署"
 date: 2026-10-23
 source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档"
-status: "既有预览已部署；本轮待发布验收；worker 镜像与空库启动通过；生产库备份目录可读"
+status: "715e6b0 已部署、线上 probe 通过；Web／worker 日志 Started；worker 常驻与生产迁移数待回读，收费关闭"
 ---
 
 # 运行结构
 
-Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzle 存任务。共享 VPS 上先用一个应用构建，独立数据库，避免多个前后端构建同时争用资源。上游提供持久化异步任务，MVP 未引入 Redis 队列。本轮准备代码新增同库持久化 worker，用于不依赖用户打开页面的轮询和恢复；Web 与 worker 启动都通过同一迁移锁。worker 镜像构建和空库 start → migrate → once 已验收，本轮代码尚待生产部署验收；有任务恢复和生产常驻不能由空库退出成功外推。
+Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzle 存任务。共享 VPS 上先用一个应用构建，独立数据库，避免多个前后端构建同时争用资源。上游提供持久化异步任务，MVP 未引入 Redis 队列。本轮准备代码新增同库持久化 worker，用于不依赖用户打开页面的轮询和恢复；Web 与 worker 启动都通过同一迁移锁。worker 镜像构建和空库 start → migrate → once 已验收，`715e6b0` 已部署，完整日志显示 Web／worker Started；有任务恢复和生产常驻不能由空库退出成功或 Started 日志外推。
 
 ## 配置边界
 
@@ -83,12 +83,16 @@ node --env-file=/absolute/external/test.env --input-type=module -e 'import { mig
 node --env-file=/absolute/external/test.env --import tsx --test tests/*.test.ts
 ```
 
-这里使用 Node 原生 test runner 加 `tsx` loader；数据库用例依赖真实 PostgreSQL，上游与付款调用使用 mock／fake provider，不产生真实视频或支付。必须检查日志的 pass／fail／skipped，而非只看退出码。主会话 2026-10-23 完整测试日志 `/private/tmp/kakareel-tests-final.log` 已核为 **168 passed、0 failed、0 skipped**；这是该次快照的结果，不替代 worker 容器运行、真实渠道或生产部署验收。
+这里使用 Node 原生 test runner 加 `tsx` loader；数据库用例依赖真实 PostgreSQL，上游与付款调用使用 mock／fake provider，不产生真实视频或支付。必须检查日志的 pass／fail／skipped，而非只看退出码。主会话 2026-10-23 完整测试日志 `/private/tmp/kakareel-tests-final.log` 已核为 **168 passed、0 failed、0 skipped**；这是该次快照的结果；新增退款诊断另有 27 项定向测试通过，最终 build／tsc 通过。测试不能替代真实渠道和生产行为验收。
 
 ## 一次性积分包 worker（2026-10-23）
 
-Compose 的 worker 使用 Dockerfile `worker` target，保留 TypeScript runtime，只运行任务恢复与结算；没有公网端口。2026-10-23 主会话确认该 target 镜像构建 passed，并以非 root UID 1000 在空 `video_worker_qa` 验证 start → 5 项迁移 → once，退出码 0、jobs 0，未配置上游 Key；本轮代码仍未 commit／deploy。应用服务仍是默认最终 runner target。生产数据库已由主会话经授权 `pg_dump` 到既有卷：26722 bytes，`pg_restore --list` 可读、输出 72 行，实际路径不写公开仓库；尚不代表完成恢复演练。发布时仍须验证生产 `0004`／`0005` 迁移、Web 与 worker 都存活及既有任务不会重新提交。正式销售和生成收费开关仍在代码层关闭。
+Compose 的 worker 使用 Dockerfile `worker` target，保留 TypeScript runtime，只运行任务恢复与结算；没有公网端口。2026-10-23 主会话确认该 target 镜像构建 passed，并以非 root UID 1000 在空 `video_worker_qa` 验证 start → 5 项迁移 → once，退出码 0、jobs 0，未配置上游 Key；`715e6b0` 已推送 main，Dokploy 完整日志为 `Docker Compose Deployed ✅`，新 Web／worker 均显示 Started。应用服务仍是默认最终 runner target。生产数据库已由主会话经授权 `pg_dump` 到既有卷：26722 bytes，`pg_restore --list` 可读、输出 72 行，实际路径不写公开仓库；尚不代表完成恢复演练。当前尚未回读生产迁移数和 worker 常驻状态；仍须核实生产迁移、持续运行及既有任务不会重新提交。正式销售和生成收费开关仍在代码层关闭。
 
 Pancake 沙盒只在独立部署和独立数据库配置 `.env.example` 的测试变量，生产 Compose 默认不传这些测试凭证。测试角色、数据库、OAuth／域名及回调需单独配置；详细契约和手动恢复命令见 [支付后端](billing-backend.md)。
 
-主会话接续验收：空库启动、5 项迁移及 once 退出已核；继续验证有任务时的持久恢复、重启幂等，再核真实部署版本、Web／worker 常驻存活及正式开关关闭。当前等待退款诊断代码停写后统一提交，尚未发布。只用获授权的已有任务或离线 fake provider，不为证明 worker 存活新建真实付费视频。镜像构建、离线测试和健康接口均不能单独证明上述行为。官方沙盒付款、退款与税费的当前证据见 [支付后端](billing-backend.md#2026-10-23-已验与未验)。
+主会话线上验收：`GET /api/billing/catalog` 返回 USD 1900 最小货币单位／150 credits，`checkoutEnabled=false`，全部 provider unavailable，服务端实际收费保持关闭。浏览器已视觉验收 `/pricing` 的 US$19＋适用税费、八项费率与客服链接。最终 probe 的 `/pricing`、`/terms`、`/privacy`、`/create`、`/api/health`、`/api/billing/catalog` 均 200；前三页 support mailto 命中，create 的 `Generate preview video` 命中；匿名 billing／jobs 均 401。
+
+观察到 Dokploy 标签页在本会话未操作时连续切换，为避免干扰，主会话已停止该页操作；当前只有部署日志 Started，尚未回读 worker 常驻状态或生产迁移数。下一步待确认页面空闲后核这两项，不将本地空库的 5 项迁移写成生产已核。官方沙盒退款诊断执行成功，结果 0 tickets／0 refund，payment succeeded 且金额匹配；unknown 对应 150 测试积分继续冻结，不重试退款。详见[支付后端](billing-backend.md#2026-10-23-已验与未验)。
+
+测试 dev 已停止；临时 PostgreSQL 已留下排除 auth 数据的库外沙盒账本备份；本轮临时容器与 worker 测试镜像已清理，其他项目容器保留；公开文档不记录备份实际路径。

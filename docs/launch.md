@@ -2,7 +2,7 @@
 title: "KakaReel MVP 与上线状态"
 date: 2026-10-23
 source: "江昪与主会话 2026-10-23 确认；本地测试日志；历次源站与控制台验收"
-status: "既有预览已上线；收费准备待发布验收；168 项测试通过、首笔零税额沙盒付款已核；worker 空库启动已验、生产库已备份；退款待核，正式收费关闭"
+status: "715e6b0 已部署；线上定价与路由已验，服务端收费关闭；worker 常驻与生产迁移数待回读；退款 unknown 冻结"
 ---
 
 # KakaReel
@@ -17,20 +17,23 @@ status: "既有预览已上线；收费准备待发布验收；168 项测试通�
 - Seedance／Kling 单位歧义已澄清，现行八项文生费用见 [成本订正](research/2026-10-21-video-pricing.md#2026-10-23-现行决定与成本订正)。图生仍需单独核价。
 - Pancake 个人／中国测试商店、Starter Pack 商品与专用测试密钥已创建；配置仅库外受限保存。客服邮箱 [support@kakareel.com](mailto:support@kakareel.com) 的 Cloudflare 转发为 Active，用户实际收信完成 Pancake 验证，主会话已回读确认；不公开内部转发目标。
 - 主会话完成首笔官方 Pancake 沙盒 USD19 支付；authenticated GraphQL 回读为 paid，小计 1900、税额 0、总额 1900（USD 最小货币单位），已入账 150 测试积分。这是零税额测试付款，不是正式收入，也不证明有税交易或 webhook 已验收。
-- 该沙盒订单的退款目前为 unknown，对应 150 测试积分保持冻结，未重复提交退款。退款终态、实际退款到账与 webhook 送达均未验收；主会话继续核原订单与原退款请求，不以 unknown 假作失败或成功。
-- 本轮定价、钱包／生成结算与 Pancake bridge 的主会话完整测试为 **168 passed、0 failed、0 skipped**；已回读本机临时日志 `/private/tmp/kakareel-tests-final.log`。这是该次代码快照的测试结果，后续修改须按影响范围补验。
+- 退款只读 diagnosis 实际执行成功：查询结果为 0 tickets／0 refund，原 payment succeeded 且金额匹配；这不证明退款失败或完成。该单仍为 unknown，对应 150 测试积分保持冻结，不重试提交。退款终态、到账与 webhook 送达仍未验收。
+- 本轮定价、钱包／生成结算与 Pancake bridge 的主会话完整测试为 **168 passed、0 failed、0 skipped**；已回读本机临时日志 `/private/tmp/kakareel-tests-final.log`。这是该次代码快照的测试结果；主会话随后确认新增诊断 27 项定向测试通过，最终 build／tsc 通过。两轮测试分开记录，不合称一次全测。
 - 主会话已验 Dockerfile worker target 镜像构建与空库 runtime：非 root UID 1000，在空 `video_worker_qa` 上完成 start → 5 项迁移 → once，退出码 0，jobs 0，未配置上游 Key。仅证明空库启动链路，不代表有任务恢复或生产常驻已验。完整测试库准备见[部署说明](deployment.md#完整测试的独立数据库)。
 - 主会话经授权完成生产数据库 `pg_dump`，备份保存在既有卷；文件 26722 bytes，`pg_restore --list` 可读、输出 72 行。未在公开文档记录实际路径；目录可读不等于已完成恢复演练。
-- **本轮代码已准备提交，尚待生产部署验收。** 既有预览版本继续在线；正式收款与生成收费保持关闭。主会话等待退款诊断代码停写后统一提交，继续负责退款核查、生产 worker 与部署后的真实验收，不把测试商品状态当成生产已开售。
+- **`715e6b0` 已推送 main 并部署。** 主会话回读 Dokploy 完整日志为 `Docker Compose Deployed ✅`，新 Web 与 worker 均显示 Started。观察到 Dokploy 标签页在本会话未操作时连续切换，为避免干扰，主会话已停止该页操作；worker 常驻状态及生产迁移数尚未回读，不能用 Started 代替验收。
+- 线上 `GET /api/billing/catalog` 已核为 USD 1900 最小货币单位／150 credits，`checkoutEnabled=false`，全部 provider unavailable；服务端实际收费保持关闭，生成收费也未开放。
+- 主会话浏览器已视觉验收线上 `/pricing` 的 US$19＋适用税费、八项费率和客服链接。最终 probe：`/pricing`、`/terms`、`/privacy`、`/create`、`/api/health`、`/api/billing/catalog` 均 200；前三页 `support` mailto 命中，`/create` 的 `Generate preview video` 命中；匿名 billing／jobs 均 401。
+- 测试 dev 已停止；临时 PostgreSQL 已留存排除 auth 数据的库外沙盒账本备份；本轮临时容器与 worker 测试镜像已清理，其他项目容器保留。下一步由主会话在确认 Dokploy 页面空闲后回读 worker 常驻及生产迁移数，继续只读核退款；正式收费保持关闭。
 
 ## 当前实现
 
-- 英文首页、三个模型落地页、工作台、公开开发介绍、条款与隐私说明；本轮准备补丁已统一公开客服入口，尚待部署。
+- 英文首页、三个模型落地页、工作台、公开开发介绍、条款与隐私说明；公开客服入口已上线，定价／条款／隐私页的 support mailto 已核。
 - 文生视频、单张图片生视频；模型对应的时长、比例、分辨率与声音选项。
 - 服务器端调用 VibeToken；任务写入 PostgreSQL，查询状态、预览与打开视频保存。
 - Google 独立账号与跨设备历史；保留访客预览、HttpOnly cookie、邀请口令、全站每日任务上限。
 - 请求 ID 落库后才提交；超时标记状态未知，同一 ID 恢复，避免重复付费生成。
-- 既有部署为 Docker Web 容器＋独立 PostgreSQL；本轮 Compose 增加独立 worker，镜像构建与空库 start／migrate／once 已验，生产常驻与部署尚待验。
+- 既有部署为 Docker Web 容器＋独立 PostgreSQL；本轮 Compose 增加独立 worker，镜像构建与空库 start／migrate／once 已验，部署日志已显示 Started，生产常驻状态和生产迁移数尚待回读。
 
 邀请制与每日任务上限是本轮 MVP 的实现选择，用于有限预算的演示。Google 账号历史随账号保留；尚未登录的访客在清除 cookie／退出后会失去原会话入口。账户资料与会话管理、定价页面和一次性积分包的订单／事件／账本基础已实现；真实收款、生成扣减、自动素材保留与删除流程尚未开放。
 
