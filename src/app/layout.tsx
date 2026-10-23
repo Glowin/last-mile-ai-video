@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Analytics } from "@/components/analytics";
 import { GoogleAuthProvider } from "@/components/google-auth-provider";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const gaId = process.env.GA_MEASUREMENT_ID?.trim();
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <body id="top">
@@ -26,6 +28,7 @@ export default function RootLayout({
           Skip to content
         </a>
         <GoogleAuthProvider>{children}</GoogleAuthProvider>
+        {gaId && /^G-[A-Z0-9]+$/.test(gaId) && <Analytics measurementId={gaId} />}
       </body>
     </html>
   );
