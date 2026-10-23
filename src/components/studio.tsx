@@ -394,10 +394,10 @@ export function Studio() {
   return (
     <div className="studio-layout">
       <aside className="studio-sidebar">
-        <Link className="brand" href="/">
+        <a className="brand" href="/#top">
           <Image src="/brand/kakapo-logo.png" width={34} height={34} alt="" />{" "}
           <span>KakaReel</span>
-        </Link>
+        </a>
         <span className="eyebrow">WORKSPACE</span>
         <button className="side-nav active" onClick={() => setTab("preview")}>
           <Sparkles size={18} />
@@ -407,9 +407,9 @@ export function Studio() {
           <Clock size={18} />
           My videos<span>{jobs.length}</span>
         </button>
-        <Link className="side-nav" href="/pricing" title="Pricing" aria-label="Pricing">
+        <a className="side-nav" href="/pricing#access-options" title="Pricing" aria-label="Pricing">
           <CreditCard size={18} />Pricing
-        </Link>
+        </a>
         <Link className="side-nav" href="/account" title="Account" aria-label="Account">
           <UserRound size={18} />Account
         </Link>
@@ -524,7 +524,7 @@ export function Studio() {
                   <option value="paid" disabled={!paidEnabled}>Paid · purchased credits{paidEnabled ? "" : " · unavailable"}</option>
                 </select>
                 <p className="micro">{billingMode === "preview" ? "Preview uses the invitation allowance, not your purchased credits." : "Paid mode uses your purchased credits. Review the quote, then submit explicitly."}</p>
-                {!paidEnabled && <p className="micro">Paid generation is not yet available for this account. <Link href="/pricing">View the published offer</Link>.</p>}
+                {!paidEnabled && <p className="micro">Paid generation is not yet available for this account. <a href="/pricing#access-options">View the published offer</a>.</p>}
                 {billing && <p className="micro">{billing.availableCredits} available credits · {billing.reservedCredits} reserved{billing.blocked ? " · Spending blocked" : ""}</p>}
                 {billingError && <p className="micro" role="status">Credit balance unavailable. <button type="button" className="text-link" onClick={() => void refreshBilling()}>Check again</button></p>}
 

@@ -22,8 +22,8 @@ export default function RootLayout({
 }) {
   const gaId = process.env.GA_MEASUREMENT_ID?.trim();
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" data-scroll-behavior="smooth">
+      <body id="top">
         <a className="skip" href="#main">
           Skip to content
         </a>

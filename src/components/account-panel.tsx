@@ -240,7 +240,7 @@ export function AccountPanel() {
             {testCheckout ? "Continue to test checkout" : starterCheckoutProvider(catalog) ? "Continue to checkout" : "Not yet on sale"}
           </button>{" "}
           <button className="button secondary" disabled={busy} onClick={() => void load()}>Refresh balance & orders</button>
-          <p><Link href="/pricing">View pricing</Link> · <Link href="/terms">Offer & refund terms</Link></p>
+          <p><a href="/pricing#access-options">View pricing</a> · <Link href="/terms">Offer & refund terms</Link></p>
           <h3>Your orders</h3>
           {billing && !orders.length && <p>No orders yet.</p>}
           <ul className={styles.orderList}>
