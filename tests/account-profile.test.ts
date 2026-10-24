@@ -43,6 +43,8 @@ before(async () => {
   delete process.env.DEMO_ACCESS_CODE;
   global.fetch = async () => { throw new Error("External network forbidden in account tests"); };
   db = postgres(testUrl, { max: 1 });
+  const [identity] = await db`SELECT current_database() AS db,current_user AS role`;
+  assert.equal(identity.db, "video_account_qa"); assert.equal(identity.role, "account_test");
   const rows = await db`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
   assert.equal(rows.length, 0, "Provide a fresh disposable database; existing tables will not be overwritten");
   ownsSchema = true;

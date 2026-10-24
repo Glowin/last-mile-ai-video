@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import postgres from "postgres";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
@@ -151,6 +151,10 @@ before(async () => {
   if (!integration) return;
   const url = new URL(process.env.BILLING_TEST_DATABASE_URL!);
   assert.equal(url.hostname, "127.0.0.1", "Billing tests only reset a disposable loopback database");
+  assert.equal(url.protocol, "postgresql:");
+  assert.ok(url.username && url.username !== "postgres", "Use a dedicated test role");
+  assert.ok(url.port && url.port !== "5432", "Use a disposable test port");
+  assert.equal(url.search, ""); assert.equal(url.hash, "");
   assert.equal(url.pathname, "/video_billing_qa");
   process.env.DATABASE_URL = process.env.BILLING_TEST_DATABASE_URL;
   process.env.SESSION_SECRET = testSecret;
@@ -158,6 +162,9 @@ before(async () => {
   global.fetch = async () => { throw new Error("Network calls forbidden in billing tests"); };
   const db = postgres(process.env.DATABASE_URL!, { max: 1 });
   try {
+    const [identity] = await db`SELECT current_database() AS db,current_user AS role`;
+    assert.equal(identity.db, url.pathname.slice(1));
+    assert.equal(identity.role, url.username);
     await db`DROP SCHEMA public CASCADE`;
     await db`CREATE SCHEMA public`;
     await db`CREATE TABLE schema_migrations(name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`;
@@ -180,7 +187,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     const rows = await database().execute(sql`SELECT owner FROM video_jobs WHERE id=${legacyJob}::uuid`);
     assert.equal(rows[0].owner, legacyUser);
     const versions = await database().execute(sql`SELECT name FROM schema_migrations ORDER BY name`);
-    assert.deepEqual(versions.map((r) => r.name), ["0001-init.sql", "0002-google-auth.sql", "0003-billing.sql", "0004-credit-wallet.sql", "0005-pancake-bridge.sql"]);
+    assert.deepEqual(versions.map((r) => r.name), (await readdir(new URL("../db/", import.meta.url))).filter(f => /^\d{4}-.+\.sql$/.test(f)).sort());
     const count = await database().execute(sql`SELECT count(*)::int AS n FROM credit_ledger`);
     assert.equal(count[0].n, 0);
   });

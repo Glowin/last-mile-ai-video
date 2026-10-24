@@ -20,6 +20,8 @@ import { createQuote, generationFingerprint, useQuote } from "./credits/quotes";
 import { productionChargingPolicy, type ChargingPolicy } from "./credits/config";
 import { processJob, pollJob, liveVideoProvider, type VideoProvider } from "./jobs/runner";
 import { families } from "../lib/models";
+import { publicModeration } from "./moderation/service";
+import { GenerationCostError, lockGenerationCostBudget, reserveGenerationCost } from "./costs";
 
 export function createApp(options: { charging?: ChargingPolicy; videoProvider?: VideoProvider } = {}) {
 const charging = options.charging ?? productionChargingPolicy;
@@ -59,6 +61,10 @@ app.use("*", async (c, next) => {
   await next();
 });
 app.onError((error, c) => {
+  if (error instanceof GenerationCostError) return c.json({
+    error: "Generation is temporarily unavailable while we confirm provider costs and capacity. Check your existing task before creating another request.",
+    code: "GENERATION_COST_UNAVAILABLE",
+  }, 503);
   if (error instanceof CreditError) return c.json({error:error.code,code:error.code},error.status);
   console.error("api_failure", error.name);
   return c.json(
@@ -103,7 +109,7 @@ const requireIdentity: import("hono").MiddlewareHandler<{
 app.use("/jobs", requireIdentity);
 app.use("/jobs/*", requireIdentity);
 
-function publicJob(j: typeof jobs.$inferSelect) {
+async function publicJob(j: typeof jobs.$inferSelect) {
   return {
     id: j.id,
     family: j.family,
@@ -112,10 +118,11 @@ function publicJob(j: typeof jobs.$inferSelect) {
     duration: j.duration,
     resolution: j.resolution,
     status: j.status,
-    resultUrl: j.resultUrl,
+    resultUrl: j.status==='success' && !j.reviewRequired ? j.resultUrl : null,
     createdAt: j.createdAt.toISOString(),
     billingMode: j.billingMode, credits: j.credits, creditState: j.creditState,
     reviewRequired: j.reviewRequired,
+    moderation: await publicModeration(j.id),
     deliveryVerifiedAt: j.deliveryVerifiedAt?.toISOString() ?? null,
     downloadNotice: j.status === "success" ? "Download your video promptly. Provider links may expire; permanent storage is not included." : null,
   };
@@ -135,7 +142,7 @@ app.get("/jobs", async (c) => {
     .where(eq(jobs.owner, c.get("owner")))
     .orderBy(desc(jobs.createdAt))
     .limit(50);
-  return c.json({ jobs: rows.map(publicJob) });
+  return c.json({ jobs: await Promise.all(rows.map(publicJob)) });
 });
 app.post("/jobs/quote", async c => {
   const who=c.get("identity");
@@ -163,6 +170,8 @@ app.post("/jobs", async c => {
   const rawLimit=Number(process.env.GENERATION_DAILY_LIMIT??10);
   const limit=Number.isInteger(rawLimit)&&rawLimit>0?Math.min(rawLimit,1000):10;
   const reserved=await database().transaction(async tx=>{
+    // This gate covers preview AND paid live traffic. Fake transports stay isolated.
+    if(videoProvider.kind === "live") await lockGenerationCostBudget(tx);
     if(!who.user && !(await lockGuest(tx,who.owner))) return {error:"This guest session has ended. Sign in again.",status:401 as const};
     if(paid) await lockWallet(tx,who.user!.id,charging.environment);
     await tx.execute(sql`SELECT pg_advisory_xact_lock(7421911)`);
@@ -173,6 +182,11 @@ app.post("/jobs", async c => {
       const count=await tx.execute(sql`SELECT count(*)::int AS n FROM video_jobs WHERE billing_mode='preview' AND created_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
       if(Number(count[0]?.n)>=limit) return {error:"Today's preview generation limit has been reached. Please come back tomorrow.",status:429 as const};
     }
+    if(videoProvider.kind === "live") await reserveGenerationCost(tx, {
+      jobId:x.requestId, fingerprint:generationFingerprint(x),
+      spec:{provider:"vibetoken",model:String(payload.model),mode:x.mode,duration:x.duration,
+        resolution:x.resolution,audio:x.audio,ratio:x.ratio},
+    });
     const [row]=await tx.insert(jobs).values({id:x.requestId,owner:who.owner,family:x.family,mode:x.mode,prompt:x.prompt,duration:x.duration,resolution:x.resolution,fingerprint,payload,status:"submitting",billingMode,creditEnvironment:paid?charging.environment:null}).returning();
     if(paid) {
       const credits=await useQuote(tx,who.user!.id,x,quoteId,charging);
@@ -184,21 +198,26 @@ app.post("/jobs", async c => {
   });
   if("error" in reserved) return c.json({error:reserved.error},reserved.status);
   const row=reserved.fresh?await processJob(reserved.job.id,videoProvider):reserved.job;
-  return c.json({job:publicJob(row??reserved.job)},reserved.fresh?201:200);
+  const result=row??reserved.job;
+  if(result.reviewRequired && !result.submissionStartedAt && result.status==='unknown') return c.json({
+    job:await publicJob(result), code:"GENERATION_NOT_STARTED",
+    error:"This generation could not start. Reserved credits have been released. Please try a new request later or contact support.",
+  },503);
+  return c.json({job:await publicJob(result)},reserved.fresh?201:200);
 });
 app.get("/jobs/:id", async c => {
   let j=await owned(c.req.param("id"),c.get("owner"));
   if(!j) return c.json({error:"Video not found."},404);
   // Reads only poll. The worker owns first submission of already accepted queued jobs.
   if(!["success","failed"].includes(j.status) && !j.reviewRequired && j.nextPollAt<=new Date()) j=await pollJob(j.id,videoProvider)??j;
-  return c.json({job:publicJob(j)});
+  return c.json({job:await publicJob(j)});
 });
 app.post("/jobs/:id/recover", async c => {
   const j=await owned(c.req.param("id"),c.get("owner"));
   if(!j) return c.json({error:"Video not found."},404);
   // No invite needed to poll an owned job. Recovery never initiates ANY generation POST.
-  if(j.reviewRequired) return c.json({job:publicJob(j)});
-  return c.json({job:publicJob(await pollJob(j.id,videoProvider,true)??j)});
+  if(j.reviewRequired) return c.json({job:await publicJob(j)});
+  return c.json({job:await publicJob(await pollJob(j.id,videoProvider,true)??j)});
 });
 return app;
 }

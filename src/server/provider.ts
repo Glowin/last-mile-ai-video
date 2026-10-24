@@ -59,7 +59,18 @@ export async function providerRequest(
       },
     },
   );
-  if (!response.ok) throw new ProviderError(response.status);
+  if (!response.ok) {
+    // Keep enough evidence to distinguish submission rejection from a failed
+    // remote task without copying response bodies, credentials or result URLs.
+    const requestId = new Headers(options.headers).get("Idempotency-Key");
+    console.warn("video_provider_rejected", JSON.stringify({
+      operation: options.method?.toUpperCase() === "POST" ? "submit" : "query",
+      status: response.status,
+      ...(requestId && /^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId)
+        ? { jobId: requestId } : {}),
+    }));
+    throw new ProviderError(response.status);
+  }
   const parsed = taskSchema.safeParse(await response.json());
   if (!parsed.success) throw new ProviderError(502);
   if (

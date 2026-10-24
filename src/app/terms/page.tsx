@@ -6,7 +6,7 @@ export default function Terms() {
       <SiteHeader />
       <main id="main" className="shell prose">
         <h1>Terms & credit offer.</h1>
-        <p>Updated October 23, 2026. The paid offer below is published in preparation for launch. Packs are not yet on sale.</p>
+        <p>Updated October 25, 2026. The paid offer below is published in preparation for launch. Packs are not yet on sale.</p>
         <p>
           KakaReel is an independent, open-source AI video studio under
           development. Preview access is by invitation. It is not an official
@@ -70,6 +70,15 @@ export default function Terms() {
           create unlawful content. Provider restrictions also apply. This
           preview does not grant rights to third-party material or promise that
           every output can be used commercially.
+        </p>
+        <h2>Content review</h2>
+        <p>
+          Our <a href="/acceptable-use">acceptable-use policy</a> applies to
+          prompts, uploads and outputs. A request or video may wait for human
+          review. Credits remain reserved before delivery; a rejected or expired
+          pre-delivery review releases the reservation. Review decisions and
+          unresolved model outcomes are separate. Contact
+          {" "}<a href="/support">support</a> to report content or appeal a decision.
         </p>
         <h2>Keep your results</h2>
         <p>

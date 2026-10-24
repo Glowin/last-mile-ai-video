@@ -1,12 +1,15 @@
 import { test, before, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { OAuth2Client } from "google-auth-library";
 import { SignJWT } from "jose";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
-import { app } from "../src/server/app";
+import { createApp } from "../src/server/app";
+import { providerRequest } from "../src/server/provider";
+// Identity tests use a mocked transport; live cost/moderation gates have their own suite.
+const app = createApp({ videoProvider: { kind: "fake", request: providerRequest, verifyDelivery: async () => true } });
 import { database, closeDatabase } from "../src/server/db";
 import { migrate } from "../scripts/migrate.mjs";
 import { issueSession, sessionOwner } from "../src/server/auth";
@@ -120,10 +123,17 @@ before(async () => {
     "127.0.0.1",
     "Auth tests require their own disposable loopback database",
   );
+  assert.equal(url.protocol, "postgresql:");
+  assert.ok(url.username && url.username !== "postgres", "Use a dedicated test role");
+  assert.ok(url.port && url.port !== "5432", "Use a disposable test port");
+  assert.equal(url.search, ""); assert.equal(url.hash, "");
   assert.equal(url.pathname, "/video_auth_qa");
   const db = postgres(process.env.DATABASE_URL!, { max: 1 });
   try {
     // Only the explicitly named, disposable, loopback auth test database may be reset.
+    const [identity] = await db`SELECT current_database() AS db,current_user AS role`;
+    assert.equal(identity.db, url.pathname.slice(1));
+    assert.equal(identity.role, url.username);
     await db`DROP SCHEMA public CASCADE`;
     await db`CREATE SCHEMA public`;
     // Simulate a real pre-upgrade installation; the migrator must adopt 0001 without deleting jobs.
@@ -181,7 +191,7 @@ test(
         const versions = await database().execute(
           sql`SELECT count(*)::int AS n FROM schema_migrations`,
         );
-        assert.equal(versions[0].n, 5);
+        assert.equal(versions[0].n, (await readdir(new URL("../db/", import.meta.url))).filter(f => /^\d{4}-.+\.sql$/.test(f)).length);
         await migrate();
       },
     );
