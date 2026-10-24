@@ -6,7 +6,7 @@ export default function Privacy() {
       <SiteHeader />
       <main id="main" className="shell prose">
         <h1>Your data.</h1>
-        <p>This page describes the preview and preparation for paid access, updated October 23, 2026.</p>
+        <p>This page describes the preview and preparation for paid access, updated October 25, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For
@@ -48,10 +48,23 @@ export default function Privacy() {
         <p>
           Generating a video sends your prompt, settings, and optional image to
           VibeToken and its upstream model provider. The app temporarily stores
-          the submission payload to recover interrupted requests, then removes
-          that payload after the provider accepts or definitively rejects the
-          job. Do not upload confidential material or personal data during this
-          preview.
+          the submission payload to recover interrupted requests. It removes that
+          operational copy after the provider accepts or definitively rejects the
+          job, but a separate content-review record can retain the prompt,
+          settings and uploaded image. Do not upload confidential material or
+          unnecessary personal data.
+        </p>
+        <h2>Content review and reports</h2>
+        <p>
+          KakaReel's founder may inspect prompts, uploaded images and generated
+          videos to review content before submission or delivery and investigate
+          reports. We retain review snapshots, result references, content hashes,
+          decisions and audit records. Support reports are handled privately;
+          internal records may refer to your support email and affected task.
+          These records do not have an automatic deletion schedule. See our
+          {" "}<a href="/acceptable-use">acceptable-use policy</a> or
+          {" "}<a href="/support">contact support</a> to ask about a decision or
+          request deletion.
         </p>
         <h2>History and result retention</h2>
         <p>

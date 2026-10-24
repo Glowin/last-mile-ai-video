@@ -764,6 +764,9 @@ p {
 }
 .site-footer > div {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   gap: 20px;
 }
 .skip {

@@ -4,40 +4,98 @@ import { database } from "../db";
 import { jobs } from "../schema";
 import { ProviderError, providerRequest, type ProviderTask } from "../provider";
 import { lockWallet, settleCredits } from "../credits/wallet";
-import { verifyVideoDelivery } from "./delivery";
+import { verifyVideoDelivery, verifyVideoContent, type VerifiedVideoContent } from "./delivery";
+import { ensureInputReview, stageOutputReview, moderationApplies, hasModerationHold } from "../moderation/service";
+import { GenerationCostError, getGenerationCost, lockGenerationCostBudget,
+  markGenerationSubmission, releaseUnsubmittedGenerationCost, recordGenerationOutcome } from "../costs";
 export type VideoProvider = {
   kind: "live" | "fake";
   request: (path:string, options?:RequestInit)=>Promise<ProviderTask>;
   verifyDelivery: (url:string)=>Promise<boolean>;
+  verifyContent?: (url:string)=>Promise<VerifiedVideoContent|null>;
 };
-export const liveVideoProvider: VideoProvider=Object.freeze({kind:"live",request:providerRequest,verifyDelivery:verifyVideoDelivery});
+export const liveVideoProvider: VideoProvider=Object.freeze({kind:"live",request:providerRequest,verifyDelivery:verifyVideoDelivery,verifyContent:verifyVideoContent});
 export type JobRow=typeof jobs.$inferSelect;
 const leaseMs=120_000;
 /** Claim commits before I/O. A dead worker's started submission is ONLY looked up. */
 export async function claimJob(id:string, provider:VideoProvider, force=false, allowSubmission=true) {
   return database().transaction(async tx=>{
+    if(provider.kind==='live') await lockGenerationCostBudget(tx);
+    const [initial]=await tx.select().from(jobs).where(eq(jobs.id,id));
+    if(!initial) return null;
+    if(initial.billingMode==='paid') await lockWallet(tx,initial.owner,initial.creditEnvironment!);
     const [j]=await tx.select().from(jobs).where(eq(jobs.id,id)).for("update");
     if(!j || ['success','failed'].includes(j.status) || j.reviewRequired&&!force || j.leaseUntil&&j.leaseUntil>new Date() || !force&&j.nextPollAt>new Date()) return null;
     if(j.creditEnvironment==='test' && provider.kind!=='fake') return null;
     if(j.creditEnvironment==='live' && provider.kind!=='live') return null;
-    const submit=!j.submissionStartedAt && j.status==='submitting' && !j.upstreamId && !!j.payload;
+    if(await hasModerationHold(tx,j.id)) return null;
+    const reviewOutput=provider.kind==='live' && await moderationApplies(tx,j);
+    const unstarted=!j.submissionStartedAt && !j.upstreamId;
+    let submit=unstarted && j.status==='submitting' && !!j.payload;
+    // A prior local rejection remains a hold even under force/recovery.
+    if(!j.submissionStartedAt && j.reviewRequired) return null;
     // A read/recover endpoint cannot turn an unstarted row into a new provider request.
     // Leave it untouched for the submission worker, including its lease and payload.
-    if(submit && !allowSubmission) return null;
-    const [claimed]=await tx.update(jobs).set({leaseToken:randomUUID(),leaseUntil:new Date(Date.now()+leaseMs),...(submit?{submissionStartedAt:new Date()}:{}),nextPollAt:new Date(Date.now()+leaseMs)}).where(eq(jobs.id,id)).returning();
-    return {job:claimed,submit};
+    if((submit || provider.kind==='live' && unstarted) && !allowSubmission) return null;
+    if(submit && reviewOutput) {
+      const inputReview=await ensureInputReview(tx,j);
+      if(inputReview.state!=='approved') return null;
+    }
+    if(unstarted && provider.kind==='live') {
+      try {
+        // No historical backfill here: a legacy unstarted job without a snapshot
+        // is locally held and released, never grandfathered into a paid POST.
+        if(!submit && (await getGenerationCost(tx,j.id))?.state!=='submitted') throw new GenerationCostError('COST_JOB_INPUT_MISSING');
+        const permission=await markGenerationSubmission(tx,j.id);
+        submit=permission.maySubmit;
+      } catch(error) {
+        if(!(error instanceof GenerationCostError)) throw error;
+        const cost=await getGenerationCost(tx,j.id);
+        // A committed submission is ambiguous even if the job marker is absent.
+        // Never release possibly incurred supplier costs or retry that POST.
+        if(cost?.state==='submitted') throw error;
+        if(cost?.state==='held') await releaseUnsubmittedGenerationCost(tx,{
+          jobId:j.id,actor:'worker',evidenceRef:`local-pre-submit:${error.code}`,
+        });
+        if(j.billingMode==='paid' && j.creditState==='reserved') await settleCredits(tx,j.id,'released');
+        await tx.update(jobs).set({status:'unknown',reviewRequired:true,
+          creditState:j.creditState==='reserved'?'released':j.creditState,
+          payload:null,leaseToken:null,leaseUntil:null,updatedAt:new Date(),
+        }).where(eq(jobs.id,j.id));
+        await tx.execute(sql`INSERT INTO credit_audit(id,job_id,action,actor,reason)
+          VALUES(${randomUUID()}::uuid,${j.id}::uuid,'cost-local-rejection','worker',${error.code})`);
+        return null; // Commit releases and audit, then return without any provider I/O.
+      }
+    }
+    const [claimed]=await tx.update(jobs).set({leaseToken:randomUUID(),leaseUntil:new Date(Date.now()+leaseMs),...((submit || provider.kind==='live'&&unstarted)?{submissionStartedAt:new Date()}:{}),nextPollAt:new Date(Date.now()+leaseMs)}).where(eq(jobs.id,id)).returning();
+    return {job:claimed,submit,reviewOutput};
   });
 }
-export async function finishClaim(j:JobRow, outcome:{task?:ProviderTask;verified?:boolean;definitiveFailure?:boolean}) {
+export async function finishClaim(j:JobRow, outcome:{task?:ProviderTask;verified?:boolean;contentSha256?:string;definitiveFailure?:boolean}, provider:VideoProvider=liveVideoProvider) {
   return database().transaction(async tx=>{
+    if(provider.kind==='live' && j.creditEnvironment!=='test') await lockGenerationCostBudget(tx);
     if(j.billingMode==='paid') await lockWallet(tx,j.owner,j.creditEnvironment!);
     const [current]=await tx.select().from(jobs).where(eq(jobs.id,j.id)).for('update');
     if(!current || current.leaseToken!==j.leaseToken || !current.leaseUntil || current.leaseUntil<=new Date()) return current;
+    if(await hasModerationHold(tx,current.id)) return current;
     const task=outcome.task;
     if(current.upstreamId && task && current.upstreamId!==task.id) throw new Error('Provider task identity mismatch');
     const success=task?.status==='success' && outcome.verified===true;
     const failed=outcome.definitiveFailure || task?.status==='failed';
     const review=!success&&!failed && Date.now()-current.createdAt.getTime()>=24*3600_000;
+    if(provider.kind==='live' && current.creditEnvironment!=='test') {
+      const cost=await getGenerationCost(tx,current.id);
+      // Legacy submitted jobs remain queryable without inventing a cost snapshot.
+      if(cost?.state==='submitted') await recordGenerationOutcome(tx,{
+        jobId:current.id,outcome:success?'success':failed?'failed':'unknown',evidenceRef:'provider-task-status',
+      });
+      // No actualMinor inference from HTTP codes, task status, or delivery.
+    }
+    if(success && provider.kind==='live' && await moderationApplies(tx,current)) {
+      if(!outcome.contentSha256) throw new Error('Complete output evidence required');
+      await stageOutputReview(tx,current,{providerTaskId:task!.id,url:task!.data![0].url,contentSha256:outcome.contentSha256});
+      return (await tx.select().from(jobs).where(eq(jobs.id,current.id)))[0];
+    }
     let creditState=current.creditState;
     if(current.billingMode==='paid' && creditState==='reserved' && (success||failed)) {
       creditState=success?'consumed':'released';
@@ -60,16 +118,19 @@ export async function finishClaim(j:JobRow, outcome:{task?:ProviderTask;verified
 export async function processJob(id:string,provider:VideoProvider=liveVideoProvider,force=false,allowSubmission=true) {
   const claim=await claimJob(id,provider,force,allowSubmission);
   if(!claim) return database().query.jobs.findFirst({where:eq(jobs.id,id)});
-  const {job:j,submit}=claim;
+  const {job:j,submit,reviewOutput}=claim;
   try {
     const task=submit
       ? await provider.request('',{method:'POST',headers:{'Idempotency-Key':j.id},body:JSON.stringify(j.payload)})
       : await provider.request(j.upstreamId?`/${encodeURIComponent(j.upstreamId)}`:`?client_request_id=${encodeURIComponent(j.id)}`);
     if(j.upstreamId && task.id!==j.upstreamId) throw new ProviderError(502);
-    const verified=task.status==='success' && !!task.data?.[0] && await provider.verifyDelivery(task.data[0].url);
-    return await finishClaim(j,{task,verified});
+    const content=task.status==='success' && !!task.data?.[0] && reviewOutput
+      ? await provider.verifyContent?.(task.data[0].url) : null;
+    const verified=task.status==='success' && !!task.data?.[0] && (reviewOutput
+      ? !!content : await provider.verifyDelivery(task.data[0].url));
+    return await finishClaim(j,{task,verified,contentSha256:content?.contentSha256},provider);
   } catch(error) {
-    return finishClaim(j,{definitiveFailure:submit && error instanceof ProviderError && [400,401,402,403,404,422].includes(error.status)});
+    return finishClaim(j,{definitiveFailure:submit && error instanceof ProviderError && [400,401,402,403,404,422].includes(error.status)},provider);
   }
 }
 /** Polling may settle an existing reservation, but can never initiate generation or reserve credits. */
@@ -87,10 +148,17 @@ export async function releaseForReview(id:string,actor:string,reason:string) {
   return database().transaction(async tx=>{
     const [initial]=await tx.select().from(jobs).where(eq(jobs.id,id));
     if(!initial || initial.billingMode!=='paid') throw new Error('Paid job not found.');
+    if(initial.creditEnvironment!=='test') await lockGenerationCostBudget(tx);
     await lockWallet(tx,initial.owner,initial.creditEnvironment!);
     const [j]=await tx.select().from(jobs).where(eq(jobs.id,id)).for('update');
     if(j.creditState==='released') return j;
     if(j.creditState!=='reserved' || Date.now()-j.createdAt.getTime()<24*3600_000 || ['success','failed'].includes(j.status)) throw new Error('Only unresolved reservations older than 24 hours may be compensated.');
+    if(j.creditEnvironment!=='test' && !j.submissionStartedAt && !j.upstreamId) {
+      const cost=await getGenerationCost(tx,j.id);
+      if(cost?.state==='held') await releaseUnsubmittedGenerationCost(tx,{
+        jobId:j.id,actor:actor.trim(),evidenceRef:'operator-release-before-submission',
+      });
+    }
     await settleCredits(tx,j.id,'released');
     const [updated]=await tx.update(jobs).set({creditState:'released',reviewRequired:true,leaseToken:null,leaseUntil:null,updatedAt:new Date()}).where(eq(jobs.id,id)).returning();
     await tx.execute(sql`INSERT INTO credit_audit(id,job_id,action,actor,reason) VALUES(${randomUUID()}::uuid,${id}::uuid,'operator-release',${actor.trim()},${reason.trim()})`);

@@ -60,7 +60,13 @@ before(async () => {
     "Integration tests require the dedicated loopback QA DB",
   );
   assert.equal(u.pathname, "/video_qa");
-  await database().execute(sql`TRUNCATE credit_allocations,credit_audit,video_quotes,video_jobs,demo_login_attempts`);
+  assert.equal(u.protocol, "postgresql:");
+  assert.ok(u.username && u.username !== "postgres", "Use a dedicated test role");
+  assert.ok(u.port && u.port !== "5432");
+  assert.equal(u.search, ""); assert.equal(u.hash, "");
+  const [identity] = await database().execute(sql`SELECT current_database() AS db,current_user AS role`);
+  assert.equal(identity.db, "video_qa"); assert.equal(identity.role, u.username);
+  await database().execute(sql`TRUNCATE credit_allocations,credit_audit,video_quotes,video_jobs,demo_login_attempts CASCADE`);
   global.fetch = async (url, init) => {
     assert.ok(
       String(url).startsWith("https://vibetoken.cn/v1/videos/generations"),

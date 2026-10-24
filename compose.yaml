@@ -25,6 +25,22 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  billing-reconciliation:
+    build:
+      context: .
+      target: worker
+    command: ["node", "scripts/start.mjs", "node", "--import", "tsx", "scripts/billing-reconcile-worker.ts", "run"]
+    restart: unless-stopped
+    stop_grace_period: 8m
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set the project database URL in Dokploy}
+      SESSION_SECRET: ${SESSION_SECRET:?Set a project-specific secret}
+      APP_URL: ${APP_URL:?Set the public origin}
+      # This production service must never inherit sandbox credentials or gates.
+      BILLING_TEST_ENABLED: "false"
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     build:
       context: .

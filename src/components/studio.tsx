@@ -46,6 +46,7 @@ type StudioJob = PublicJob & {
   credits?: number;
   creditState?: "none" | "reserved" | "consumed" | "released";
   reviewRequired?: boolean;
+  moderation?: { phase: "input" | "output"; state: "pending" | "approved" | "rejected" | "expired"; version: number }[];
 };
 const creditStateLabel = {
   none: "No purchased credits used",
@@ -62,10 +63,18 @@ const quoteReason: Record<string, string> = {
 const statusLabel: Record<string, string> = {
   submitting: "Submitting",
   pending: "Generating",
-  unknown: "Connection interrupted",
+  unknown: "Outcome unconfirmed",
   success: "Ready",
   failed: "Generation failed",
 };
+function jobLabel(job: StudioJob) {
+  const review = job.moderation?.find((r) => r.state === "rejected" || r.state === "expired")
+    ?? job.moderation?.find((r) => r.state === "pending");
+  if (review?.state === "rejected") return "Content review declined";
+  if (review?.state === "expired") return "Content review expired";
+  if (job.reviewRequired) return "Awaiting review";
+  return statusLabel[job.status];
+}
 export function Studio() {
   const params = useSearchParams();
   const initial = getFamily(params.get("model") ?? "") ?? families[0];
@@ -709,6 +718,7 @@ export function Studio() {
                 <p className="micro centered">
                   {billingMode === "preview" ? "Uses the limited preview allowance. No purchased credits spent." : "Submitting reserves the quoted credits. Check pending tasks before starting another generation."}
                 </p>
+                  <p className="micro">Prompts, uploaded images and finished videos may be reviewed by KakaReel's founder before generation or delivery. <a href="/acceptable-use">Content rules</a> · <a href="/support">Get help</a></p>
               </form>
               {!user && (
                 <div id="google-sign-in">
@@ -816,7 +826,7 @@ export function Studio() {
                             {new Date(j.createdAt).toLocaleDateString()}
                           </span>
                         </div>
-                        <span>{statusLabel[j.status]}</span>
+                        <span>{jobLabel(j)}</span>
                         <ArrowUpRight size={17} />
                       </button>
                     ))
@@ -848,9 +858,11 @@ export function Studio() {
                         >
                           <Film size={32} />
                         </div>
-                        <h2>{statusLabel[focused.status]}</h2>
+                        <h2>{jobLabel(focused)}</h2>
                         <p>
-                          {focused.status === "failed"
+                          {focused.reviewRequired
+                            ? "This task is on hold for review. Check the credit status below and contact support with the task ID if you need help. Recovery will not restart generation or approve content."
+                            : focused.status === "failed"
                             ? "The provider could not finish this task. You can edit your prompt and create a new generation."
                             : focused.status === "unknown"
                               ? "The request may already be running. This is not a confirmed failure; any credit reservation remains pending. Recover this task to check it without automatically starting another video."
@@ -858,7 +870,7 @@ export function Studio() {
                                 ? "Your idea is with the model. This may take a few minutes. Sign in to this account to check it later on any device."
                                 : "Your idea is with the model. This may take a few minutes. You can safely leave this tab and return in the same browser."}
                         </p>
-                        {focused.status === "unknown" && (
+                        {focused.status === "unknown" && !focused.reviewRequired && (
                           <button
                             className="button secondary"
                             disabled={busy}
@@ -911,7 +923,8 @@ export function Studio() {
                       {focused.billingMode === "paid" ? `Paid generation · ${focused.credits ?? "—"} credits` : "Preview generation"}
                       {focused.creditState && <> · {creditStateLabel[focused.creditState]}</>}
                     </p>}
-                    {focused.reviewRequired && <p className="micro" role="status">This task needs review. Check its status before submitting another generation.</p>}
+                    {focused.reviewRequired && <p className="micro" role="status">Review may take time. <a href="/support">Contact support or appeal a decision</a>.</p>}
+                    <p className="micro">Task ID: <code>{focused.id}</code></p>
                     <small>
                       Save completed videos promptly. Provider links may expire; permanent storage is not included.
                       {user

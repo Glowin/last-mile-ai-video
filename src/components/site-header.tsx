@@ -40,6 +40,8 @@ export function SiteFooter() {
         <Link href="/privacy">Privacy</Link>
         {process.env.GA_MEASUREMENT_ID && <AnalyticsSettings />}
         <Link href="/terms">Terms</Link>
+        <Link href="/acceptable-use">Acceptable use</Link>
+        <Link href="/support">Support</Link>
         <a
           href="https://github.com/Glowin/last-mile-ai-video"
           target="_blank"
