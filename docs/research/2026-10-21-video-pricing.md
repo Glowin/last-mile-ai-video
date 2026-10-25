@@ -27,6 +27,8 @@ method: "初稿采用源码与官方正文；Higgsfield 和 VibeToken 模型价�
 
 Seedance 来源：[文生生成页](https://vibetoken.cn/models/bytedance/seedance-2-5/text-to-video)，默认音频开启、水印关闭、16:9；Kling 来源：[文生生成页](https://vibetoken.cn/models/kuaishou/kling-3-0/text-to-video)，10 秒音频开关报价均为 28.50。MiniMax 延用 2026-10-21 [详情目录价](https://vibetoken.cn/pricing/video_generate.minimax_h3_t2v)，不是本轮新实扣。图生暂不外推文生报价，独立核验前不进入付费白名单。480p 继续禁用。
 
+2026-10-25 增量：Seedance 720p／5 秒文生实扣 ¥6.426、Kling 4K／5 秒文生实扣 ¥14.25、MiniMax 6 秒 adaptive 图生实扣 ¥4.56，三条均取得实际成片。具体尺寸、音轨、验证边界见[真实视频验收](../launch-readiness.md#重新授权后的真实视频验收2026-10-25)。该证据只覆盖这些规格；图生报价不能外推到其他模型，正式销售与购买积分交付仍未放行。
+
 积分按 `ceil(整段人民币成本 / 0.20)` 计算，版本化公开费率在 `src/lib/video-credit-rates.ts`。新增规格、供应商涨价或声音条件变化必须重新核价；真实付费交付仍需另行验收。库存积分不是人民币兑换或提现余额。
 
 2026-10-23：已在 Pancake 创建个人／中国的 KakaReel 测试商店和一个 US$19 一次性商品；测试 API 密钥经江昪单独授权创建，仅保存在项目库外受限目录。未创建生产密钥、提交身份文件、绑定收款账户或开启真实收款。商户 ID、商品 ID、私钥和平台公钥不放公开仓库。
