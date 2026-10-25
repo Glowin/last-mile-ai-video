@@ -50,6 +50,10 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 离线验证 Compose 时使用清空继承环境的进程、显式 `--env-file /dev/null` 和全合成必填值，避免自动读取 checkout 的 `.env`。分别检查未设置支付变量、显式空值、合成正式值及沙盒变量混入的场景：两个支付服务的正式值一致，沙盒开关始终关闭，generation worker 无支付变量。解析结果只在内存中断言，不将完整环境输出到日志；此检查不启动容器，也不代表真实支付验收。
 
+## 数据库凭证轮换
+
+历史数据库密码事项按[独立轮换操作与验收](database-credential-rotation.md)执行。2026-10-25 已完成合成凭证的 PostgreSQL 16 隔离演练，生产尚未轮换；不得把更新环境变量、healthy 或旧连接仍可用当作新旧密码验收。轮换维持现有应用版本和迁移，与 0006–0009 升级分别执行。
+
 ## 本地
 
 使用 Node.js 22 和 pnpm 10.27.0，先 `pnpm install --frozen-lockfile`。外部配置文件路径由操作者提供，以下占位路径不应直接执行：
