@@ -1,13 +1,19 @@
 ---
 title: "PostgreSQL 数据库凭证轮换操作与验收"
-date: 2026-10-25
-source: "旧应用源码与 a3b05be 文档差异；2026-10-25 Dokploy 页面；2026-10-26 复核 v0.29.4 源码；PostgreSQL 16／Docker 官方文档；隔离演练"
-status: "Hostinger 管理入口与生产只读预检通过；等待维护窗口及用户密码输入，生产未轮换"
+date: 2026-10-26
+source: "旧应用源码与 a3b05be 文档差异；2026-10-25 Dokploy 页面；2026-10-26 复核 v0.29.4 源码；PostgreSQL 16／Docker 官方文档；隔离演练；用户 2026-10-26 最新决定"
+status: "用户决定本次不轮换；取消轮换维护窗口等待，不作为本次上线前置；生产未轮换"
 ---
+
+# 当前决定（2026-10-26）
+
+用户根据现有信息明确决定本次不改数据库密码。此前等待维护窗口及用户密码输入的安排取消，数据库密码轮换不再作为本次上线或 0006–0009 升级的前置。此决定不代表密码已轮换、旧凭证已失效或风险已消除。
+
+下文保留此前只读预检、隔离演练、平台源码结论及未执行的轮换方案。观测结果仅对应其记录时点，隔离演练和源码推导不等于生产变更。所有轮换步骤、窗口及验收要求仅供未来另行决定轮换时重新核准使用，不构成本次待办；升级本身仍按[独立升级切换](deployment.md#cost-moderation-cutover)执行。
 
 # 范围与发布边界
 
-本手册仅轮换本项目现有 PostgreSQL 16 登录角色的密码，保留角色、权限、数据库、数据卷和应用版本。工作树 `30777d3` 的 `compose.yaml`、`docs/deployment.md`、`src/server/db.ts` 已核读；另只读比对了 `b197051` 的 Compose 和连接池实现。2026-10-25 22:52 的 Dokploy 只读页面显示最近成功部署记录为 `a3b05be`；本地 Git 比对确认它相对 `b197051` 仅修改三份文档。随后通过现有 Web 容器的真实运行时连接，只读核得 PostgreSQL `160015`、五项迁移名称及 SHA-256 全部与源码一致；容器架构为 x64。经江昪明确批准限定字段读取，已取得 Web／worker／db 的不可变镜像 ID，并从挂载页核得既有数据卷与目标目录。实际值保存在库外受限记录，未输出或保存环境变量。江昪登录 Hostinger 后，通过既有 VPS 网页终端仅提取限定字段，已核三个容器相同的 Compose 项目标签、各服务标签、工作目录及配置文件路径。PR3 成本／审核迁移 0006–0009 尚未发布。
+本手册保留的备选方案仅针对本项目现有 PostgreSQL 16 登录角色的密码轮换，保留角色、权限、数据库、数据卷和应用版本。工作树 `30777d3` 的 `compose.yaml`、`docs/deployment.md`、`src/server/db.ts` 已核读；另只读比对了 `b197051` 的 Compose 和连接池实现。2026-10-25 22:52 的 Dokploy 只读页面显示最近成功部署记录为 `a3b05be`；本地 Git 比对确认它相对 `b197051` 仅修改三份文档。随后通过现有 Web 容器的真实运行时连接，只读核得 PostgreSQL `160015`、五项迁移名称及 SHA-256 全部与源码一致；容器架构为 x64。经江昪明确批准限定字段读取，已取得 Web／worker／db 的不可变镜像 ID，并从挂载页核得既有数据卷与目标目录。实际值保存在库外受限记录，未输出或保存环境变量。江昪登录 Hostinger 后，通过既有 VPS 网页终端仅提取限定字段，已核三个容器相同的 Compose 项目标签、各服务标签、工作目录及配置文件路径。PR3 成本／审核迁移 0006–0009 尚未发布。
 
 本轮页面确认平台版本 v0.29.4、Git main 自动部署开启。容器菜单只有 Restart／Start／Stop 等生命周期动作，没有已验证的固定镜像重建入口。该版本官方源码的 [rebuildCompose](https://github.com/Dokploy/dokploy/blob/v0.29.4/packages/server/src/services/compose.ts) 调用 [getBuildComposeCommand](https://github.com/Dokploy/dokploy/blob/v0.29.4/packages/server/src/utils/builders/compose.ts)，默认包含 `up -d --build --remove-orphans`。因此不把界面 Reload 当成仅重启，也不把 Restart 当成重新载入环境。本轮未点击这些动作、停服务或保存配置。后续已核主机镜像、部署定义及只读配置合并；保存新环境后的实际注入仍是切换验收项，不能用只读检查替代。
 
@@ -42,11 +48,11 @@ compose -p VERIFIED_PROJECT -f ORIGINAL_COMPOSE_PATH -f PRIVATE_PIN_FILE up -d -
 - Patch 路径相对本服务部署的 `code/`；生成的 `.env` 位于平台原 Compose 路径的同目录，custom command 的工作目录则为 `code/`。上面的原 Compose 必须作为第一个 `-f`，覆盖文件作为第二个，并核变量插值实际读取同一份新环境。平台并不直接 export 整套服务环境到 docker-compose 子进程。依据：[环境文件路径](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/utils/builders/compose.ts#L99-L144)、[Patch 落地](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/services/patch.ts#L145-L174)。不要用 Patch 保存新密码或覆盖 `.env`；新密码仍由用户保存到平台环境设置。
 - **禁用或删除 Patch 记录不会删除已经写到主机的覆盖文件**。只有执行删除类型的 Patch 才会删文件，而 Reload 仍会继续执行 Docker 命令。维护收尾须分别核自定义命令、Patch 记录和实际覆盖文件；不能清空 Command 后再 Reload 来“清理”，那会回到默认构建。依据：[Patch 记录删除](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/services/patch.ts#L83-L107)及上述 Patch 落地源码。创建 Patch 的编辑器另会克隆独立的 patch 仓库，这不等同于 Reload 拉取部署代码，见 [patch-repo](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/services/patch-repo.ts#L22-L70)。
 
-因此维护时可采用已演练命令：先核并暂停本项目自动部署，准备仅含原镜像 ID 的私有覆盖文件及固定命令；用户完成角色密码和两项平台环境更新后，沿上述 Reload 路径加载配置。恢复仍须核实际容器的新环境、原镜像、原五项迁移与正反 TCP 认证，不能以源码推导或保存提示替代。后续升级前必须协调移除固定旧镜像的命令及覆盖记录／文件，否则可能继续运行旧版；清理应纳入独立升级步骤，不为清理另触发未审阅的部署。
+因此维护时可采用已演练命令：先核并暂停本项目自动部署，准备仅含原镜像 ID 的私有覆盖文件及固定命令；用户完成角色密码和两项平台环境更新后，沿上述 Reload 路径加载配置。恢复仍须核实际容器的新环境、原镜像、原五项迁移与正反 TCP 认证，不能以源码推导或保存提示替代。若未来实际配置了这些覆盖项，后续升级前必须协调移除固定旧镜像的命令及覆盖记录／文件，否则可能继续运行旧版；清理应纳入独立升级步骤，不为清理另触发未审阅的部署。
 
-生产轮换与[0006–0009 升级切换](deployment.md#cost-moderation-cutover)是两次独立变更。先在现有版本完成密码轮换及验收，再另行批准代码升级；不能在密码故障中顺手部署 main、运行当前 checkout 的迁移器或启动新账单进程。`scripts/start.mjs` 启动应用前会自动迁移；把新镜像当作“重启”会改变恢复边界。
+生产轮换与[0006–0009 升级切换](deployment.md#cost-moderation-cutover)是独立变更。此前「先轮换、再升级」的安排已由 2026-10-26 用户决定取消，本次升级不等待轮换。若未来重新决定轮换，须依据届时实际版本和迁移状态重新制定方案；不能在密码故障中顺手部署 main、运行当前 checkout 的迁移器或启动新账单进程。`scripts/start.mjs` 启动应用前会自动迁移；把新镜像当作“重启”会改变恢复边界。
 
-| 对象 | 本次处理 |
+| 对象 | 原轮换方案处理范围（本次不执行） |
 |---|---|
 | `db` | `db/Dockerfile` 基于 `postgres:16-alpine`；既有 `video-db` 挂载 `/var/lib/postgresql/data`。逻辑卷名不是宿主机实际卷名，必须核实际挂载与项目归属 |
 | `web`、generation `worker` | `b197051` 已有两个服务，共用 `DATABASE_URL`。轮换后均须以原镜像、新运行时环境重建进程和连接池 |
@@ -72,7 +78,7 @@ Hostinger 既有管理终端已连接。Web 的真实运行时 URL 新建 TCP �
 
 # 人与 Agent 的分工
 
-这是准备文档，不是生产变更授权。执行者先安排窗口，确认具体操作对象和恢复入口。Agent 可以准备步骤、核对非敏感对象标识、读回掩码状态、运行经授权的只读探针并汇总安全结果。
+这是留存的备选方案，不是生产变更授权，本次不安排轮换窗口。未来另行决定执行时，执行者须先重新核准窗口、具体操作对象和恢复入口。Agent 可以准备步骤、核对非敏感对象标识、读回掩码状态、运行经授权的只读探针并汇总安全结果。
 
 **浏览器内修改密码必须由用户接管，亲自输入新密码、确认并提交。Agent 不能代用户在 UI 输入、粘贴或提交新密码，也不能用 DOM、页面脚本、请求注入绕过。** Dokploy 环境设置中的 `POSTGRES_PASSWORD` 和含新密码的 `DATABASE_URL` 同样按此交接；网页终端中的 `\password` 提示也由用户输入并确认。用户接管时 Agent 停止该页面自动操作和截屏，完成后只核保存状态及认证结果，不点击显示密码。
 
@@ -80,7 +86,7 @@ Hostinger 既有管理终端已连接。Web 的真实运行时 URL 新建 TCP �
 
 # 执行前置清单
 
-所有项完成后才进入密码变更。实际值只存受限执行记录，公开报告只写匹配与否。
+本清单当前不启用。未来另行决定轮换时，须先按届时运行版本更新原五项迁移及旧镜像等历史基线，所有项完成后才进入密码变更。实际值只存受限执行记录，公开报告只写匹配与否。
 
 1. 核准 Dokploy 的本项目／环境、Compose project label、准确的 db／web／worker 容器 ID、各自镜像 ID／digest、数据库网络以及 db 的实际卷名、挂载目标。核对当前所有副本和一次性运维进程；不能依赖一个叫 `db` 的服务名就认定项目。发现沙盒、其他项目、不同卷或不同角色立即停下。
 2. 核准实际运行镜像与上述旧应用基线相符（最新部署记录 `a3b05be` 与 `b197051` 应用代码相同），迁移记录只有 0001–0005，记录完整名称和校验和。确认保留了可重新启动的原 Web／worker 镜像和旧部署定义；不要引用会移动的 tag。若代码不同或出现 0006–0009，停止套用本窗口，按真实状态重新评审，不把数据库退回五项迁移。
