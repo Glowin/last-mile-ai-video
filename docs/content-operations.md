@@ -6,7 +6,7 @@ scope: "KakaReel manual review, private support workflow and generation integrat
 
 # Content review and support operations
 
-Updated 2026-10-25. Owner: KakaReel founder (Glow Jiang). The founder handles the review queue and `support@kakareel.com`, checking them before operating generation and before ending each operating session. No guaranteed response or review deadline is advertised. This document describes the new module and its required integration; standalone tests are not evidence that production uses these gates.
+Updated 2026-10-25. Owner: KakaReel founder (Glow Jiang). The founder handles the review queue and `support@kakareel.com`, checking them before operating generation and before ending each operating session. No guaranteed response or review deadline is advertised. The module is integrated with the app and runner and has passed isolated PostgreSQL acceptance; production deployment and the live operator workflow remain unverified. See [launch readiness](launch-readiness.md) for current evidence.
 
 ## Boundaries and policy
 
@@ -25,7 +25,7 @@ Migration `0008-generation-moderation.sql` adds `generation_moderation`, `modera
 - Output `approved`: set successful delivery and consume once in the same wallet/job transaction. Already released credits stay released, including a later appeal approval.
 - `rejected` / `expired`: remove our output link, preserve upstream identity, set `unknown` + `reviewRequired`, release any still-reserved user credits once. This is a moderation result, **not** an upstream generation failure.
 - Pending review expires after 24 hours in database time. Expiry is an explicit audited operator action, not a background job in this module. Until acted on it stays held. An expired review cannot be approved. Queue output shows deadlines. There is no claim of automatic handling.
-- A policy rejection before submission must also release unsubmitted supplier-cost exposure during integration. Rejection after submission must not erase provider cost; KakaReel bears that cost unless the provider separately confirms a refund.
+- A policy rejection before submission releases unsubmitted supplier-cost exposure in the integrated transaction. Rejection after submission must not erase provider cost; KakaReel bears that cost unless the provider separately confirms a refund.
 
 The output hash includes the exact provider task, URL, full-video SHA-256, input approval version and policy. A content SHA-256 must come from all delivered video bytes, not from a URL, Range request or header. The operator downloads/views the candidate privately; CLI verifies that file's hash before approval. External provider URLs can expire or change: this does not create immutable hosting or prevent a provider from changing bytes later. A controlled delivery proxy/object store would be needed for that stronger guarantee.
 
@@ -53,7 +53,7 @@ Exports are exclusive-create 0600 private files; choose a fresh filename. `queue
 1. Read support email manually. Use an opaque mail/message reference as `MAIL_REFERENCE`, not raw email bodies, signed result URLs or private attachments. Record a concise reason through `case-open`; map to the actual job after ownership/identity checks. If a reporter has no task ID, start an unlinked case and investigate through private account records; never guess a target job. A case requiring a newly identified job should get a new linked source reference, and the original case should record that handoff in its resolution.
 2. Content/rights/privacy cases linked to a job immediately hide its KakaReel result and hold worker processing. Existing downloads and external provider files cannot be retracted by this action. No retroactive financial refund is invented; investigate payment eligibility separately.
 3. `cases` shows unresolved work. Record actual investigation and response via `case-resolve`. This does not unhide a video or resume a generation. For an existing reviewed output, run `reopen-output`, export its new version, inspect again and decide normally. Do not reuse an old approval. For rejected/expired inputs, ask the user for a new compliant task; do not restart a released job at the platform's expense.
-4. For a provider outcome still unknown (separate from a moderation hold), query the **existing** task via the existing credit-worker `review` / `poll JOB_UUID` commands. Do not POST a replacement or claim failure from timeout. Only the existing audited compensation path may release an eligible unresolved reservation; it does not mark provider success/failure. After integration, polling must respect content holds, even with force=true.
+4. For a provider outcome still unknown (separate from a moderation hold), query the **existing** task via the existing credit-worker `review` / `poll JOB_UUID` commands. Do not POST a replacement or claim failure from timeout. Only the existing audited compensation path may release an eligible unresolved reservation; it does not mark provider success/failure. Integrated polling respects content holds, even with force=true.
 5. For a payment/refund case use the billing reconciliation CLI on the original order; never re-create the payment/refund as a troubleshooting step. Reply only with verified state. Outbound support messages require normal owner authorization; the case queue itself does not send email.
 
 ## Exact integration contract (main session)
@@ -67,7 +67,7 @@ Exports from `src/server/moderation/service.ts`:
 - `publicModeration(jobId)`: phase/state/version only, included in owned job responses. Pending/rejected/expired or reported output URLs are hidden. Migration `0009-moderation-rollout.sql` records a durable rollout time: older jobs keep the previous delivery flow and history without being labeled reviewed. New live jobs require both reviews. Content reports hold jobs of every age; forced polling cannot bypass moderation holds. Unstarted old jobs still need a previously reserved cost snapshot, so the rollout boundary grants no new supplier-spending permission.
 - `reopenOutputReview(jobId, actor, reason)`: explicit new output-review version after report resolution; never new provider work.
 
-`src/server/moderation/cases.ts` exports `openCase(...)` and `resolveCase(...)`; CLI uses these directly. Add footer/help links and generation/account review states in main-owned files. The current module does not modify `app.ts`, runner, schema, Terms, Privacy or navigation.
+`src/server/moderation/cases.ts` exports `openCase(...)` and `resolveCase(...)`; CLI uses these directly. App/runner integration, public review states, footer/help links and Terms/Privacy disclosures are included in the current branch. They have not yet been deployed.
 
 ## Validation
 
@@ -99,4 +99,4 @@ Only status 200, accepted video MIME, a matching video signature, a normal respo
 
 Limitations: HTTP completeness and the MP4/QuickTime/WebM signature do not prove the entire file decodes, has the requested duration or complies with policy. An upstream that deliberately sends an incomplete media container inside a normally framed HTTP response cannot be identified by a header-only media check. Human review still needs to download and view the exact bytes matching the hash. The function does not guarantee the external URL remains immutable after verification. Provider URLs requiring authentication, redirects or content encoding are intentionally unsupported. All network behavior tests use injected transports; no real provider or external network was called.
 
-Acceptance: `tests/delivery-content.test.ts` plus existing `tests/video-delivery.test.ts`: 18 passed, 0 failed, 0 skipped; whole-worktree TypeScript check passed at handoff. Logs: `/private/tmp/kakareel-delivery-content-test.log` and `/private/tmp/kakareel-delivery-content-types.log`. Runner/app wiring remains with the main session.
+Acceptance: `tests/delivery-content.test.ts` plus existing `tests/video-delivery.test.ts`: 18 passed, 0 failed, 0 skipped; whole-worktree TypeScript check passed at handoff. Logs: `/private/tmp/kakareel-delivery-content-test.log` and `/private/tmp/kakareel-delivery-content-types.log`. Runner/app wiring and its isolated integration acceptance are now complete; see [launch readiness](launch-readiness.md).

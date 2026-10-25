@@ -35,8 +35,8 @@ status: "b197051 已部署，商户签名退款全额成功且幂等冲销已验
 ### 接续操作
 
 1. 新单退款终态与幂等冲销已验，不再提交；原 unknown 单仍按原请求只读核查，不重复退款或主动解冻。
-2. 税务问题待渠道确认：测试商品与订单快照均为 SaaS、DE 个人买家、USD19 税外价，但实际返回税额 0。请 Waffo 确认该笔计算依据、沙盒限制及应如何获得有税验收；证据已备，尚未发送。
-3. 业务详情表单入口未响应，负责人角色已核；待 Waffo 协助后继续业务审核、生产配置及其余开售前验收，收费保持关闭。排障请求已准备，尚未发送。官方入口说明见 [Business Details](https://docs.waffo.ai/settings/business-details)；[Identity Verification](https://docs.waffo.ai/merchant/identity-kyc) 明确 KYC 是收款账户与提现前提，没有将其列为打开业务表单的前提。
+2. 税务问题待渠道确认：测试商品与订单快照均为 SaaS、DE 个人买家、USD19 税外价，但实际返回税额 0。请 Waffo 确认该笔计算依据、沙盒限制及应如何获得有税验收；已通过邮件和指定合作微信群发送，转人工回信与最新边界见下一项。
+3. 业务详情表单入口未响应，负责人角色已核；待 Waffo 协助后继续业务审核、生产配置及其余开售前验收，收费保持关闭。两项排障请求已于 2026-10-25 通过邮件和指定合作微信群发出并回读；客服邮箱 10:45 回复称已转人工，但尚无具体修复或税费测试参数，详见[开售清单](launch-readiness.md)。官方入口说明见 [Business Details](https://docs.waffo.ai/settings/business-details)；[Identity Verification](https://docs.waffo.ai/merchant/identity-kyc) 明确 KYC 是收款账户与提现前提，没有将其列为打开业务表单的前提。
 
 ## 2026-10-23 较早验收快照（历史）
 
