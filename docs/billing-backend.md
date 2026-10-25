@@ -20,7 +20,7 @@ status: "b197051 已部署，商户签名退款全额成功且幂等冲销已验
 | 已部署与生产运行 | Dokploy 的 `b197051` 部署记录为 done，日志为 `Docker Compose Deployed`；Web healthy、worker running；生产库只读查询确认 `0001-init.sql` 至 `0005-pancake-bridge.sql` 五项迁移 | 已验证当前常驻及迁移，不代表有任务恢复、真实视频交付已验 |
 | 付款回调与拒付 | 前轮官方付款签名回调自动入账 150 credits；重复通知返回 `duplicate`，没有重复入账；独立拒付测试不发积分 | 渠道测试，不是正式收入 |
 | 商户后台退款回调 | 前轮后台全额退款 USD19，实际签名回调自动冲销 150 credits；接收器重启后重投返回 `duplicate`，没有重复扣回 | 该次商户后台退款闭环已通过 |
-| 原 unknown 单 | 原测试单仍为 unknown，对应 150 credits 保持冻结，未重新提交或解冻 | 不将后续新单的诊断当作原单根因 |
+| 原 unknown 单 | 2026-10-25 从既有账本备份核准原单身份，单次 authenticated 查询返回 payment succeeded、金额匹配、0 对应工单、0 退款记录；150 credits 继续冻结，未重提或解冻 | 查询没有观察到工单不等于明确退款失败；同日已获授权在原客服邮件线程补充原单核查并回读 SENT；待渠道确认是否受理，不将后续新单诊断当作原单根因 |
 | 退款认证修复 | 精确端点文档要求商户 API Key 签名；此前 SDK 的 `customer(token).createRefundTicket()` 使用买家 Bearer。现改为服务端 RSA-SHA256 签名调用已文档化端点，保留订单、金额、币种与幂等键校验；不自动重试 | 商户请求直接进入处理，不再承诺等待渠道人工审批。源码修复及 27 项定向测试、build 通过；`b197051` 已上线 |
 | 新单自动退款实测 | USD19 测试单的商户签名退款仅提交一次，从 processing 进入已退款；authenticated 查询确认执行退款，本地为 refunded／succeeded。账本只有一条 purchase +150 和一条 refund −150，后续重复查询两项均 duplicate，复查账本未增加 | 全额退款及无回调时的手动查询冲销闭环通过；不代表自动对账调度已建立 |
 | 无回调恢复 | 删除临时回调后新单成功付款，通过 authenticated GraphQL 查询完成 150 credits 入账；后续对账未重复发积分 | 已验这笔无回调付款的手动恢复，不代表自动对账调度已建立 |
@@ -114,6 +114,14 @@ Pancake 测试商店、一次性商品与测试密钥已于 2026-10-23 创建。
 环境变量见 `.env.example`。`sandbox-smoke.ts` 提供 `inspect / seed / checkout / reconcile / refund / refund-diagnose`：inspect 只读 schema，其他操作验证实际沙盒库身份。输出目录必须位于仓库外、0700；输出新建且0600，可能包含结账 token，不得截图、打印或提交。工具不会自己加载凭证，也不会自动开生产销售。
 
 退款／原任务恢复入口不代表已建立持续运营值班；验收结果、冻结状态及清理待办统一见[当前现状表](#2026-10-23-当前接续状态)。
+
+## 2026-10-25 正式支付代码准备（尚未部署）
+
+当前工作分支补齐独立 live adapter 的装配和环境边界。`productionBillingRelease.liveSalesApproved` 固定为 false；仅设置 `BILLING_LIVE_ENABLED` 或其他环境变量不能开启正式销售。通过准入、税费和运营验收后，才可在单独发布中修改该服务端放行常量。
+
+测试与正式环境互斥，分别使用 `PANCAKE_TEST_*` 与 `PANCAKE_LIVE_*`，不回退复用密钥、商店或商品。正式模式须明确 `BILLING_DEPLOYMENT_MODE=production`、HTTPS 网站来源，拒绝沙盒命名的数据库／角色；执行前实际数据库名及角色须与配置完全匹配。订单查询和退款另核订单环境与商户归属，避免错环境调用渠道。
+
+内部测试注入只用于合成供应商和临时数据库；应用调用不接受 HTTP 参数或环境变量替换代码放行值。生产密钥、正式商品、Webhook、Compose 环境配置和真实支付验收仍未完成。付款放行与 `GENERATION_CHARGING_ENABLED` 是独立步骤，代码准备不代表已开售。
 
 ## 开售前仍需完成
 

@@ -27,7 +27,7 @@ const pack = (id = "test-pack"): CreditPack => ({ id, name: "Test-only pack", de
   providerProducts: { pancake: { test: "test-provider-product" } } });
 class MockProvider implements BillingProvider {
   readonly id = "pancake" as const;
-  readonly environment = "test" as const;
+  constructor(readonly environment: "test" | "live" = "test") {}
   readonly merchantAccountId = "test-merchant";
   readonly checkoutHosts = ["checkout.example.invalid"];
   readonly capabilities = { hostedCheckout: true, fullRefundEvents: true, subscriptions: false } as const;
@@ -72,7 +72,7 @@ class BridgeMock extends MockProvider {
 }
 function bridgeEvent(provider: BridgeMock, orderId: string, changes: Partial<PancakePaymentEvent> = {}): PancakePaymentEvent {
   const c = provider.commands.get(orderId)!;
-  return { evidenceType: "pancake", eventId: `paid-${orderId}`, environment: "test", merchantAccountId: provider.merchantAccountId,
+  return { evidenceType: "pancake", eventId: `paid-${orderId}`, environment: provider.environment, merchantAccountId: provider.merchantAccountId,
     orderId, userId: c.userId, productId: c.productId, providerProductId: c.providerProductId, priceVersion: c.priceVersion,
     providerOrderId: `external-${orderId}`, paymentId: `payment-${orderId}`, kind: "payment.succeeded", currency: "USD",
     amountMinor: 1375, subtotalMinor: 1250, taxMinor: 125, totalMinor: 1375, originalPaidAmountMinor: 1375,
@@ -127,7 +127,7 @@ async function checkout(app: TestApp, who: Actor, body = input()) {
 function event(provider: MockProvider, orderId: string, changes: Partial<CheckoutPaymentEvent> = {}): CheckoutPaymentEvent {
   const command = provider.commands.get(orderId)!;
   assert.ok(command);
-  return { eventId: randomUUID(), environment: "test", merchantAccountId: provider.merchantAccountId,
+  return { eventId: randomUUID(), environment: provider.environment, merchantAccountId: provider.merchantAccountId,
     orderId, userId: command.userId, productId: command.productId, providerProductId: command.providerProductId,
     checkoutId: `checkout-${orderId}`, paymentId: `payment-${orderId}`, kind: "payment.succeeded",
     amountMinor: command.amountMinor, currency: command.currency, ...changes };
@@ -220,6 +220,42 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     assert.deepEqual((await (await request(app, who, "/billing/orders")).json()).orders, []);
     const summary = await (await request(app, who, "/billing")).json();
     assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
+  });
+  await t.test("internally approved live fixture completes isolated purchase and refund without touching the test wallet", async () => {
+    // Synthetic adapter and disposable DB only: no real merchant, money or network.
+    const provider = new BridgeMock("live");
+    const livePack: CreditPack = { ...pack(), amountMinor: 1900, credits: 150,
+      providerProducts: { pancake: { live: "live-fixture-product" } } };
+    const options: BillingOptions = { environment: "live", salesEnabled: true,
+      releaseApproval: { liveSalesApproved: true }, providers: { pancake: provider }, catalog: [livePack] };
+    const who = await actor(), app = harness(options), service = new BillingService(options);
+    const closed = harness({ ...options, releaseApproval: { liveSalesApproved: false } });
+    assert.equal((await request(closed, who, "/billing/checkout", "POST", input())).status, 503);
+    assert.equal(provider.calls, 0);
+    const order = await checkout(app, who);
+    const payment = bridgeEvent(provider, order.id, { amountMinor: 1900, subtotalMinor: 1900,
+      taxMinor: 0, totalMinor: 1900, originalPaidAmountMinor: 1900 });
+    assert.equal((await webhook(app, { ...payment, environment: "test" })).status, 403);
+    assert.equal((await totals(order.id)).n, 0);
+    assert.equal((await webhook(app, payment)).status, 200);
+    assert.equal((await webhook(app, payment)).status, 200);
+    assert.deepEqual(await totals(order.id), { n: 1, credits: 150 });
+    const funded = await (await request(app, who, "/billing")).json();
+    assert.equal(funded.availableCredits, 150); assert.equal(funded.testAvailableCredits, 0);
+    assert.equal(funded.generationChargingEnabled, false);
+    const foreign = bridge(), testOrder = await checkout(foreign.app, who);
+    await assert.rejects(service.reconcile(testOrder.id), (e: any) => e.code === "PAYMENT_SCOPE_MISMATCH");
+    await assert.rejects(service.requestRefund(who.id, testOrder.id), (e: any) => e.code === "PAYMENT_SCOPE_MISMATCH");
+    assert.equal(provider.refundCalls.length, 0);
+    await service.requestRefund(who.id, order.id);
+    assert.equal(provider.refundCalls.length, 1);
+    provider.recovered = [{ ...payment, eventId: `refunded-${order.id}`, kind: "payment.refunded" }];
+    await service.reconcile(order.id);
+    await service.reconcile(order.id);
+    assert.deepEqual(await totals(order.id), { n: 2, credits: 0 });
+    const refunded = await (await request(app, who, "/billing")).json();
+    assert.equal(refunded.availableCredits, 0); assert.equal(refunded.testAvailableCredits, 0);
+    assert.equal(provider.refundCalls.length, 1, "read-only recovery never resubmits refund");
   });
   await t.test("Google sessions required, expired sessions refreshable, owner mandatory for checkout and checked for reads", async () => {
     const { app } = enabled(), who = await actor();
@@ -486,16 +522,19 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     const response = await request(app, who, `/billing/orders/${old.id}/refund`, "POST", {});
     assert.equal(response.status, 409); assert.equal((await response.json()).code, "REFUND_WINDOW_CLOSED");
   });
-  await t.test("old unknown checkout never calls create again; live adapter never sells even with code option", async () => {
+  await t.test("old unknown checkout never calls create again; mismatched live adapter cannot sell", async () => {
     const { app, provider } = bridge(), who = await actor(), body = input(), order = await checkout(app, who, body);
     await database().execute(sql`UPDATE billing_orders SET created_at=now()-interval '24 hours',checkout_status='unknown' WHERE id=${order.id}::uuid`);
     const response = await request(app, who, "/billing/checkout", "POST", body);
     assert.equal(response.status, 409); assert.equal((await response.json()).code, "CHECKOUT_RECONCILIATION_REQUIRED");
     assert.equal(provider.calls, 1);
     Object.defineProperty(provider, "environment", { value: "live" });
-    assert.equal((await request(app, who, "/billing/checkout", "POST", input())).status, 503);
+    const mismatched = await request(app, who, "/billing/checkout", "POST", input());
+    assert.equal(mismatched.status, 503);
+    assert.equal((await mismatched.json()).code, "PROVIDER_ENVIRONMENT_MISMATCH");
+    assert.equal(provider.calls, 1);
     const c = await (await request(app, undefined, "/billing/catalog")).json();
-    assert.equal(c.environment, "live"); assert.equal(c.checkoutEnabled, false);
+    assert.equal(c.environment, null); assert.equal(c.checkoutEnabled, false);
   });
 
   await t.test("late payment query enriches both order and batch time so refund retains full 14-day window", async () => {

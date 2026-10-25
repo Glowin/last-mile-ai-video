@@ -5,10 +5,10 @@ import { database } from "../db";
 import { lockWallet, grantPurchase, applyFullRefund, freezeRefund, unfreezeRefund, walletSummary, blockWalletForReview, resolveWalletReview } from "../credits/wallet";
 import { GENERATION_CHARGING_ENABLED } from "../credits/config";
 import { safePancakeDiagnosticCode } from "./pancake";
-import { billingOptionsFromEnvironment } from "./config";
+import { billingOptionsFromEnvironment, productionBillingRelease, type BillingReleaseApproval } from "./config";
 import type { Account } from "../account";
 import { billingProviderIds, type BillingCatalogResponse, type BillingCheckoutRequest,
-  type BillingCheckoutResponse, type BillingOrder, type BillingProviderId, type BillingRefundResponse } from "../../lib/billing";
+  type BillingCheckoutResponse, type BillingEnvironment, type BillingOrder, type BillingProviderId, type BillingRefundResponse } from "../../lib/billing";
 import { defaultCatalog, priced, type CreditPack } from "./catalog";
 import { defaultProviders, type BillingProvider, type ProviderRegistry, type VerifiedPaymentEvent, type RefundCommand, type RefundResult } from "./providers";
 import { billingOrders as orders, billingEvents as events, creditLedger as ledger, type OrderRow } from "./schema";
@@ -62,8 +62,10 @@ function checkoutUrl(adapter: BillingProvider, raw: string) {
 export type BillingOptions = {
   catalog?: readonly CreditPack[];
   providers?: ProviderRegistry;
-  // Explicit code-level gate. No environment variable enables live collection.
   salesEnabled?: boolean;
+  // Internal server policy; never populated from request data. Test remains the default.
+  environment?: BillingEnvironment;
+  releaseApproval?: BillingReleaseApproval;
   generationChargingEnabled?: boolean;
   assertIsolation?: () => Promise<void>;
 };
@@ -71,6 +73,8 @@ export class BillingService {
   private readonly packs: readonly CreditPack[];
   private readonly providers: ProviderRegistry;
   private readonly salesEnabled: boolean;
+  private readonly environment: BillingEnvironment;
+  private readonly liveSalesApproved: boolean;
   private readonly generationChargingEnabled: boolean;
   private readonly assertIsolation: () => Promise<void>;
   constructor(options?: BillingOptions) {
@@ -79,20 +83,29 @@ export class BillingService {
     this.packs = options.catalog ?? defaultCatalog;
     this.providers = options.providers ?? defaultProviders;
     this.salesEnabled = options.salesEnabled === true;
+    this.environment = options.environment ?? "test";
+    this.liveSalesApproved = (options.releaseApproval ?? productionBillingRelease).liveSalesApproved === true;
     this.generationChargingEnabled = options.generationChargingEnabled ?? GENERATION_CHARGING_ENABLED;
     if (new Set(this.packs.map((p) => p.id)).size !== this.packs.length)
       throw new Error("Duplicate billing product IDs");
   }
-  private provider(providerId: BillingProviderId) {
+  private provider(providerId: BillingProviderId, order?: Pick<OrderRow, "environment" | "merchantAccountId">) {
     const adapter = this.providers[providerId];
     if (!adapter || adapter.id !== providerId || !adapter.isConfigured() ||
       !adapter.merchantAccountId || !["test", "live"].includes(adapter.environment))
       throw new BillingError(503, "PROVIDER_UNAVAILABLE", "This payment provider is not configured.");
+    if (adapter.environment !== this.environment)
+      throw new BillingError(503, "PROVIDER_ENVIRONMENT_MISMATCH", "The payment provider does not match this billing environment.");
+    if (order && (order.environment !== adapter.environment || order.merchantAccountId !== adapter.merchantAccountId))
+      throw new BillingError(409, "PAYMENT_SCOPE_MISMATCH", "The order does not match this payment provider scope.");
     return adapter;
+  }
+  private salesAllowed() {
+    return this.salesEnabled && (this.environment === "test" || this.liveSalesApproved);
   }
   catalog(): BillingCatalogResponse {
     const providers = billingProviderIds.map((id) => {
-      try { const p = this.provider(id); return { id, available: this.salesEnabled && p.environment === "test", environment: p.environment }; }
+      try { const p = this.provider(id); return { id, available: this.salesAllowed(), environment: p.environment }; }
       catch { return { id, available: false, environment: null }; }
     });
     const products = this.packs.map((pack) => ({
@@ -129,14 +142,14 @@ export class BillingService {
     return { order: publicOrder(row) };
   }
   async checkout(user: Account, input: BillingCheckoutRequest): Promise<BillingCheckoutResponse> {
-    await this.assertIsolation();
-    // All availability checks happen before reserving an order.
+    // All availability checks happen before database access or reserving an order.
     const adapter = this.provider(input.provider);
-    if (!this.salesEnabled || adapter.environment !== "test")
+    if (!this.salesAllowed())
       throw new BillingError(503, "SALES_DISABLED", "Purchasing is not available yet.");
     const pack = this.packs.find((p) => p.id === input.productId);
     if (!pack || !priced(pack) || !pack.providerProducts[adapter.id]?.[adapter.environment])
       throw new BillingError(409, "PRODUCT_UNAVAILABLE", "This credit pack is not available.");
+    await this.assertIsolation();
     const leaseToken = randomUUID();
     const row = await database().transaction(async (tx) => {
       await lockWallet(tx, user.id, adapter.environment);
@@ -212,7 +225,7 @@ export class BillingService {
     if (!z.uuid().safeParse(orderId).success) throw new BillingError(404, "ORDER_NOT_FOUND", "Order not found.");
     const [order] = await database().select().from(orders).where(eq(orders.id, orderId));
     if (!order) throw new BillingError(404, "ORDER_NOT_FOUND", "Order not found.");
-    const adapter = this.provider(order.provider);
+    const adapter = this.provider(order.provider, order);
     if (!adapter.reconcile) throw new BillingError(503, "RECONCILIATION_UNAVAILABLE", "Provider reconciliation is unavailable.");
     const recovered = await adapter.reconcile(orderId);
     const results = [];
@@ -361,7 +374,7 @@ export class BillingService {
     if (!z.uuid().safeParse(orderId).success) throw new BillingError(404, "ORDER_NOT_FOUND", "Order not found.");
     const [owned] = await database().select().from(orders).where(and(eq(orders.id, orderId), eq(orders.userId, userId)));
     if (!owned) throw new BillingError(404, "ORDER_NOT_FOUND", "Order not found.");
-    const adapter = this.provider(owned.provider);
+    const adapter = this.provider(owned.provider, owned);
     if (!adapter.requestRefund) throw new BillingError(503, "REFUND_UNAVAILABLE", "Refund requests are not available through this provider.");
     const { order, submit } = await database().transaction(async (tx) => {
       await lockWallet(tx, userId, owned.environment);

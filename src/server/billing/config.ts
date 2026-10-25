@@ -6,27 +6,50 @@ import { PancakeBillingProvider } from "./pancake";
 import { billingOrders } from "./schema";
 import type { BillingOptions } from "./service";
 
+/** Change only in an explicitly approved release after operational acceptance.
+ * This is server code, never an environment variable or request option. */
+export type BillingReleaseApproval = Readonly<{ liveSalesApproved: boolean }>;
+export const productionBillingRelease: BillingReleaseApproval = Object.freeze({ liveSalesApproved: false });
+
 /** Server-only runtime configuration. Never reads files or credential directories.
- * Provision the sandbox with its own database/role; it must not share production
- * auth users. The name + deployment gate prevents accidentally using the normal
- * application DSN. No environment option enables live sales.
+ * The second argument is an internal dependency-injection seam for offline tests;
+ * application callers use the code-level productionBillingRelease above.
+ * Sandbox and live registrations never fall back to each other's credentials.
  */
-export function billingOptionsFromEnvironment(env: NodeJS.ProcessEnv = process.env): BillingOptions {
-  if (env.BILLING_TEST_ENABLED !== "true") return {};
-  if (env.BILLING_DEPLOYMENT_MODE !== "isolated-test") throw new Error("BILLING_TEST_ISOLATION_REQUIRED");
-  let db: URL, app: URL;
-  try { db = new URL(env.DATABASE_URL ?? ""); app = new URL(env.APP_URL ?? ""); }
-  catch { throw new Error("BILLING_TEST_ISOLATION_REQUIRED"); }
-  if (!/^\/[a-z0-9_]+_billing_sandbox$/.test(db.pathname) || !/^postgres(ql)?:$/.test(db.protocol) ||
-    !/^[a-z0-9_]+_billing_test$/.test(decodeURIComponent(db.username)) || app.protocol !== "https:" ||
-    app.username || app.password || app.origin !== env.BILLING_TEST_APP_ORIGIN)
-    throw new Error("BILLING_TEST_ISOLATION_REQUIRED");
-  const required = (name: string) => { const value = env[name]; if (!value?.trim()) throw new Error(`BILLING_CONFIG_MISSING:${name}`); return value; };
-  const providerProductId = required("PANCAKE_TEST_PRODUCT_ID");
+export function billingOptionsFromEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+  releaseApproval: BillingReleaseApproval = productionBillingRelease,
+): BillingOptions {
+  const testRequested = env.BILLING_TEST_ENABLED === "true";
+  const liveRequested = env.BILLING_LIVE_ENABLED === "true";
+  if (testRequested && liveRequested) throw new Error("BILLING_ENVIRONMENT_CONFLICT");
+  if (!testRequested && !(liveRequested && releaseApproval.liveSalesApproved === true)) return {};
+  const environment = testRequested ? "test" : "live";
+  const isolationError = environment === "test" ? "BILLING_TEST_ISOLATION_REQUIRED" : "BILLING_LIVE_ISOLATION_REQUIRED";
+  if (env.BILLING_DEPLOYMENT_MODE !== (testRequested ? "isolated-test" : "production")) throw new Error(isolationError);
+  let db: URL, app: URL, databaseName: string, databaseRole: string;
+  try {
+    db = new URL(env.DATABASE_URL ?? ""); app = new URL(env.APP_URL ?? "");
+    databaseName = decodeURIComponent(db.pathname.slice(1)); databaseRole = decodeURIComponent(db.username);
+  } catch { throw new Error(isolationError); }
+  if (!/^postgres(ql)?:$/.test(db.protocol) || !databaseName || !databaseRole || app.protocol !== "https:" ||
+    app.username || app.password || app.origin !== env[testRequested ? "BILLING_TEST_APP_ORIGIN" : "BILLING_LIVE_APP_ORIGIN"])
+    throw new Error(isolationError);
+  if (testRequested
+    ? !/^[a-z0-9_]+_billing_sandbox$/.test(databaseName) || !/^[a-z0-9_]+_billing_test$/.test(databaseRole)
+    : /_billing_sandbox$/i.test(databaseName) || /_billing_test$/i.test(databaseRole))
+    throw new Error(isolationError);
+  const prefix = testRequested ? "PANCAKE_TEST_" : "PANCAKE_LIVE_";
+  const required = (suffix: string) => {
+    const name = prefix + suffix, value = env[name];
+    if (!value?.trim()) throw new Error(`BILLING_CONFIG_MISSING:${name}`);
+    return value;
+  };
+  const providerProductId = required("PRODUCT_ID");
   const pack = defaultCatalog[0];
-  const adapter = new PancakeBillingProvider({ environment: "test",
-    merchantId: required("PANCAKE_TEST_MERCHANT_ID"), storeId: required("PANCAKE_TEST_STORE_ID"),
-    privateKey: required("PANCAKE_TEST_PRIVATE_KEY"), platformPublicKey: required("PANCAKE_TEST_PLATFORM_PUBLIC_KEY"),
+  const adapter = new PancakeBillingProvider({ environment,
+    merchantId: required("MERCHANT_ID"), storeId: required("STORE_ID"),
+    privateKey: required("PRIVATE_KEY"), platformPublicKey: required("PLATFORM_PUBLIC_KEY"),
     successUrl: new URL("/billing/return", app).href,
     products: [{ productId: pack.id, providerProductId, priceVersion: pack.priceVersion,
       amountMinor: pack.amountMinor!, credits: pack.credits!, currency: "USD", taxCategory: TaxCategory.SaaS }],
@@ -35,9 +58,9 @@ export function billingOptionsFromEnvironment(env: NodeJS.ProcessEnv = process.e
       return order?.createdAt ?? null;
     },
   });
-  return { salesEnabled: true, assertIsolation: async () => {
+  return { salesEnabled: true, environment, releaseApproval, assertIsolation: async () => {
     const [scope] = await database().execute(sql`SELECT current_database() AS name, current_user AS role`);
-    if (!/^[a-z0-9_]+_billing_sandbox$/.test(String(scope.name)) || !/^[a-z0-9_]+_billing_test$/.test(String(scope.role)))
-      throw new Error("BILLING_TEST_DATABASE_SCOPE_MISMATCH");
-  }, providers: { pancake: adapter }, catalog: [{ ...pack, providerProducts: { pancake: { test: providerProductId } } }] };
+    if (scope.name !== databaseName || scope.role !== databaseRole)
+      throw new Error(testRequested ? "BILLING_TEST_DATABASE_SCOPE_MISMATCH" : "BILLING_LIVE_DATABASE_SCOPE_MISMATCH");
+  }, providers: { pancake: adapter }, catalog: [{ ...pack, providerProducts: { pancake: { [environment]: providerProductId } } }] };
 }
