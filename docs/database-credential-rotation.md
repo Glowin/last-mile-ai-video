@@ -1,7 +1,7 @@
 ---
 title: "PostgreSQL 数据库凭证轮换操作与验收"
 date: 2026-10-25
-source: "旧应用源码与 a3b05be 文档差异；2026-10-25 Dokploy 页面及 v0.29.4 源码；PostgreSQL 16／Docker 官方文档；隔离演练"
+source: "旧应用源码与 a3b05be 文档差异；2026-10-25 Dokploy 页面；2026-10-26 复核 v0.29.4 源码；PostgreSQL 16／Docker 官方文档；隔离演练"
 status: "Hostinger 管理入口与生产只读预检通过；等待维护窗口及用户密码输入，生产未轮换"
 ---
 
@@ -32,6 +32,17 @@ compose -p VERIFIED_PROJECT -f ORIGINAL_COMPOSE_PATH -f PRIVATE_PIN_FILE up -d -
 ```
 
 本机 Docker Compose `v2.34.0-desktop.1` 实测两次命令均退出 0：使用故意不存在的 build context、已有镜像 ID、无网络／端口的 idle Node 进程；第二次两个容器 ID 都改变，镜像 ID 不变，完整环境差异只有合成 MARKER 从 old 变 new；声明的第三个依赖未启动。临时容器已清理，原镜像保留。该本机演练不覆盖 Dokploy 补丁应用／环境注入、数据库连接、迁移或真实入口行为。生产主机另核 Compose `2.39.1`，只读渲染 stdin 覆盖后的配置，确认唯一变化是 Web／worker 的 image 字段，两个原镜像均在本地；没有运行 up 或保存覆盖文件。`--no-deps` 不会阻止所选服务自身执行启动迁移；生产必须使用已核的原镜像，不能换成新分支镜像。实际重建命令、平台环境保存后的注入结果和密码变更后的正反 TCP 认证仍须在维护窗口逐项验收。
+
+### 平台环境生效路径（2026-10-26 源码核查）
+
+已核官方 v0.29.4 对应提交 `b109e0ebc4a4b5e5d22571f13c63328e4c423886`。以下是代码调用链证据，尚未在生产保存或执行；适用现有 Git 来源、docker-compose 类型的服务。
+
+- Environment **Save 只更新平台数据库**，不写部署目录 `.env`，也不重建容器。依据：[saveEnvironment](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/apps/dokploy/server/api/routers/compose.ts#L206-L230)。
+- General **Reload** 调用 `rebuildCompose`，先应用已启用的 Patch，再由 builder 改写 Compose、生成 `.env`，最后执行 Docker 命令。Reload 的这条调用链不拉取 Git；Advanced 中非空的 Command 替换默认子命令，不追加默认 `--build`。依据：[rebuildCompose](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/services/compose.ts#L338-L390)、[builder 与命令选择](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/utils/builders/compose.ts#L18-L96)。不能因此将默认 Reload 当作安全重启，或忽略平台对域名标签、网络和随机化配置的处理。
+- Patch 路径相对本服务部署的 `code/`；生成的 `.env` 位于平台原 Compose 路径的同目录，custom command 的工作目录则为 `code/`。上面的原 Compose 必须作为第一个 `-f`，覆盖文件作为第二个，并核变量插值实际读取同一份新环境。平台并不直接 export 整套服务环境到 docker-compose 子进程。依据：[环境文件路径](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/utils/builders/compose.ts#L99-L144)、[Patch 落地](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/services/patch.ts#L145-L174)。不要用 Patch 保存新密码或覆盖 `.env`；新密码仍由用户保存到平台环境设置。
+- **禁用或删除 Patch 记录不会删除已经写到主机的覆盖文件**。只有执行删除类型的 Patch 才会删文件，而 Reload 仍会继续执行 Docker 命令。维护收尾须分别核自定义命令、Patch 记录和实际覆盖文件；不能清空 Command 后再 Reload 来“清理”，那会回到默认构建。依据：[Patch 记录删除](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/services/patch.ts#L83-L107)及上述 Patch 落地源码。创建 Patch 的编辑器另会克隆独立的 patch 仓库，这不等同于 Reload 拉取部署代码，见 [patch-repo](https://github.com/Dokploy/dokploy/blob/b109e0ebc4a4b5e5d22571f13c63328e4c423886/packages/server/src/services/patch-repo.ts#L22-L70)。
+
+因此维护时可采用已演练命令：先核并暂停本项目自动部署，准备仅含原镜像 ID 的私有覆盖文件及固定命令；用户完成角色密码和两项平台环境更新后，沿上述 Reload 路径加载配置。恢复仍须核实际容器的新环境、原镜像、原五项迁移与正反 TCP 认证，不能以源码推导或保存提示替代。后续升级前必须协调移除固定旧镜像的命令及覆盖记录／文件，否则可能继续运行旧版；清理应纳入独立升级步骤，不为清理另触发未审阅的部署。
 
 生产轮换与[0006–0009 升级切换](deployment.md#cost-moderation-cutover)是两次独立变更。先在现有版本完成密码轮换及验收，再另行批准代码升级；不能在密码故障中顺手部署 main、运行当前 checkout 的迁移器或启动新账单进程。`scripts/start.mjs` 启动应用前会自动迁移；把新镜像当作“重启”会改变恢复边界。
 
