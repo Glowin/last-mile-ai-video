@@ -29,6 +29,27 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 配置不作为构建参数，不写入镜像；密钥不进入浏览器。Google Client ID 是登录所需的公开标识，仅经运行时 `/api/config` 返回。可以先部署浏览版本、暂不配置 VibeToken Key 和邀请口令，页面会明确提示暂不能生成。
 
+### 正式支付运行时接线（2026-10-25，尚未放行）
+
+`compose.yaml` 通过独立的 `x-billing-environment` 环境块，仅向 `web` 和 `billing-reconciliation` 透传下列正式支付变量；两者共用同一组值。generation `worker` 只继承应用环境，不接收任何 `BILLING_*`／`PANCAKE_*` 变量。账单对账服务保留独立启动命令，不接收 VibeToken 上游密钥。
+
+| 变量 | Compose 默认值 | 正式配置要求 |
+|---|---|---|
+| `BILLING_LIVE_ENABLED` | `false` | 仅精确的 `true` 表示请求启用；仍受代码放行常量约束 |
+| `BILLING_DEPLOYMENT_MODE` | 空 | 正式模式要求 `production` |
+| `BILLING_LIVE_APP_ORIGIN` | 空 | 必须等于 HTTPS `APP_URL` 的 origin，不带路径或尾斜线 |
+| `PANCAKE_LIVE_MERCHANT_ID` | 空 | 正式商户 ID |
+| `PANCAKE_LIVE_STORE_ID` | 空 | 同一正式商户的店铺 ID |
+| `PANCAKE_LIVE_PRODUCT_ID` | 空 | 与应用积分包金额、币种和税类对应的正式商品 ID |
+| `PANCAKE_LIVE_PRIVATE_KEY` | 空 | 正式商户签名私钥；通过平台 secret 设置保留 PEM 换行 |
+| `PANCAKE_LIVE_PLATFORM_PUBLIC_KEY` | 空 | 正式渠道验签公钥；保留 PEM 换行，不回退使用沙盒公钥 |
+
+两个支付服务的 `BILLING_TEST_ENABLED` 固定为 `false`，不透传 `BILLING_TEST_APP_ORIGIN` 或 `PANCAKE_TEST_*`。正式数据库名不能以 `_billing_sandbox` 结尾，角色不能以 `_billing_test` 结尾；运行时还会核实际数据库和角色与连接串一致。真实值只在库外或 Dokploy 环境／secret 设置中提供，不写入此文件、Compose、构建参数或前端变量。
+
+`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。即使完整设置正式环境并请求启用，也不会注册正式支付 adapter；账单对账的零计数不能作为正式查询成功的证据。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。本次仅补部署接线，未部署、未创建正式资源、未调用支付渠道。按本轮任务提供的状态，Pancake 业务审核／税费尚未通过，真实正式密钥、商品与 Webhook 尚未配置；正式开售条件由主会话继续核验。
+
+离线验证 Compose 时使用清空继承环境的进程、显式 `--env-file /dev/null` 和全合成必填值，避免自动读取 checkout 的 `.env`。分别检查未设置支付变量、显式空值、合成正式值及沙盒变量混入的场景：两个支付服务的正式值一致，沙盒开关始终关闭，generation worker 无支付变量。解析结果只在内存中断言，不将完整环境输出到日志；此检查不启动容器，也不代表真实支付验收。
+
 ## 本地
 
 使用 Node.js 22 和 pnpm 10.27.0，先 `pnpm install --frozen-lockfile`。外部配置文件路径由操作者提供，以下占位路径不应直接执行：
