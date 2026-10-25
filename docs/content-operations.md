@@ -6,15 +6,35 @@ scope: "KakaReel manual review, private support workflow and generation integrat
 
 # Content review and support operations
 
-Updated 2026-10-25. Owner: KakaReel founder (Glow Jiang). The founder handles the review queue and `support@kakareel.com`, checking them before operating generation and before ending each operating session. No guaranteed response or review deadline is advertised. The module is integrated with the app and runner and has passed isolated PostgreSQL acceptance; production deployment and the live operator workflow remain unverified. See [launch readiness](launch-readiness.md) for current evidence.
+Updated 2026-10-25. Owner: KakaReel founder (Glow Jiang). The founder handles the review queue and `support@kakareel.com`, checking them before operating generation and before ending each operating session. No guaranteed response or review deadline is advertised. The module is integrated with the app and runner and has passed isolated PostgreSQL acceptance; this branch's review flow and policy/footer changes have not yet been deployed, and the live operator workflow remains unverified. See [launch readiness](launch-readiness.md) for current evidence.
 
 ## Boundaries and policy
 
 Inputs (full prompt, model settings, and every uploaded image) require human approval before the first upstream POST. Generated videos require a separate human review of the actual full video before KakaReel publishes its URL or consumes reserved credits. Review is not a keyword classifier or a claim that an AI has checked content. Do not approve files you have not viewed.
 
-Reject child sexual exploitation, non-consensual intimate content, deceptive impersonation/fraud, illegal content and infringement; check rights/consent when identifiable people or third-party material are involved. Where context or rights cannot be established, keep the item pending and ask the user through support. Do not download, forward or preserve illegal imagery as an ordinary support attachment. Use provider reporting and applicable reporting channels when necessary; do not claim those reports have happened without evidence.
+Apply every category in `/acceptable-use` to both inputs and the full output. Reject:
 
-`/acceptable-use` and `/support` are the public policy/help pages, linked from the footer. Terms, Privacy and the generation form disclose that the founder may inspect prompts, images and outputs. There is no automatic storage deletion today. Do not promise a retention period. Deletion requests need ownership verification and explicit handling of account/job rows, review snapshots, locally exported evidence and provider copies; financial/security retention may be separate.
+- Pornography, sexually explicit or NSFW content, including adult sexual content and non-consensual intimate imagery.
+- Violence or gore, including graphic injury, mutilation or cruelty.
+- Hate speech, including attacks based on protected characteristics and incitement to hatred or genocide.
+- Child sexual abuse material (CSAM), child sexual exploitation or any sexual content involving anyone under 18, including synthetic depictions.
+- Real-person deepfakes or impersonation: face swaps, nudification, fabricated kissing, hugging or other intimate interactions, and fabricated speech or actions attributed to a real person. Consent never exempts these uses.
+- Copyright or trademark infringement, including unauthorized use of protected works, characters, logos or brands.
+- Promotion or assistance of terrorism, violent extremism or mass harm; instructions to make or use dangerous weapons, including weapons of mass destruction; other illegal content, fraud, privacy violations, targeted harassment, instructions to harm people, or threats involving prohibited intimate imagery.
+
+Ordinary lawful material depicting people is not categorically prohibited. Verify that identifiable-person uploads depict the uploader or have the depicted person's explicit permission, and check third-party material rights. Rights or consent do not permit a prohibited deepfake. Where context or rights cannot be established, keep the item pending and ask the user through support. Do not download, forward or preserve illegal imagery as an ordinary support attachment. Use provider reporting and applicable reporting channels when necessary; do not claim those reports have happened without evidence.
+
+`/acceptable-use` and `/support` are the public policy/help pages, linked from the footer alongside a visible `mailto:support@kakareel.com` contact. Terms, Privacy and the generation form disclose that the founder may inspect prompts, images and outputs. There is no automatic storage deletion today. Do not promise a retention period. Deletion requests need ownership verification and explicit handling of account/job rows, review snapshots, locally exported evidence and provider copies; financial/security retention may be separate.
+
+### Remaining launch checks (2026-10-25)
+
+Policy sources checked: [Pancake AIGC compliance](https://docs.waffo.ai/zh/mor/account-reviews/aigc-compliance) and [AUP guidance](https://docs.waffo.ai/zh/mor/account-reviews/aup). These edits align the written rules; they do not establish deployment or approval by Pancake. The main session owns the following checks before opening sales:
+
+- The reviewed moderation service, runner and operator CLI implement manual input/output decisions and audit records. No automated content scanner or actively maintained prompt blocklist was found in the reviewed source. Pancake also calls for a maintained blocklist and, if user works are publicly displayed, post-publication scanning. Resolve those gaps and the applicability of public-display scanning before claiming full compliance.
+- The rollout migration exempts older jobs from the new review gates. Do not label those outputs reviewed; verify the production rollout boundary and how legacy results will be handled. The current manual process also depends on the operator actually inspecting every image and the whole video; a hash and viewing attestation alone cannot prove that inspection happened.
+- Verify real mailbox receipt, founder coverage and the deployed report/appeal workflow. The CLI records cases but does not read or send email. Reconsideration currently goes back to the founder; there is no verified independent appeals reviewer.
+- Supported actions are task holds, hidden result links, review rejection and release of still-reserved credits. Do not advertise automatic account bans, balance forfeiture, provider-file deletion, continuous staffing or response deadlines. Live execution of these actions remains unverified. For repeated violations, the founder must examine prior cases before approving further requests and record each decision; this is manual refusal of generation, not an implemented automatic account suspension flag. Account-level suspension/termination tooling is still absent and must not be presented as deployed.
+- `POLICY_VERSION` in `src/server/moderation/service.ts` remains `2026-10-25.1`; this three-file policy edit does not invalidate existing approvals. Before rollout, determine whether any reviews used the earlier wording and, if so, plan a version change and re-review without stranding existing input/output approvals. Typecheck, build and browser acceptance remain with the main session.
 
 ## Data and state
 

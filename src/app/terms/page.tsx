@@ -76,9 +76,49 @@ export default function Terms() {
           Our <a href="/acceptable-use">acceptable-use policy</a> applies to
           prompts, uploads and outputs. A request or video may wait for human
           review. Credits remain reserved before delivery; a rejected or expired
-          pre-delivery review releases the reservation. Review decisions and
+          pre-delivery review releases the reservation after an operator records
+          the decision. A review deadline does not release credits automatically. Review decisions and
           unresolved model outcomes are separate. Contact
           {" "}<a href="/support">support</a> to report content or appeal a decision.
+        </p>
+        <h2>Violations and access restrictions</h2>
+        <p>
+          If a request violates our acceptable-use policy, we may warn you,
+          hold or reject the request, or withhold its result. Serious or repeated
+          violations, fraud, attempts to bypass review, or a legal requirement
+          may lead us to decline further generation requests during human review. These decisions are
+          made through human review; contact support to ask for the reason or
+          request reconsideration.
+        </p>
+        <p>
+          A restriction does not automatically delete your account or forfeit
+          unused purchased credits. Undelivered tasks and reserved credits are
+          resolved under the generation and review rules above. An unknown
+          supplier outcome remains subject to investigation. Refund requests
+          remain subject to the unused-pack policy and any applicable statutory
+          rights. Contact support if a restriction prevents you from accessing
+          your order. Privacy or deletion requests are handled separately under
+          our <a href="/privacy">privacy policy</a>.
+        </p>
+        <h2>Service limitations and responsibility</h2>
+        <p>
+          To the extent permitted by applicable law, the service is provided
+          as is and as available. We do not guarantee uninterrupted availability,
+          error-free operation, a particular visual result, or suitability for a
+          particular purpose. Outputs are AI-generated and may be inaccurate,
+          resemble other outputs, or involve third-party rights. Review a video
+          and the rights needed for your intended use before publishing it;
+          generation alone does not guarantee that commercial use is permitted.
+        </p>
+        <p>
+          To the extent permitted by applicable law, KakaReel is not responsible
+          for indirect or consequential business losses, such as lost profits
+          from reliance on a generated video. This does not exclude or limit
+          liability that cannot lawfully be excluded or limited, including
+          liability for fraud or intentional misconduct. It does not reduce
+          our delivery, credit-release or refund commitments, or your statutory
+          consumer rights. Billing and service problems can be reported to
+          <a href="mailto:support@kakareel.com"> support@kakareel.com</a>.
         </p>
         <h2>Keep your results</h2>
         <p>
