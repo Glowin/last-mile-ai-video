@@ -131,4 +131,19 @@ The current input could be approved; changed payloads, old review versions, chan
 
 The candidate was a locally encoded one-second, five-frame grayscale MP4 with no audio, checked through an injected transport and full-byte digest. It intentionally did not match the seeded five-second/720p product specification: this proves CLI permissions, stale-evidence rejection and settlement behavior, **not** model generation, product-spec validation, paid delivery or founder staffing. No provider request or payment occurred. A separate amd64 worker build loaded `tsx` and the moderation exports as UID1000 without network or database access; the database rehearsal itself ran on arm64.
 
-The existing Hostinger host console is now accessible after the owner signed in. The production operator path still needs minimal private config, UID-compatible mounts, secure evidence transfer, and actual inspection of every input image and the whole output. The worker image has no media viewer or automatic image extraction. Do not expose this CLI as a public admin route, weaken evidence permissions, or call a successful file export a completed human review. Restricted evidence: `/private/tmp/kakareel-operator-20261025-efdea26-r1`; this path contains synthetic fixtures only.
+The existing Hostinger host console is now accessible after the owner signed in. The production operator path still needs minimal private config, UID-compatible mounts, secure evidence transfer, and actual inspection of every input image and the whole output. The worker image has no media viewer. The offline input-image helper described below now handles supported PNG/JPEG uploads; it does not fetch output videos or perform human review. Do not expose this CLI as a public admin route, weaken evidence permissions, or call a successful file export a completed human review. Restricted evidence: `/private/tmp/kakareel-operator-20261025-efdea26-r1`; this path contains synthetic fixtures only.
+
+
+## Offline input-image inspection helper (2026-10-25)
+
+After exporting an input review, run this separate command on the trusted operator workstation:
+
+```sh
+node --import tsx scripts/moderation-input-images.ts /ABS/PRIVATE/review.json /ABS/PRIVATE/new-image-directory
+```
+
+It requires no database, operator config or network. Both paths must be outside the checkout with canonical absolute parents owned by the current user and mode 0700; the source must be a single-link 0600 regular file, and the destination must not exist. On macOS, use the canonical `/private/tmp` path rather than its `/tmp` alias. It writes numbered 0600 PNG/JPEG files in original array order, including duplicates, and a final `manifest.json` with the complete count, byte hashes and the source export/review identity. Text-only input explicitly produces a zero-image manifest. Never copy real exports into this public repository.
+
+Open every numbered image and inspect the original private prompt/settings before using the existing `decide` command. A manifest proves byte extraction from the supplied export, not image decodability, current database state, authenticity, human viewing or content approval. Unknown model/fields, remote URLs, malformed data, duplicate JSON keys, inconsistent input hashes and unsafe paths are rejected; the helper never fetches URLs or approves content. Each image retains the application’s 3 MiB PNG/JPEG limit; exports above 32 MiB are explicitly refused. On an IO failure, a partial private directory may remain without a completion manifest; do not use it as a complete review.
+
+Acceptance: 14 focused offline tests passed, including all current provider payload families/modes, image count/order, refusal cases, non-overwrite and sensitive-output checks; TypeScript passed. The main session inspected the implementation and opened both independently generated PNG/JPEG outputs. The older operator rehearsal’s fictitious-model export was correctly refused; this does not claim a new production or container-database rehearsal. The helper has not been deployed and makes no changes to review or billing decisions.
