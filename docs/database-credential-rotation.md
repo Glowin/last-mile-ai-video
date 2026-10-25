@@ -2,14 +2,36 @@
 title: "PostgreSQL 数据库凭证轮换操作与验收"
 date: 2026-10-25
 source: "旧应用源码与 a3b05be 文档差异；2026-10-25 Dokploy 页面及 v0.29.4 源码；PostgreSQL 16／Docker 官方文档；隔离演练"
-status: "隔离演练与平台只读检查完成；固定镜像重建入口待核；未执行生产轮换"
+status: "Hostinger 管理入口与生产只读预检通过；等待维护窗口及用户密码输入，生产未轮换"
 ---
 
 # 范围与发布边界
 
-本手册仅轮换本项目现有 PostgreSQL 16 登录角色的密码，保留角色、权限、数据库、数据卷和应用版本。工作树 `30777d3` 的 `compose.yaml`、`docs/deployment.md`、`src/server/db.ts` 已核读；另只读比对了 `b197051` 的 Compose 和连接池实现。2026-10-25 22:52 的 Dokploy 只读页面显示最近成功部署记录为 `a3b05be`；本地 Git 比对确认它相对 `b197051` 仅修改三份文档。容器列表为 Web／worker／db 均 running，Web／db healthy，尚未读取实际镜像摘要或生产迁移表，不能据部署记录认定二者已核准。PR3 成本／审核迁移 0006–0009 尚未发布。
+本手册仅轮换本项目现有 PostgreSQL 16 登录角色的密码，保留角色、权限、数据库、数据卷和应用版本。工作树 `30777d3` 的 `compose.yaml`、`docs/deployment.md`、`src/server/db.ts` 已核读；另只读比对了 `b197051` 的 Compose 和连接池实现。2026-10-25 22:52 的 Dokploy 只读页面显示最近成功部署记录为 `a3b05be`；本地 Git 比对确认它相对 `b197051` 仅修改三份文档。随后通过现有 Web 容器的真实运行时连接，只读核得 PostgreSQL `160015`、五项迁移名称及 SHA-256 全部与源码一致；容器架构为 x64。经江昪明确批准限定字段读取，已取得 Web／worker／db 的不可变镜像 ID，并从挂载页核得既有数据卷与目标目录。实际值保存在库外受限记录，未输出或保存环境变量。江昪登录 Hostinger 后，通过既有 VPS 网页终端仅提取限定字段，已核三个容器相同的 Compose 项目标签、各服务标签、工作目录及配置文件路径。PR3 成本／审核迁移 0006–0009 尚未发布。
 
-本轮页面确认平台版本 v0.29.4、Git main 自动部署开启。容器菜单只有 Restart／Start／Stop 等生命周期动作，没有已验证的固定镜像重建入口。该版本官方源码的 [rebuildCompose](https://github.com/Dokploy/dokploy/blob/v0.29.4/packages/server/src/services/compose.ts) 调用 [getBuildComposeCommand](https://github.com/Dokploy/dokploy/blob/v0.29.4/packages/server/src/utils/builders/compose.ts)，默认包含 `up -d --build --remove-orphans`。因此不把界面 Reload 当成仅重启，也不把 Restart 当成重新载入环境。本轮未点击这些动作、停服务或保存配置。执行前仍须核主机现有镜像、部署定义和无 build／pull 的重建方式；未核前不进入密码变更。
+本轮页面确认平台版本 v0.29.4、Git main 自动部署开启。容器菜单只有 Restart／Start／Stop 等生命周期动作，没有已验证的固定镜像重建入口。该版本官方源码的 [rebuildCompose](https://github.com/Dokploy/dokploy/blob/v0.29.4/packages/server/src/services/compose.ts) 调用 [getBuildComposeCommand](https://github.com/Dokploy/dokploy/blob/v0.29.4/packages/server/src/utils/builders/compose.ts)，默认包含 `up -d --build --remove-orphans`。因此不把界面 Reload 当成仅重启，也不把 Restart 当成重新载入环境。本轮未点击这些动作、停服务或保存配置。后续已核主机镜像、部署定义及只读配置合并；保存新环境后的实际注入仍是切换验收项，不能用只读检查替代。
+
+23:29 前的接续检查确认平台有 Patches 文件覆盖与 Advanced 自定义 Command；当前补丁为空、自定义命令为空。下面的固定镜像组合已通过本机 Compose 演练，但没有保存到 Dokploy，也没有在生产执行。平台主机终端两次均在 SSH 握手阶段超时；本机既有、严格核主机指纹的 SSH 登录可用，但账号无 Docker socket 权限，`sudo -n` 明确要求密码。没有新增权限、修改 SSH 设置或尝试密码。江昪随后完成 Hostinger 登录，既有 VPS 网页终端已可用。没有新增管理员权限；网站仍未停止。
+
+## 已演练的固定镜像重建方式
+
+仅在窗口前提全部满足后，将每个原镜像的完整本机 `sha256:` ID 放入**平台私有覆盖文件**；不可把真实 ID、项目标识或配置写进开源仓库。下列为占位结构：
+
+```yaml
+services:
+  web:
+    image: sha256:REPLACE_WITH_VERIFIED_ORIGINAL_WEB_IMAGE_ID
+  worker:
+    image: sha256:REPLACE_WITH_VERIFIED_ORIGINAL_WORKER_IMAGE_ID
+```
+
+自定义 Docker 子命令须保留原项目、原 Compose 路径及覆盖文件顺序，显式只重建两个应用服务：
+
+```text
+compose -p VERIFIED_PROJECT -f ORIGINAL_COMPOSE_PATH -f PRIVATE_PIN_FILE up -d --no-build --pull never --no-deps --force-recreate web worker
+```
+
+本机 Docker Compose `v2.34.0-desktop.1` 实测两次命令均退出 0：使用故意不存在的 build context、已有镜像 ID、无网络／端口的 idle Node 进程；第二次两个容器 ID 都改变，镜像 ID 不变，完整环境差异只有合成 MARKER 从 old 变 new；声明的第三个依赖未启动。临时容器已清理，原镜像保留。该本机演练不覆盖 Dokploy 补丁应用／环境注入、数据库连接、迁移或真实入口行为。生产主机另核 Compose `2.39.1`，只读渲染 stdin 覆盖后的配置，确认唯一变化是 Web／worker 的 image 字段，两个原镜像均在本地；没有运行 up 或保存覆盖文件。`--no-deps` 不会阻止所选服务自身执行启动迁移；生产必须使用已核的原镜像，不能换成新分支镜像。实际重建命令、平台环境保存后的注入结果和密码变更后的正反 TCP 认证仍须在维护窗口逐项验收。
 
 生产轮换与[0006–0009 升级切换](deployment.md#cost-moderation-cutover)是两次独立变更。先在现有版本完成密码轮换及验收，再另行批准代码升级；不能在密码故障中顺手部署 main、运行当前 checkout 的迁移器或启动新账单进程。`scripts/start.mjs` 启动应用前会自动迁移；把新镜像当作“重启”会改变恢复边界。
 
@@ -30,6 +52,12 @@ status: "隔离演练与平台只读检查完成；固定镜像重建入口待�
 - [Docker 官方 postgres 镜像说明](https://hub.docker.com/_/postgres)明确：初始化环境变量只对空数据目录生效，已有数据库在启动时保持原状。修改 `POSTGRES_PASSWORD`、重建 db 容器或重启服务，都不能替代对现有角色执行密码变更；更不能删卷以强制生效。
 - [`pg_isready`](https://www.postgresql.org/docs/16/app-pg-isready.html) 不要求正确的用户名、密码或数据库名即可报告服务器状态。Compose 的 healthy 只说明可接受连接，不能证明密码正确。
 - [PostgreSQL 16 错误码表](https://www.postgresql.org/docs/16/errcodes-appendix.html)中 `28P01` 是 `invalid_password`。旧密码必须在明确的同一目标上、通过全新 TCP 连接得到此码；拒绝连接、超时、DNS 错误、`28000` 或库不存在均不算验收。
+
+## 生产只读预检结果（2026-10-25）
+
+Hostinger 既有管理终端已连接。Web 的真实运行时 URL 新建 TCP 连接成功，数据库／角色与 URL 匹配；仅替换成随机错误密码后，以 `28P01` 拒绝。现有 Web／worker URL 一致，角色／库名／密码与 db 初始化环境一致，保存的 Compose 配置与当前应用 URL 一致；三者具有共同内部网络，服务集合恰为 db／web／worker。只输出布尔值，没有输出或保存环境值。
+
+视频任务汇总为 success 4、failed 2，本次快照没有 submitting／pending／unknown；正式停机前须重查。HBA 配置同时存在 host scram-sha-256 与 host／local trust；不能概括成全库只允许密码认证。本次应用实际 TCP 路径的错误密码对照已拒绝，没有修改 HBA。备份、新密码、平台新配置注入、重建和恢复验收仍未执行。
 
 # 人与 Agent 的分工
 
