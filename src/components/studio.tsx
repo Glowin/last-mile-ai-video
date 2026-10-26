@@ -471,9 +471,15 @@ export function Studio() {
       </aside>
       <div className="studio-main">
         <header className="studio-header">
-          <span>
-            Workspace <span className="crumb">/</span> <b>Video studio</b>
-          </span>
+          <div className="studio-header-crumb">
+            <span>
+              Workspace <span className="crumb">/</span>{" "}
+              <b>{tab === "history" ? "My videos" : "Video studio"}</b>
+            </span>
+            <span className="studio-spec-pill">
+              {f.name} · {resolution} · {duration}s · {ratio === "adaptive" ? "Adaptive" : ratio}
+            </span>
+          </div>
           <div>
             {!user && (
               <>

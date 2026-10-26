@@ -5,8 +5,9 @@ export default function Privacy() {
     <>
       <SiteHeader />
       <main id="main" className="shell prose">
-        <h1>Your data.</h1>
-        <p>This page describes the preview and preparation for paid access, updated October 26, 2026.</p>
+        <span className="eyebrow">PRIVACY & DATA HANDLING</span>
+        <h1>Your <em>data.</em></h1>
+        <p className="lead">This page describes the preview and preparation for paid access, updated October 26, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For

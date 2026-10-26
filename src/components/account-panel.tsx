@@ -224,16 +224,27 @@ export function AccountPanel() {
           <h2 id="account-credits">Credits & orders</h2>
           {billingError && <p className="error-message" role="alert">{billingError}</p>}
           {!billing && <p>Credit balance is not available yet. Refresh to check again.</p>}
-          {billing && <>
-            <p className={styles.balance}><strong>{billing.availableCredits ?? "—"}</strong> available credits</p>
-            <p>{billing.reservedCredits ?? "—"} credits reserved for pending generations.</p>
-            <p className="micro">Purchased credits do not expire. Preview allowance is separate.</p>
-            {billing.blocked && <p role="alert">Credit spending is blocked. Review pending orders and refunds before generating.</p>}
-            {!billing.generationChargingEnabled && <p>Paid generation is not yet available. Preview access is separate.</p>}
-            {(testCheckout || billing.testBalanceCredits > 0 || billing.testReservedCredits > 0 || billing.testBlocked) &&
-              <p className={styles.testNotice}>Sandbox only: {billing.testAvailableCredits ?? "—"} available / {billing.testReservedCredits ?? "—"} reserved test credits. These are not purchased credits.{billing.testBlocked ? " Test credit spending is blocked." : ""}</p>}
-          </>}
-          <p><strong>Starter Pack · US$19 + applicable taxes · 150 credits</strong><br />One-time purchase · No expiry · No automatic renewal</p>
+          <div className="wallet-grid">
+            {billing && <>
+              <div className="wallet-stat wallet-stat-primary">
+                <span className="eyebrow">AVAILABLE BALANCE</span>
+                <p className={styles.balance}><strong>{billing.availableCredits ?? "—"}</strong> available credits</p>
+                <p className="micro">Purchased credits do not expire. Preview allowance is separate.</p>
+              </div>
+              <div className="wallet-stat">
+                <span className="eyebrow">ACTIVE RESERVATIONS</span>
+                <p><strong>{billing.reservedCredits ?? "—"}</strong> credits reserved for pending generations.</p>
+                {!billing.generationChargingEnabled && <p className="micro">Paid generation is not yet available. Preview access is separate.</p>}
+              </div>
+            </>}
+            <div className="wallet-stat">
+              <span className="eyebrow">PUBLISHED OFFER</span>
+              <p><strong>Starter Pack · US$19 + applicable taxes · 150 credits</strong><br />One-time purchase · No expiry · No automatic renewal</p>
+            </div>
+          </div>
+          {billing?.blocked && <p className="error-message" role="alert">Credit spending is blocked. Review pending orders and refunds before generating.</p>}
+          {billing && (testCheckout || billing.testBalanceCredits > 0 || billing.testReservedCredits > 0 || billing.testBlocked) &&
+            <p className={styles.testNotice}>Sandbox only: {billing.testAvailableCredits ?? "—"} available / {billing.testReservedCredits ?? "—"} reserved test credits. These are not purchased credits.{billing.testBlocked ? " Test credit spending is blocked." : ""}</p>}
           <p className="micro">Buy again to add credits. A wholly unused pack is refundable within 14 days, including tax, with no additional KakaReel fee. Review the final tax and total before payment.</p>
           {testCheckout && <p className={styles.testNotice}><strong>Test mode · No real payment</strong><br />This checkout is a sandbox test. The Starter Pack is not yet on sale. Test credits cannot be used for live generation.</p>}
           <div className="account-actions">

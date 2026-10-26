@@ -2,8 +2,9 @@ import { SiteHeader, SiteFooter } from '@/components/site-header';
 export const metadata={title:'Support | KakaReel',description:'Get help with account access, video tasks, credits, refunds and content reports.'};
 export default function Support() {
  return <><SiteHeader/><main id="main" className="shell prose">
-  <h1>Help with KakaReel.</h1>
-  <p>Email <a href="mailto:support@kakareel.com">support@kakareel.com</a>. KakaReel's founder handles support, billing questions and content review. You can contact us without signing in. We aim to give an initial response to general support requests within 3 business days; this is a target, not a guaranteed response time or 24/7 service.</p>
+  <span className="eyebrow">SUPPORT & CONTENT REVIEW</span>
+  <h1>Help with <em>KakaReel.</em></h1>
+  <div className="prose-callout"><p>Email <a href="mailto:support@kakareel.com">support@kakareel.com</a>. KakaReel's founder handles support, billing questions and content review. You can contact us without signing in. We aim to give an initial response to general support requests within 3 business days; this is a target, not a guaranteed response time or 24/7 service.</p></div>
   <h2>A video is pending or under review</h2>
   <p>Send the task ID and the status shown in your account. Keep the original task; do not start repeated generations to recover it. A pending or unknown result is not a confirmed failure. A content review can hold an input before generation or a video before delivery.</p>
   <h2>Payments, credits and refunds</h2>

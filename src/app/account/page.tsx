@@ -15,8 +15,9 @@ export default function AccountPage() {
         <div className="studio-title">
           <div>
             <span className="eyebrow">YOUR KAKAREEL ACCOUNT</span>
-            <h1>Your account.</h1>
+            <h1>Your <em>account.</em></h1>
           </div>
+          <span className="muted">Credits, orders, and active sessions.</span>
         </div>
         <AccountPanel />
       </main>

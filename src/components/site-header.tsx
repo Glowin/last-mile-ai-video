@@ -30,11 +30,15 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      <HomeLink className="brand">
-        KakaReel
-      </HomeLink>
-      <span>An independent, open-source video studio.</span>
-      <div>
+      <div className="footer-brand">
+        <HomeLink className="brand">
+          <span>
+            KakaReel<span className="brand-dot">.</span>
+          </span>
+        </HomeLink>
+        <span>An independent, open-source video studio.</span>
+      </div>
+      <div className="footer-links">
         <a href="/pricing#access-options">Pricing</a>
         <Link href="/account">Account</Link>
         <Link href="/privacy">Privacy</Link>

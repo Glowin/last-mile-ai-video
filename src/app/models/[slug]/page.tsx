@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowUpRight, ImageIcon, Type, Clock, ArrowRight } from "lucide-react";
-import { families, getFamily } from "@/lib/models";
+import { families, getFamily, resolutions, ratios } from "@/lib/models";
 import { SiteHeader, SiteFooter } from "@/components/site-header";
 export function generateStaticParams() {
   return families.map((x) => ({ slug: x.slug }));
@@ -26,6 +26,8 @@ export default async function ModelPage({
 }) {
   const f = getFamily((await params).slug);
   if (!f) notFound();
+  const modelResolutions = resolutions(f.slug, "text");
+  const modelRatios = ratios(f.slug, "text");
   return (
     <>
       <SiteHeader />
@@ -33,7 +35,7 @@ export default async function ModelPage({
         <Link className="text-link" href="/#models">
           ← All models
         </Link>
-        <span className="eyebrow">{f.maker} · INDEPENDENT STUDIO PREVIEW</span>
+        <span className="eyebrow">{f.maker} · {f.tag.toUpperCase()} · INDEPENDENT STUDIO PREVIEW</span>
         <h1>
           {f.name}.<br />
           <em>Your next take.</em>
@@ -50,9 +52,30 @@ export default async function ModelPage({
             Start with an image <ArrowRight size={17} />
           </Link>
         </div>
+        <dl className="spec-ledger" aria-label={`${f.name} technical specifications`}>
+          <div>
+            <dt>Resolutions</dt>
+            <dd>{modelResolutions.join(" · ")}</dd>
+          </div>
+          <div>
+            <dt>Clip Duration</dt>
+            <dd>{f.durations[0]}s – {f.durations[f.durations.length - 1]}s ({f.durations.length} presets)</dd>
+          </div>
+          <div>
+            <dt>Aspect Ratios</dt>
+            <dd>{modelRatios.join(" · ")}</dd>
+          </div>
+          <div>
+            <dt>Prompt Capacity</dt>
+            <dd>Up to {f.maxPrompt.toLocaleString("en-US")} chars</dd>
+          </div>
+        </dl>
         <div className="detail-grid">
           <article>
-            <Type />
+            <div className="detail-card-head">
+              <Type />
+              <span>01</span>
+            </div>
             <h3>Text to video</h3>
             <p>
               Describe the subject, its movement, the light, and the camera.
@@ -60,7 +83,10 @@ export default async function ModelPage({
             </p>
           </article>
           <article>
-            <ImageIcon />
+            <div className="detail-card-head">
+              <ImageIcon />
+              <span>02</span>
+            </div>
             <h3>Image to video</h3>
             <p>
               Upload one first frame and describe what happens next. Output
@@ -68,7 +94,10 @@ export default async function ModelPage({
             </p>
           </article>
           <article>
-            <Clock />
+            <div className="detail-card-head">
+              <Clock />
+              <span>03</span>
+            </div>
             <h3>Stay with your task</h3>
             <p>
               Track generation and revisit your result in the same browser. A
@@ -81,7 +110,7 @@ export default async function ModelPage({
           depend on the provider. No commercial-use guarantee is made by this
           preview.
         </p>
-        <h2>Explore another direction</h2>
+        <h2>Explore another <em>direction.</em></h2>
         <div className="actions">
           {families
             .filter((x) => x.slug !== f.slug)

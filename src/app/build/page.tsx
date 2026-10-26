@@ -13,9 +13,9 @@ export default function Build() {
         <h1>
           From an idea
           <br />
-          to the first $100.
+          <em>to the first $100.</em>
         </h1>
-        <p>
+        <p className="lead">
           This studio is being built in public: research the problem, build the
           product, launch it, find the first paying customer, and work toward
           US$100 in revenue.
