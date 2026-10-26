@@ -38,6 +38,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 | 变量 | Compose 默认值 | 正式配置要求 |
 |---|---|---|
 | `BILLING_LIVE_ENABLED` | `false` | 仅精确的 `true` 表示请求启用；仍受代码放行常量约束 |
+| `BILLING_LIVE_PREPARATION_ENABLED` | `false` | 仅精确的 `true` 启用正式配置校验、回调及查询恢复；始终禁止 checkout，与测试模式互斥 |
 | `BILLING_DEPLOYMENT_MODE` | 空 | 正式模式要求 `production` |
 | `BILLING_LIVE_APP_ORIGIN` | 空 | 必须等于 HTTPS `APP_URL` 的 origin，不带路径或尾斜线 |
 | `PANCAKE_LIVE_MERCHANT_ID` | 空 | 正式商户 ID |
@@ -48,7 +49,11 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 两个支付服务的 `BILLING_TEST_ENABLED` 固定为 `false`，不透传 `BILLING_TEST_APP_ORIGIN` 或 `PANCAKE_TEST_*`。正式数据库名不能以 `_billing_sandbox` 结尾，角色不能以 `_billing_test` 结尾；运行时还会核实际数据库和角色与连接串一致。真实值只在库外或 Dokploy 环境／secret 设置中提供，不写入此文件、Compose、构建参数或前端变量。
 
-`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。即使完整设置正式环境并请求启用，也不会注册正式支付 adapter；账单对账的零计数不能作为正式查询成功的证据。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。本次部署接线已于2026-10-26上线；未创建正式资源、未调用正式支付渠道。按本轮任务提供的状态，Pancake 业务审核／税费尚未通过，真实正式密钥、商品与 Webhook 尚未配置；正式开售条件由主会话继续核验。
+`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。默认不开启任何正式 adapter；仅设置 `BILLING_LIVE_ENABLED=true` 仍不能装配或开售。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。原正式环境接线已于2026-10-26上线，下面新增准备模式仅完成本地代码，尚未部署或开启生产开关；业务复审仍在审核中，正式资源与税务验收由主会话核实。
+
+2026-10-26 新增关售准备模式：显式设置 `BILLING_LIVE_PREPARATION_ENABLED=true` 后，使用上表全部正式配置，严格校验来源、数据库命名、必填值和密钥格式；缺失或错误直接失败，不回退测试配置。保留 `BILLING_LIVE_ENABLED=false`；即使同时请求销售或未来代码已批准，准备模式也强制 `salesEnabled=false`、有效 `liveSalesApproved=false`。catalog 显示 `environment=live`、`checkoutEnabled=false`、provider／商品不可购买；checkout 在数据库和渠道调用前返回 `503 SALES_DISABLED`。
+
+准备模式的 `POST /api/billing/webhooks/pancake` 仅接受 `order.completed`、`refund.succeeded`，正式载荷 `mode=prod`；实际数据库隔离检查后进入原始 body 验签。关闭准备且未批准销售时仍返回 `503 PROVIDER_UNAVAILABLE`。对账 worker 会装配查询 adapter，不再因空 registry 直接空跑；它只查询渠道，但回调和对账可能按真实证据写入本地账本，不能称为无副作用演练。退款仍走本人订单、环境／商户、14天窗口及整包未用无预留等既有检查，没有新增退款入口或放宽权限。配置校验通过不证明平台商品归属、密钥环境或真实回调成功，主会话另验；通用测试通知缺少本站订单／metadata 时不能作为到账验收。
 
 离线验证 Compose 时使用清空继承环境的进程、显式 `--env-file /dev/null` 和全合成必填值，避免自动读取 checkout 的 `.env`。分别检查未设置支付变量、显式空值、合成正式值及沙盒变量混入的场景：两个支付服务的正式值一致，沙盒开关始终关闭，generation worker 无支付变量。解析结果只在内存中断言，不将完整环境输出到日志；此检查不启动容器，也不代表真实支付验收。
 

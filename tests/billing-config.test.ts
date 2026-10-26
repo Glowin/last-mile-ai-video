@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { billingOptionsFromEnvironment, productionBillingRelease } from "../src/server/billing/config";
 import { BillingError, BillingService } from "../src/server/billing/service";
+import { BillingReconciliationWorker } from "../src/server/billing/reconciliation-worker";
 const keys = generateKeyPairSync("rsa", { modulusLength: 2048, publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
 function environment(): NodeJS.ProcessEnv {
   return { NODE_ENV: "test", BILLING_TEST_ENABLED: "true", BILLING_DEPLOYMENT_MODE: "isolated-test",
@@ -51,6 +52,9 @@ function liveEnvironment(): NodeJS.ProcessEnv {
     PANCAKE_LIVE_PRODUCT_ID: "PROD_4kF9mNpQrStUvWxYz1A2bC", PANCAKE_LIVE_PRIVATE_KEY: liveKeys.privateKey,
     PANCAKE_LIVE_PLATFORM_PUBLIC_KEY: liveKeys.publicKey };
 }
+function preparationEnvironment(): NodeJS.ProcessEnv {
+  return { ...liveEnvironment(), BILLING_LIVE_ENABLED: "false", BILLING_LIVE_PREPARATION_ENABLED: "true" };
+}
 const user = { id: randomUUID(), googleSub: "offline-fixture", email: "fixture@example.invalid",
   name: null, invitedAt: null, ageConfirmedAt: null, agePolicyVersion: null, createdAt: new Date() };
 const checkoutInput = { productId: "starter-pack", provider: "pancake" as const, requestId: randomUUID() };
@@ -70,6 +74,44 @@ test("complete live configuration and env approval lookalikes cannot override th
   assert.equal(defaultCatalog.checkoutEnabled, false);
   assert.equal(defaultCatalog.products[0].price?.currency, "USD");
   assert.deepEqual(billingOptionsFromEnvironment({ NODE_ENV: "production" }, approvedFixture), {}, "approval alone is not a runtime request");
+  for (const flag of [undefined, "", "false", "TRUE", "1", " true "])
+    assert.deepEqual(billingOptionsFromEnvironment({ ...preparationEnvironment(), BILLING_LIVE_PREPARATION_ENABLED: flag }), {},
+      "preparation requires an explicit exact true");
+});
+
+test("live preparation keeps catalog and checkout closed even with collection requested and internal approval", async (t) => {
+  assert.equal(productionBillingRelease.liveSalesApproved, false);
+  for (const approval of [productionBillingRelease, approvedFixture]) {
+    for (const BILLING_LIVE_ENABLED of ["false", "true"]) {
+      const options = billingOptionsFromEnvironment({ ...preparationEnvironment(), BILLING_LIVE_ENABLED }, approval);
+      assert.equal(options.environment, "live");
+      assert.equal(options.salesEnabled, false);
+      assert.equal(options.releaseApproval?.liveSalesApproved, false);
+      assert.deepEqual(options.catalog?.[0].providerProducts, { pancake: { live: liveEnvironment().PANCAKE_LIVE_PRODUCT_ID } });
+      const adapter = options.providers!.pancake!;
+      const create = t.mock.method(adapter, "createCheckout", async () => { throw new Error("CHECKOUT_FORBIDDEN"); });
+      const boundary = new Error("OFFLINE_DATABASE_BOUNDARY");
+      let isolationCalls = 0;
+      const scoped = { ...options, assertIsolation: async () => { isolationCalls++; throw boundary; } };
+      const service = new BillingService(scoped);
+      const catalog = service.catalog();
+      assert.equal(catalog.environment, "live");
+      assert.equal(catalog.checkoutEnabled, false);
+      assert.ok(catalog.products.every(p => !p.available));
+      assert.ok(catalog.providers.every(p => !p.available));
+      assert.deepEqual(catalog.providers.find(p => p.id === "pancake"), { id: "pancake", available: false, environment: "live" });
+      await assert.rejects(service.checkout(user, { ...checkoutInput, productId: catalog.products[0].id }), billingCode("SALES_DISABLED"));
+      assert.equal(isolationCalls, 0, "closed checkout never reaches the database");
+      assert.equal(create.mock.callCount(), 0, "closed checkout never calls the provider");
+      // Non-empty query adapter reaches the isolation boundary instead of silently
+      // returning an empty tick; no DB/channel call or sales approval is needed.
+      await assert.rejects(new BillingReconciliationWorker(scoped).tick(), e => e === boundary);
+      assert.equal(isolationCalls, 1);
+      // Preparation does not bypass the existing refund service boundary either.
+      await assert.rejects(service.requestRefund(user.id, randomUUID()), e => e === boundary);
+      assert.equal(isolationCalls, 2);
+    }
+  }
 });
 
 test("internal approved live fixture registers only the live product and passes checkout gates up to the DB boundary", async () => {
@@ -103,27 +145,31 @@ test("service separately denies live checkout without approval or with runtime s
 });
 
 test("live requires production scope and every live value, never test or generic credential fallbacks", () => {
-  const live = liveEnvironment(), sandbox = environment();
-  for (const name of ["MERCHANT_ID", "STORE_ID", "PRODUCT_ID", "PRIVATE_KEY", "PLATFORM_PUBLIC_KEY"]) {
-    assert.throws(() => billingOptionsFromEnvironment({ ...sandbox, ...live, BILLING_TEST_ENABLED: "false",
-      [`PANCAKE_LIVE_${name}`]: "", WAFFO_WEBHOOK_PUBLIC_KEY: keys.publicKey }, approvedFixture),
-    new RegExp(`BILLING_CONFIG_MISSING:PANCAKE_LIVE_${name}`));
-    assert.throws(() => billingOptionsFromEnvironment({ ...live, ...sandbox, BILLING_LIVE_ENABLED: "false",
-      [`PANCAKE_TEST_${name}`]: "" }, approvedFixture), new RegExp(`BILLING_CONFIG_MISSING:PANCAKE_TEST_${name}`));
+  const sandbox = environment();
+  for (const [live, approval] of [[liveEnvironment(), approvedFixture], [preparationEnvironment(), productionBillingRelease]] as const) {
+    for (const name of ["MERCHANT_ID", "STORE_ID", "PRODUCT_ID", "PRIVATE_KEY", "PLATFORM_PUBLIC_KEY"]) {
+      assert.throws(() => billingOptionsFromEnvironment({ ...sandbox, ...live, BILLING_TEST_ENABLED: "false",
+        [`PANCAKE_LIVE_${name}`]: "", WAFFO_WEBHOOK_PUBLIC_KEY: keys.publicKey }, approval),
+      new RegExp(`BILLING_CONFIG_MISSING:PANCAKE_LIVE_${name}`));
+      assert.throws(() => billingOptionsFromEnvironment({ ...live, ...sandbox, BILLING_LIVE_ENABLED: "false", BILLING_LIVE_PREPARATION_ENABLED: "false",
+        [`PANCAKE_TEST_${name}`]: "" }, approvedFixture), new RegExp(`BILLING_CONFIG_MISSING:PANCAKE_TEST_${name}`));
+    }
+    for (const override of [
+      { BILLING_DEPLOYMENT_MODE: "isolated-test" }, { BILLING_DEPLOYMENT_MODE: "" },
+      { DATABASE_URL: sandbox.DATABASE_URL },
+      { DATABASE_URL: "postgresql://fixture_live@127.0.0.1/fixture_billing_sandbox" },
+      { DATABASE_URL: "postgresql://fixture_billing_test@127.0.0.1/fixture_live" },
+      { DATABASE_URL: "postgresql://fixture_live@127.0.0.1/fixture_billing_%73andbox" },
+      { DATABASE_URL: "https://fixture_live@db.example.invalid/fixture_live" },
+      { DATABASE_URL: "postgresql://127.0.0.1/fixture_live" },
+      { APP_URL: "http://billing.example.invalid" }, { APP_URL: "https://other.example.invalid" },
+      { APP_URL: "https://user:password@billing.example.invalid" }, { BILLING_LIVE_APP_ORIGIN: "" },
+    ]) assert.throws(() => billingOptionsFromEnvironment({ ...live, ...override }, approval), /BILLING_LIVE_ISOLATION_REQUIRED/);
+    for (const name of ["PRIVATE_KEY", "PLATFORM_PUBLIC_KEY"])
+      assert.throws(() => billingOptionsFromEnvironment({ ...live, [`PANCAKE_LIVE_${name}`]: "malformed-offline-key" }, approval));
+    for (const conflictApproval of [approvedFixture, productionBillingRelease])
+      assert.throws(() => billingOptionsFromEnvironment({ ...live, BILLING_TEST_ENABLED: "true" }, conflictApproval), /BILLING_ENVIRONMENT_CONFLICT/);
   }
-  for (const override of [
-    { BILLING_DEPLOYMENT_MODE: "isolated-test" }, { BILLING_DEPLOYMENT_MODE: "" },
-    { DATABASE_URL: sandbox.DATABASE_URL },
-    { DATABASE_URL: "postgresql://fixture_live@127.0.0.1/fixture_billing_sandbox" },
-    { DATABASE_URL: "postgresql://fixture_billing_test@127.0.0.1/fixture_live" },
-    { DATABASE_URL: "postgresql://fixture_live@127.0.0.1/fixture_billing_%73andbox" },
-    { DATABASE_URL: "https://fixture_live@db.example.invalid/fixture_live" },
-    { DATABASE_URL: "postgresql://127.0.0.1/fixture_live" },
-    { APP_URL: "http://billing.example.invalid" }, { APP_URL: "https://other.example.invalid" },
-    { APP_URL: "https://user:password@billing.example.invalid" }, { BILLING_LIVE_APP_ORIGIN: "" },
-  ]) assert.throws(() => billingOptionsFromEnvironment({ ...live, ...override }, approvedFixture), /BILLING_LIVE_ISOLATION_REQUIRED/);
-  for (const approval of [approvedFixture, productionBillingRelease])
-    assert.throws(() => billingOptionsFromEnvironment({ ...live, BILLING_TEST_ENABLED: "true" }, approval), /BILLING_ENVIRONMENT_CONFLICT/);
 });
 
 test("provider and product environment mismatches reject checkout before isolation or payment calls", async () => {
@@ -143,9 +189,10 @@ test("provider and product environment mismatches reject checkout before isolati
   assert.equal(isolationCalls, 0);
 });
 
-test("configured adapters accept their signed payment scope and reject the opposite mode or platform key", async () => {
+test("configured adapters accept their signed payment scope and reject the opposite mode or platform key", async (t) => {
   for (const [env, approval, signer, wrongSigner, mode] of [
     [liveEnvironment(), approvedFixture, liveKeys, keys, "prod"],
+    [preparationEnvironment(), productionBillingRelease, liveKeys, keys, "prod"],
     [environment(), productionBillingRelease, keys, liveKeys, "test"],
   ] as const) {
     const options = billingOptionsFromEnvironment(env, approval);
@@ -169,8 +216,17 @@ test("configured adapters accept their signed payment scope and reject the oppos
     assert.equal(accepted.amountMinor, 1900);
     await assert.rejects(adapter.verifyAndNormalizeWebhook(signed({ ...event, mode: mode === "prod" ? "test" : "prod" })));
     await assert.rejects(adapter.verifyAndNormalizeWebhook(signed(event, wrongSigner.privateKey)));
+    const verifier = t.mock.method(adapter, "verifyAndNormalizeWebhook"); // Calls the actual RSA verifier.
+    const boundary = new Error("OFFLINE_DATABASE_BOUNDARY");
+    const isolated = new BillingService({ ...options, assertIsolation: async () => { throw boundary; } });
+    const valid = signed(event);
+    await assert.rejects(isolated.webhook("pancake", valid.rawBody, valid.headers), e => e === boundary);
+    assert.equal(verifier.mock.callCount(), 0, "runtime DB isolation precedes verification");
     const service = new BillingService({ ...options, assertIsolation: async () => {} });
     const wrongScope = signed({ ...event, mode: mode === "prod" ? "test" : "prod" });
     await assert.rejects(service.webhook("pancake", wrongScope.rawBody, wrongScope.headers), billingCode("INVALID_WEBHOOK"));
+    const wrongKey = signed(event, wrongSigner.privateKey);
+    await assert.rejects(service.webhook("pancake", wrongKey.rawBody, wrongKey.headers), billingCode("INVALID_WEBHOOK"));
+    assert.equal(verifier.mock.callCount(), 2, "service reaches the real provider, including with the shipped sales gate OFF");
   }
 });

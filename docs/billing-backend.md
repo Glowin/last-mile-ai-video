@@ -130,7 +130,15 @@ Pancake 测试商店、一次性商品与测试密钥已于 2026-10-23 创建。
 
 退款／原任务恢复入口不代表已建立持续运营值班；验收结果、冻结状态及清理待办统一见[当前现状表](#2026-10-23-当前接续状态)。
 
-## 2026-10-25 正式支付代码准备（尚未部署）
+## 2026-10-26 关售准备模式（本地实现，尚未部署）
+
+新增 `BILLING_LIVE_PREPARATION_ENABLED`，默认关闭；只有精确的 `true` 才装配正式 adapter，并复用全部正式配置、密钥格式、来源与数据库隔离校验。与 `BILLING_TEST_ENABLED=true` 互斥，缺失正式值不回退 `PANCAKE_TEST_*`。准备模式强制 `salesEnabled=false` 和有效 `liveSalesApproved=false`，即使同时设置 `BILLING_LIVE_ENABLED=true` 或内部测试注入批准值也不能创建 checkout；正式发布常量仍为 false。
+
+此时 catalog 为 live 环境但商品／provider 不可购买、`checkoutEnabled=false`；checkout 返回 `503 SALES_DISABLED`。`POST /api/billing/webhooks/pancake` 在实际数据库隔离检查后验签，只接收 `order.completed`、`refund.succeeded`，正式载荷为 `mode=prod`。未启用准备且销售未批准时没有 adapter，回调仍返回 `503 PROVIDER_UNAVAILABLE`。配置接线见[部署说明](deployment.md#正式支付运行时接线2026-10-25尚未放行)。
+
+账单 worker 可在关售状态查询原订单／退款请求；渠道查询不创建付款或退款，但可信回调与查询证据可以更新本地账本。退款服务的身份、订单归属、环境／商户、窗口、未使用／无预留和冻结检查全部保留，准备开关不授予额外退款权限。本轮只做合成密钥、无网络／无数据库的配置与验签测试；真实配置归属、线上回调、数据库落账和正式交易留主会话验收，未启用生产开关。
+
+## 2026-10-25 正式支付代码准备（发布前历史）
 
 当前工作分支补齐独立 live adapter 的装配和环境边界。`productionBillingRelease.liveSalesApproved` 固定为 false；仅设置 `BILLING_LIVE_ENABLED` 或其他环境变量不能开启正式销售。通过准入、税费和运营验收后，才可在单独发布中修改该服务端放行常量。
 

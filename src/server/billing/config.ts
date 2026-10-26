@@ -22,8 +22,9 @@ export function billingOptionsFromEnvironment(
 ): BillingOptions {
   const testRequested = env.BILLING_TEST_ENABLED === "true";
   const liveRequested = env.BILLING_LIVE_ENABLED === "true";
-  if (testRequested && liveRequested) throw new Error("BILLING_ENVIRONMENT_CONFLICT");
-  if (!testRequested && !(liveRequested && releaseApproval.liveSalesApproved === true)) return {};
+  const preparationRequested = env.BILLING_LIVE_PREPARATION_ENABLED === "true";
+  if (testRequested && (liveRequested || preparationRequested)) throw new Error("BILLING_ENVIRONMENT_CONFLICT");
+  if (!testRequested && !preparationRequested && !(liveRequested && releaseApproval.liveSalesApproved === true)) return {};
   const environment = testRequested ? "test" : "live";
   const isolationError = environment === "test" ? "BILLING_TEST_ISOLATION_REQUIRED" : "BILLING_LIVE_ISOLATION_REQUIRED";
   if (env.BILLING_DEPLOYMENT_MODE !== (testRequested ? "isolated-test" : "production")) throw new Error(isolationError);
@@ -58,9 +59,14 @@ export function billingOptionsFromEnvironment(
       return order?.createdAt ?? null;
     },
   });
-  return { salesEnabled: true, environment, releaseApproval, assertIsolation: async () => {
-    const [scope] = await database().execute(sql`SELECT current_database() AS name, current_user AS role`);
-    if (scope.name !== databaseName || scope.role !== databaseRole)
-      throw new Error(testRequested ? "BILLING_TEST_DATABASE_SCOPE_MISMATCH" : "BILLING_LIVE_DATABASE_SCOPE_MISMATCH");
-  }, providers: { pancake: adapter }, catalog: [{ ...pack, providerProducts: { pancake: { [environment]: providerProductId } } }] };
+  // Preparation registers the same strictly scoped adapter for callbacks/query
+  // recovery, but can never authorize checkout, even in a future approved release.
+  // Refund requests retain BillingService's existing ownership/eligibility checks.
+  return { salesEnabled: !preparationRequested, environment,
+    releaseApproval: preparationRequested ? Object.freeze({ liveSalesApproved: false }) : releaseApproval,
+    assertIsolation: async () => {
+      const [scope] = await database().execute(sql`SELECT current_database() AS name, current_user AS role`);
+      if (scope.name !== databaseName || scope.role !== databaseRole)
+        throw new Error(testRequested ? "BILLING_TEST_DATABASE_SCOPE_MISMATCH" : "BILLING_LIVE_DATABASE_SCOPE_MISMATCH");
+    }, providers: { pancake: adapter }, catalog: [{ ...pack, providerProducts: { pancake: { [environment]: providerProductId } } }] };
 }
