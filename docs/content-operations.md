@@ -28,6 +28,8 @@ Ordinary lawful material depicting people is not categorically prohibited. Verif
 
 ### Remaining launch checks (2026-10-25)
 
+2026-10-26 update: Pancake initial review now requires changes to the live disclaimers, AUP, enforcement timing, reporting and moderation disclosures, and recommends its Prompt Screening API. These branch changes have not been deployed or accepted by the reviewer. See [the latest review feedback](launch-readiness.md) for the source and remaining gaps.
+
 Prompt Sift's public text-only contract and installed SDK were researched on 2026-10-25; see [findings and unresolved channel questions](research/2026-10-25-prompt-sift-contract.md). No scanner adapter, credential or live request was added. Its pending-review resolution and data-processing terms remain unconfirmed; do not substitute it for manual input/full-output review.
 
 Policy sources checked: [Pancake AIGC compliance](https://docs.waffo.ai/zh/mor/account-reviews/aigc-compliance) and [AUP guidance](https://docs.waffo.ai/zh/mor/account-reviews/aup). These edits align the written rules; they do not establish deployment or approval by Pancake. The main session owns the following checks before opening sales:
