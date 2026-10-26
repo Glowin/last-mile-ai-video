@@ -51,7 +51,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 两个支付服务的 `BILLING_TEST_ENABLED` 固定为 `false`，不透传 `BILLING_TEST_APP_ORIGIN` 或 `PANCAKE_TEST_*`。正式数据库名不能以 `_billing_sandbox` 结尾，角色不能以 `_billing_test` 结尾；运行时还会核实际数据库和角色与连接串一致。真实值只在库外或 Dokploy 环境／secret 设置中提供，不写入此文件、Compose、构建参数或前端变量。
 
-`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。默认不开启任何正式 adapter；仅设置 `BILLING_LIVE_ENABLED=true` 仍不能装配或开售。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。原正式环境接线已于2026-10-26上线，新增准备模式已随 `3e172e1` 部署并启用，正式Key、下架商品及Webhook已配置；业务复审、税务与正式交易验收仍未完成。
+`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。默认不开启任何正式 adapter；仅设置 `BILLING_LIVE_ENABLED=true` 仍不能装配或开售。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。原正式环境接线已于2026-10-26上线，新增准备模式已随 `3e172e1` 部署并启用，正式Key、下架商品及Webhook已配置；业务审核于2026-10-26已在渠道后台核实通过；税务、提款及正式交易验收仍待完成，本站销售放行不自动改变。
 
 2026-10-26 新增关售准备模式：显式设置 `BILLING_LIVE_PREPARATION_ENABLED=true` 后，使用上表全部正式配置，严格校验来源、数据库命名、必填值和密钥格式；缺失或错误直接失败，不回退测试配置。保留 `BILLING_LIVE_ENABLED=false`；即使同时请求销售或未来代码已批准，准备模式也强制 `salesEnabled=false`、有效 `liveSalesApproved=false`。catalog 显示 `environment=live`、`checkoutEnabled=false`、provider／商品不可购买；checkout 在数据库和渠道调用前返回 `503 SALES_DISABLED`。
 
