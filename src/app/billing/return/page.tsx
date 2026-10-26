@@ -39,7 +39,7 @@ export default async function BillingReturnPage({
       <SiteHeader />
       <main id="main" className={`shell ${styles.returnPage}`}>
         <span className={styles.eyebrow}>YOUR KAKAREEL ORDER</span>
-        <h1>Check your order.</h1>
+        <h1>Check your <em>order.</em></h1>
         <p className={styles.lead}>View the latest recorded status in the account used for your order.</p>
         <BillingReturnPanel key={orderId} orderId={orderId} />
       </main>

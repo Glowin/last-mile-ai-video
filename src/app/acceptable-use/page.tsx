@@ -2,8 +2,15 @@ import { SiteHeader, SiteFooter } from '@/components/site-header';
 export const metadata={title:'Acceptable use | KakaReel',description:'Content rules, human review and reporting for KakaReel video generation.'};
 export default function AcceptableUse() {
  return <><SiteHeader/><main id="main" className="shell prose">
-  <h1>Create responsibly.</h1>
-  <p>Updated October 26, 2026. These rules cover prompts, uploaded images and generated videos, including any audio in a generated video.</p>
+  <span className="eyebrow">SAFETY & CONTENT POLICY</span>
+  <h1>Create <em>responsibly.</em></h1>
+  <p className="lead">Updated October 26, 2026. These rules cover prompts, uploaded images and generated videos, including any audio in a generated video.</p>
+  <nav className="prose-nav" aria-label="Policy sections">
+   <a href="#enforcement">Enforcement</a>
+   <a href="#report">Report content</a>
+   <a href="#response-times">Response targets</a>
+   <a href="#appeal">Appeals</a>
+  </nav>
   <h2>Content we do not allow</h2>
   <ul>
    <li>Pornography, sexually explicit or NSFW content, including adult sexual content and non-consensual intimate imagery.</li>

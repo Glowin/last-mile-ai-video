@@ -10,7 +10,7 @@ import {
   Play,
   Code2,
 } from "lucide-react";
-import { families } from "@/lib/models";
+import { families, resolutions } from "@/lib/models";
 import { SiteHeader, SiteFooter } from "@/components/site-header";
 export const metadata = { alternates: { canonical: "/" } };
 const starters = [
@@ -132,7 +132,7 @@ export default function Home() {
               <h2>
                 Different models.
                 <br />
-                More ways to make it yours.
+                <em>More ways to make it yours.</em>
               </h2>
             </div>
             <p>
@@ -160,9 +160,14 @@ export default function Home() {
                   <span />
                   <span />
                 </div>
-                <span className="eyebrow">{f.maker}</span>
+                <span className="eyebrow">{f.maker} · {f.tag}</span>
                 <h3>{f.name}</h3>
                 <p>{f.description}</p>
+                <div className="model-specs" aria-label={`${f.name} specifications`}>
+                  <span>{resolutions(f.slug, "text").join(" · ")}</span>
+                  <span>{f.durations[0]}–{f.durations[f.durations.length - 1]}s</span>
+                  <span>Up to {f.maxPrompt.toLocaleString("en-US")} chars</span>
+                </div>
                 <div className="card-foot">
                   <span>Text + image to video</span>
                   <ArrowRight size={18} />
@@ -175,7 +180,7 @@ export default function Home() {
           <div className="section-heading">
             <div>
               <span className="eyebrow">THE BLANK PAGE ENDS HERE</span>
-              <h2>A starting point for your next clip.</h2>
+              <h2>A starting point for your <em>next clip.</em></h2>
             </div>
             <p>
               Try a prompt. Change the details.
@@ -202,6 +207,7 @@ export default function Home() {
                 </div>
                 <span className="eyebrow">{s.kind}</span>
                 <h3>{s.title}</h3>
+                <blockquote className="starter-prompt">“{s.prompt}”</blockquote>
                 <p>
                   Open this prompt in the studio <ArrowRight size={15} />
                 </p>
@@ -216,7 +222,7 @@ export default function Home() {
         <section id="how-it-works" className="section steps-section">
           <div className="shell">
             <span className="eyebrow">FROM IDEA TO DOWNLOAD</span>
-            <h2>Make something move.</h2>
+            <h2>Make something <em>move.</em></h2>
             <div className="steps">
               {[
                 {
@@ -253,7 +259,7 @@ export default function Home() {
             <h2>
               Before you press
               <br />
-              generate.
+              <em>generate.</em>
             </h2>
             <Link className="text-link" href="/build">
               Follow the build <ArrowUpRight size={17} />
@@ -298,7 +304,7 @@ export default function Home() {
         </section>
         <section className="closing shell">
           <span className="eyebrow">START WITH ONE IDEA</span>
-          <h2>Let's see it move.</h2>
+          <h2>Let's see it <em>move.</em></h2>
           <Link className="button" href="/create">
             Open the studio <ArrowUpRight size={19} />
           </Link>
