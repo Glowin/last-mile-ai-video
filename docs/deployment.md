@@ -1,11 +1,13 @@
 ---
 title: "本地开发与 Hostinger Dokploy 部署"
-date: 2026-10-23
+date: 2026-10-26
 source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档；用户 2026-10-26 最新决定"
-status: "b197051 已部署；Web healthy、worker 持续 running，生产五项迁移已只读核验；收费关闭"
+status: "35691b0 已部署；Web healthy、两个worker running，十项迁移已核；新生成及正式收费关闭"
 ---
 
 # 运行结构
+
+2026-10-26 现状：Waffo整改版本 `35691b0` 已完成停旧进程、备份、迁移和部署；十项迁移校验和匹配，四个旧用户与六条视频保留。当前Web、generation worker和billing reconciliation均运行；新生成预算及正式收费关闭。详细验收见 [开售执行清单](launch-readiness.md)。下列10月23日描述为历史基线。
 
 2026-10-23 最新核验：`b197051` 的 Dokploy 部署记录为 done，完整日志显示 Compose Deployed；Web healthy，worker running，数据库 healthy。生产库只读查询返回 `0001-init.sql`、`0002-google-auth.sql`、`0003-billing.sql`、`0004-credit-wallet.sql`、`0005-pancake-bridge.sql`。有任务恢复与真实生成交付仍未验。部署触发链接本轮已轮换，仅同步到库外配置与既有 GitHub push hook；`b197051` push 自动触发并完成部署，确认触发链路可用。支付最新状态见[接续记录](billing-backend.md#2026-10-23-当前接续状态)。
 
@@ -46,7 +48,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 两个支付服务的 `BILLING_TEST_ENABLED` 固定为 `false`，不透传 `BILLING_TEST_APP_ORIGIN` 或 `PANCAKE_TEST_*`。正式数据库名不能以 `_billing_sandbox` 结尾，角色不能以 `_billing_test` 结尾；运行时还会核实际数据库和角色与连接串一致。真实值只在库外或 Dokploy 环境／secret 设置中提供，不写入此文件、Compose、构建参数或前端变量。
 
-`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。即使完整设置正式环境并请求启用，也不会注册正式支付 adapter；账单对账的零计数不能作为正式查询成功的证据。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。本次仅补部署接线，未部署、未创建正式资源、未调用支付渠道。按本轮任务提供的状态，Pancake 业务审核／税费尚未通过，真实正式密钥、商品与 Webhook 尚未配置；正式开售条件由主会话继续核验。
+`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。即使完整设置正式环境并请求启用，也不会注册正式支付 adapter；账单对账的零计数不能作为正式查询成功的证据。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。本次部署接线已于2026-10-26上线；未创建正式资源、未调用正式支付渠道。按本轮任务提供的状态，Pancake 业务审核／税费尚未通过，真实正式密钥、商品与 Webhook 尚未配置；正式开售条件由主会话继续核验。
 
 离线验证 Compose 时使用清空继承环境的进程、显式 `--env-file /dev/null` 和全合成必填值，避免自动读取 checkout 的 `.env`。分别检查未设置支付变量、显式空值、合成正式值及沙盒变量混入的场景：两个支付服务的正式值一致，沙盒开关始终关闭，generation worker 无支付变量。解析结果只在内存中断言，不将完整环境输出到日志；此检查不启动容器，也不代表真实支付验收。
 
@@ -80,7 +82,7 @@ node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next d
 7. 配好专用上游 Key 后做有限真实生成验收，再开放邀请。
 
 <a id="cost-moderation-cutover"></a>
-## 0006–0010 升级切换（2026-10-25，尚未执行）
+## 0006–0010 升级切换（2026-10-26 已执行）
 
 这次不能让旧版与新版 Web／worker 滚动并行。迁移锁只串行化迁移进程，不会停止旧应用；旧版不认识成本与审核限制，仍可能提交或结算新任务。旧 Web 的任务查询／恢复接口也可能推进任务，因此只停 worker 不够。以下步骤仅作用于本项目，保留数据库和持久卷。按用户 2026-10-26 决定，本次不以数据库密码轮换为前置；升级自身的停机、备份、迁移与验收要求仍保留。
 
@@ -93,7 +95,7 @@ node --env-file=/absolute/external/runtime.env node_modules/next/dist/bin/next d
 
 **故障恢复：** 升级后不能通过退回 `b197051` 等旧镜像恢复生成。旧迁移器会忽略它不包含的 0006–0010，旧代码可能正常启动却绕过新保护。保留升级后的数据库、任务及审计事实，维持维护状态，修复后部署前向兼容版本。新外部任务／付款发生后，不能自动恢复切换前备份并丢弃后续事实；如确需数据恢复，须先核所有外部交易与上游任务，形成单独可审阅方案。仅关闭新预算也不能约束旧程序。
 
-本轮已完成两个本地 Docker target 构建及无网络、无凭证的镜像入口检查，详情见[开售清单](launch-readiness.md)。这些检查不代表本节生产停止、备份、迁移或重启已经执行。
+2026-10-26已按上述顺序完成生产停止、切换点备份、十项迁移与新版启动。审核CLI队列／案件读取成功且为空；预算和费率保持关闭，未放行新生成。实际结果见[开售清单](launch-readiness.md)；历史隔离检查不冒充真实交付。
 
 ## 本轮已解决的打包问题
 

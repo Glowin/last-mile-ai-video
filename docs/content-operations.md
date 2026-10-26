@@ -6,7 +6,7 @@ scope: "KakaReel manual review, private support workflow and generation integrat
 
 # Content review and support operations
 
-Updated 2026-10-26. Owner: KakaReel founder (Glow Jiang). The founder handles the review queue and `support@kakareel.com`, checking them before operating generation and before ending each operating session. The public pages now set manual response targets, not guaranteed completion deadlines or 24/7 coverage; the operating procedure below must accompany their rollout. The module is integrated with the app and runner and has passed isolated PostgreSQL acceptance; deployment and live operator acceptance remain the main session's responsibility. See [launch readiness](launch-readiness.md) for current evidence.
+Updated 2026-10-26. Owner: KakaReel founder (Glow Jiang). The founder handles the review queue and `support@kakareel.com`, checking them before operating generation and before ending each operating session. The public pages now set manual response targets, not guaranteed completion deadlines or 24/7 coverage; the operating procedure below must accompany their rollout. The module is integrated with the app and runner and has passed isolated PostgreSQL acceptance; the code was deployed on 2026-10-26 and the production non-root CLI successfully read the empty review/case queues. Full decisions were tested in isolation; no new paid production review was fabricated. See [launch readiness](launch-readiness.md) for current evidence.
 
 ## Boundaries and policy
 
@@ -115,7 +115,7 @@ Exports from `src/server/moderation/service.ts`:
 - `publicModeration(jobId)`: phase/state/version only, included in owned job responses. Pending/rejected/expired or reported output URLs are hidden. Migration `0009-moderation-rollout.sql` records a durable rollout time: older jobs keep the previous delivery flow and history without being labeled reviewed. New live jobs require both reviews. Content reports hold jobs of every age; forced polling cannot bypass moderation holds. Unstarted old jobs still need a previously reserved cost snapshot, so the rollout boundary grants no new supplier-spending permission.
 - `reopenOutputReview(jobId, actor, reason)`: explicit new output-review version after report resolution; never new provider work.
 
-`src/server/moderation/cases.ts` exports `openCase(...)` and `resolveCase(...)`; CLI uses these directly. App/runner integration, public review states, footer/help links and Terms/Privacy disclosures are included in the current branch. They have not yet been deployed.
+`src/server/moderation/cases.ts` exports `openCase(...)` and `resolveCase(...)`; CLI uses these directly. App/runner integration, public review states, footer/help links and Terms/Privacy disclosures are included in the current branch. They were deployed on 2026-10-26; see launch readiness for the production evidence and remaining operating gates.
 
 ## Validation
 
