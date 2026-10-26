@@ -38,6 +38,8 @@ import {
   DamagedPendingRequest, resetDamagedPendingRequest,
 } from "@/lib/pending-request";
 import { GoogleSignIn } from "./google-sign-in";
+import { AgeDeclarationFields } from "./age-declaration-fields";
+import { emptyAgeDeclaration } from "@/lib/age-declaration";
 import type { BillingSummaryResponse } from "@/lib/billing";
 import { videoCredits } from "@/lib/video-credit-rates";
 
@@ -100,6 +102,8 @@ export function Studio() {
     [ready, setReady] = useState(false),
     [checked, setChecked] = useState(false),
     [code, setCode] = useState("");
+  const [previewAge, setPreviewAge] = useState(emptyAgeDeclaration);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [user, setUser] = useState<{
     id: string;
     email: string;
@@ -139,7 +143,7 @@ export function Studio() {
   const currentQuote = quote?.payloadKey === payloadKey ? quote : null;
   const paidEnabled = !!user && billing?.generationChargingEnabled === true && billing.blocked === false;
   const insufficientCredits = billing !== null && (currentQuote?.credits ?? estimatedCredits ?? 0) > billing.availableCredits;
-  const paidReady = !!user && estimatedCredits !== null && paidGenerationAllowed(billing, currentQuote, now);
+  const paidReady = ageConfirmed && !!user && estimatedCredits !== null && paidGenerationAllowed(billing, currentQuote, now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -157,6 +161,8 @@ export function Studio() {
     sessionOwner.current = null;
     setAuthenticated(false);
     setUser(null);
+    setAgeConfirmed(false);
+    setPreviewAge(emptyAgeDeclaration());
     setCanGenerate(false);
     setBilling(null);
     setBillingError("");
@@ -202,6 +208,7 @@ export function Studio() {
     }
     setAuthenticated(s.authenticated);
     setUser(s.user);
+    setAgeConfirmed(s.ageConfirmed === true);
     setCanGenerate(s.canGenerate);
     setReady(s.ready);
     setChecked(true);
@@ -318,14 +325,31 @@ export function Studio() {
     setBusy(true);
     setError("");
     try {
-      await api("/session", { method: "POST", body: JSON.stringify({ code }) });
+      await api("/session", { method: "POST", body: JSON.stringify({ code,
+        ...(!ageConfirmed ? { ageDeclaration: previewAge } : {}),
+      }) });
       setCode("");
       await loadSession();
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      setPreviewAge(emptyAgeDeclaration());
       setBusy(false);
     }
+  }
+  async function confirmExistingAge(e: React.FormEvent) {
+    e.preventDefault();
+    const owner = sessionOwner.current;
+    if (!owner || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api("/auth/age", { method: "POST", headers: { "X-KakaReel-Owner": owner },
+        body: JSON.stringify({ ageDeclaration: previewAge }),
+      });
+      await loadSession();
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setPreviewAge(emptyAgeDeclaration()); setBusy(false); }
   }
   async function requestQuote() {
     const owner = sessionOwner.current;
@@ -735,7 +759,13 @@ export function Studio() {
                   </p>
                 </div>
               )}
-              {!canGenerate && (
+              {authenticated && !ageConfirmed && <form className="access-panel" onSubmit={confirmExistingAge}>
+                <b>Confirm your age before generating</b>
+                <p>Your session and existing videos remain available.</p>
+                <AgeDeclarationFields value={previewAge} onChange={setPreviewAge} disabled={busy} />
+                <button className="button small" disabled={busy || !previewAge.birthDate || !previewAge.confirmed}>Confirm age</button>
+              </form>}
+              {!canGenerate && (!authenticated || ageConfirmed) && (
                 <form className="access-panel" onSubmit={login}>
                   <div>
                     <LockKeyhole size={17} />
@@ -751,6 +781,7 @@ export function Studio() {
                   <label className="sr-only" htmlFor="preview-code">
                     Preview code
                   </label>
+                  {!ageConfirmed && <AgeDeclarationFields value={previewAge} onChange={setPreviewAge} disabled={busy} />}
                   <div className="access-row">
                     <input
                       id="preview-code"

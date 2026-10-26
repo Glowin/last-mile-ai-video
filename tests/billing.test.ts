@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -105,7 +106,7 @@ function enabled(provider = new MockProvider()) {
 type TestApp = ReturnType<typeof harness>;
 async function actor() {
   const id = randomUUID(), sessionId = randomUUID();
-  await database().insert(users).values({ id, googleSub: `billing-fixture-${id}`, email: `${id}@example.invalid` });
+  await database().insert(users).values({ id, googleSub: `billing-fixture-${id}`, email: `${id}@example.invalid`, ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION });
   await database().insert(authSessions).values({ id: sessionId, userId: id, expiresAt: new Date(Date.now() + 86400_000) });
   const jwt = await new SignJWT({ sid: sessionId }).setProtectedHeader({ alg: "HS256" }).setSubject(id)
     .setIssuer("kakareel").setAudience("kakareel-studio").setIssuedAt().setExpirationTime("10m")

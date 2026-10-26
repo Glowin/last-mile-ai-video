@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -94,7 +95,7 @@ class Browser {
 async function user(invited = false) {
   const [row] = await database().insert(users).values({
     id: randomUUID(), googleSub: randomUUID(), email: `${randomUUID()}@example.test`,
-    name: "Account Test", invitedAt: invited ? new Date() : null,
+    name: "Account Test", ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION, invitedAt: invited ? new Date() : null,
     createdAt: new Date("2026-01-02T03:04:05Z"),
   }).returning();
   return row;
@@ -142,7 +143,7 @@ test("account profile and session isolation against real PostgreSQL", { skip: !t
     assert.equal(response.headers.get("cache-control"), "no-store");
     const body = await response.json();
     assert.deepEqual(Object.keys(body).sort(), ["canGenerate", "sessions", "user"]);
-    assert.deepEqual(body.user, { id: alice.id, name: alice.name, email: alice.email, createdAt: alice.createdAt.toISOString() });
+    assert.deepEqual(body.user, { id: alice.id, name: alice.name, email: alice.email, ageConfirmed: true, createdAt: alice.createdAt.toISOString() });
     assert.equal(body.canGenerate, false);
     assert.deepEqual(body.sessions.map((s: { id: string }) => s.id).sort(), [current.sessionId, other.sessionId].sort());
     for (const session of body.sessions) {

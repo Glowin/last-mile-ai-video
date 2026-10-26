@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -71,7 +72,7 @@ beforeEach(async()=>{
   await client`UPDATE generation_moderation_rollout SET started_at=clock_timestamp()+interval '1 day'`;
   calls.length=0;result='success';
   owner=randomUUID();const sid=randomUUID();
-  await database().insert(users).values({id:owner,googleSub:`synthetic-${owner}`,email:'synthetic@example.invalid',invitedAt:new Date()});
+  await database().insert(users).values({id:owner,googleSub:`synthetic-${owner}`,email:'synthetic@example.invalid',invitedAt:new Date(),ageConfirmedAt:new Date(),agePolicyVersion:AGE_POLICY_VERSION});
   await database().insert(authSessions).values({id:sid,userId:owner,expiresAt:until()});
   cookie=`kr_access=${await new SignJWT({sid}).setProtectedHeader({alg:'HS256'}).setSubject(owner).setIssuer('kakareel').setAudience('kakareel-studio').setExpirationTime('10m').sign(new TextEncoder().encode(secret))}`;
 });

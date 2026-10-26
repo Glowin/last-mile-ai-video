@@ -61,3 +61,7 @@ status: "已部署，GA 实时报告收到测试访问"
 - 从现有 Google Analytics 账号选择 KakaReel，查看 Admin → Data streams 与 Reports → Realtime。
 - [Google 页面浏览与自动 history 重复计数说明](https://developers.google.com/analytics/devguides/collection/ga4/views)。
 - [Google 基础同意模式说明](https://developers.google.com/tag-platform/security/concepts/consent-mode)：授权前不加载标签。
+
+# 2026-10-26 隐私整改
+
+用户要求自行托管字体并关闭会话重放。本轮源码检查未发现会话重放 SDK／调用；上线前线上隐私页脚本来源仅本域（该测试浏览器未同意统计），无外部字体链接。保留已有同意后才加载的 GA 页面统计，不引入 replay 或输入录制。字体改为本域 `/fonts/inter-variable.woff2`，保留 Inter 官方 OFL 许可证；Google 登录独立框架自身资产不属于站点字体。最终上线资产与页面验收见 launch-readiness.md。

@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { before, beforeEach, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -64,7 +65,7 @@ beforeEach(async()=>{
  await pg`UPDATE generation_moderation_rollout SET started_at=clock_timestamp()-interval '2 days'`;
  calls.length=0;status='success';contentAvailable=true;contentChecks=0;headerChecks=0;
  owner=randomUUID();const sid=randomUUID();
- await database().insert(users).values({id:owner,googleSub:owner,email:'synthetic@example.invalid',invitedAt:new Date()});
+ await database().insert(users).values({id:owner,googleSub:owner,email:'synthetic@example.invalid',invitedAt:new Date(),ageConfirmedAt:new Date(),agePolicyVersion:AGE_POLICY_VERSION});
  await database().insert(authSessions).values({id:sid,userId:owner,expiresAt:until()});
  cookie=`kr_access=${await new SignJWT({sid}).setProtectedHeader({alg:'HS256'}).setSubject(owner).setIssuer('kakareel').setAudience('kakareel-studio').setExpirationTime('10m').sign(new TextEncoder().encode(secret))}`;
  await database().transaction(tx=>configureGenerationBudget(tx,{expectedRevision:0,enabled:true,capMinor:6000,validFrom:from(),expiresAt:until(),actor:'synthetic-test',evidenceRef:'synthetic:budget'}));

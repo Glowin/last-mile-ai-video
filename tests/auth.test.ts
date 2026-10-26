@@ -1,6 +1,6 @@
 import { test, before, after, mock } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { OAuth2Client } from "google-auth-library";
 import { SignJWT } from "jose";
@@ -13,6 +13,8 @@ const app = createApp({ videoProvider: { kind: "fake", request: providerRequest,
 import { database, closeDatabase } from "../src/server/db";
 import { migrate } from "../scripts/migrate.mjs";
 import { issueSession, sessionOwner } from "../src/server/auth";
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
+const adult = { birthDate: "1990-01-01", confirmed: true, policyVersion: AGE_POLICY_VERSION };
 import { tokenHash } from "../src/server/account";
 
 const integration = !!process.env.AUTH_TEST_DATABASE_URL;
@@ -93,6 +95,7 @@ async function login(
   const nonce = await challenge(b);
   const r = await b.request("/auth/google", "POST", {
     credential: await credential(nonce, sub, claims),
+    ageDeclaration: adult,
   });
   assert.equal(r.status, 200);
   const s = await b.request("/session");
@@ -143,6 +146,11 @@ before(async () => {
     legacyCookie = legacyGuest();
     await db`INSERT INTO video_jobs(id,owner,family,mode,prompt,duration,resolution,fingerprint,status)
       VALUES(${legacyId},${sessionOwner(legacyCookie)!},'seedance','text','Before upgrade',5,'720p','legacy','success')`;
+    const authSql = await readFile(new URL("../db/0002-google-auth.sql", import.meta.url), "utf8");
+    await db.unsafe(authSql);
+    await db`CREATE TABLE schema_migrations(name text PRIMARY KEY,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())`;
+    await db`INSERT INTO schema_migrations(name,checksum) VALUES('0002-google-auth.sql',${createHash("sha256").update(authSql).digest("hex")})`;
+    await db`INSERT INTO users(id,google_sub,email) VALUES(${randomUUID()},'pre-age-migration','legacy-age@example.invalid')`;
   } finally {
     await db.end();
   }
@@ -180,9 +188,80 @@ test(
   "real PostgreSQL Google identity and session security",
   { skip: !integration },
   async (t) => {
+    await t.test("new Google identity cannot create user/session before an adult declaration", async () => {
+      const b = new Browser(), nonce = await challenge(b);
+      const token = await credential(nonce, "age-new-user");
+      for (const [ageDeclaration, expected] of [[undefined, 428], [{ ...adult, confirmed: false }, 428],
+        [{ ...adult, birthDate: "2000-02-30" }, 400]] as const) {
+        const response = await b.request("/auth/google", "POST", { credential: token, ageDeclaration });
+        assert.equal(response.status, expected);
+        assert.equal(b.cookies.has("kr_access"), false);
+        assert.equal(b.cookies.has("kr_refresh"), false);
+        const rows = await database().execute(sql`SELECT id FROM users WHERE google_sub='age-new-user'`);
+        assert.equal(rows.length, 0);
+      }
+      assert.equal((await b.request("/auth/google", "POST", { credential: token, ageDeclaration: adult })).status, 200);
+      const [row] = await database().execute(sql`SELECT * FROM users WHERE google_sub='age-new-user'`);
+      assert.ok(row.age_confirmed_at);
+      assert.equal(row.age_policy_version, AGE_POLICY_VERSION);
+      assert.ok(!JSON.stringify(row).includes(adult.birthDate));
+      // An already declared account does not need to resend DOB at a later login.
+      const returning = new Browser(), nextNonce = await challenge(returning);
+      assert.equal((await returning.request("/auth/google", "POST", { credential: await credential(nextNonce, "age-new-user") })).status, 200);
+    });
+    await t.test("underage Google sign-in consumes challenge and never creates an account", async () => {
+      const b = new Browser(), nonce = await challenge(b), token = await credential(nonce, "age-child");
+      const response = await b.request("/auth/google", "POST", { credential: token,
+        ageDeclaration: { ...adult, birthDate: new Date().toISOString().slice(0, 10) } });
+      assert.equal(response.status, 403);
+      assert.equal((await response.json()).code, "AGE_INELIGIBLE");
+      assert.equal(b.cookies.has("kr_nonce"), false);
+      assert.equal(b.cookies.has("kr_access"), false);
+      assert.equal((await database().execute(sql`SELECT id FROM users WHERE google_sub='age-child'`)).length, 0);
+      b.cookies.set("kr_nonce", nonce);
+      assert.equal((await b.request("/auth/google", "POST", { credential: token, ageDeclaration: adult })).status, 401);
+    });
+    await t.test("guest preview requires age; existing guest may read history and confirm without logout", async () => {
+      const b = new Browser();
+      for (const [ageDeclaration, expected] of [[undefined, 428], [{ ...adult, confirmed: false }, 428],
+        [{ ...adult, birthDate: "2001-02-29" }, 400],
+        [{ ...adult, birthDate: new Date().toISOString().slice(0, 10) }, 403]] as const) {
+        assert.equal((await b.request("/session", "POST", { code: process.env.DEMO_ACCESS_CODE, ageDeclaration })).status, expected);
+        assert.equal(b.cookies.has("lm_session"), false);
+      }
+      assert.equal((await b.request("/session", "POST", { code: process.env.DEMO_ACCESS_CODE, ageDeclaration: adult })).status, 200);
+      assert.equal((await (await b.request("/session")).json()).ageConfirmed, true);
+      const legacy = new Browser(), raw = issueSession(), owner = sessionOwner(raw)!;
+      legacy.cookies.set("lm_session", raw);
+      assert.equal((await legacy.request("/jobs")).status, 200);
+      assert.equal((await legacy.request("/jobs", "POST", input())).status, 428);
+      assert.equal((await legacy.request("/auth/age", "POST", { ageDeclaration: adult }, process.env.APP_URL!, { "X-KakaReel-Owner": owner })).status, 200);
+      assert.equal(legacy.cookies.get("lm_session"), raw);
+      assert.equal((await (await legacy.request("/session")).json()).canGenerate, true);
+    });
+    await t.test("legacy account retains refresh/history but cannot generate until declaring age", async () => {
+      const b = new Browser(), s = await login(b, "age-legacy"), owner = s.user.id;
+      await database().execute(sql`UPDATE users SET invited_at=now(),age_confirmed_at=NULL,age_policy_version=NULL WHERE id=${owner}::uuid`);
+      assert.equal((await b.request("/auth/refresh", "POST")).status, 200);
+      const old = await (await b.request("/session")).json();
+      assert.equal(old.authenticated, true); assert.equal(old.ageConfirmed, false);
+      assert.equal((await b.request("/jobs")).status, 200);
+      const callsBefore = providerCalls;
+      for (const mode of ["preview", "paid"]) assert.equal((await b.request("/jobs", "POST", { ...input(), billingMode: mode })).status, 428);
+      assert.equal(providerCalls, callsBefore);
+      assert.equal((await b.request("/auth/age", "POST", { ageDeclaration: adult })).status, 409);
+      const headers = { "X-KakaReel-Owner": owner }, before = b.header();
+      assert.equal((await b.request("/auth/age", "POST", {}, process.env.APP_URL!, headers)).status, 428);
+      assert.equal((await b.request("/auth/age", "POST", { ageDeclaration: adult }, process.env.APP_URL!, headers)).status, 200);
+      assert.equal(b.header(), before, "no logout or session cookie replacement");
+      assert.equal((await (await b.request("/session")).json()).canGenerate, true);
+    });
     await t.test(
       "additive concurrent startup migrations retain legacy jobs and cookies",
       async () => {
+        const [legacyAccount] = await database().execute(sql`SELECT age_confirmed_at,age_policy_version FROM users WHERE google_sub='pre-age-migration'`);
+        assert.equal(legacyAccount.age_confirmed_at, null);
+        assert.equal(legacyAccount.age_policy_version, null);
         const b = new Browser();
         b.cookies.set("lm_session", legacyCookie);
         const r = await b.request("/jobs");
@@ -289,6 +368,7 @@ test(
       assert.equal(b.cookies.get("kr_nonce"), fresh.nonce);
       assert.equal((await b.request("/auth/google", "POST", {
         credential: await credential(fresh.nonce, "expired-challenge-replacement"),
+    ageDeclaration: adult,
       })).status, 200);
     });
     await t.test("a consumed challenge is not reused even if its old cookie is sent again", async () => {
@@ -296,6 +376,7 @@ test(
       const nonce = await challenge(b);
       assert.equal((await b.request("/auth/google", "POST", {
         credential: await credential(nonce, "consumed-challenge"),
+    ageDeclaration: adult,
       })).status, 200);
       const consumed = await database().execute(sql`SELECT nonce_hash FROM auth_nonces WHERE nonce_hash=${tokenHash(nonce)}`);
       assert.equal(consumed.length, 0);
@@ -368,7 +449,7 @@ test(
         const a = new Browser(),
           nonce = await challenge(a),
           b = a.clone();
-        const body = { credential: await credential(nonce, "nonce-user") };
+        const body = { credential: await credential(nonce, "nonce-user"), ageDeclaration: adult };
         const replies = await Promise.all([
           a.request("/auth/google", "POST", body),
           b.request("/auth/google", "POST", body),
@@ -541,6 +622,7 @@ test(
       await t.test(`guest adoption preserves an in-flight ${operation} and its idempotency key`, async () => {
         const guest = new Browser();
         const raw = issueSession();
+        await database().execute(sql`INSERT INTO guest_age_declarations(guest_id,age_confirmed_at,age_policy_version) VALUES(${sessionOwner(raw)!}::uuid,now(),${AGE_POLICY_VERSION})`);
         guest.cookies.set("lm_session", raw);
         const replay = guest.clone();
         const request = input();
@@ -595,6 +677,7 @@ test(
         try {
           r = await b.request("/auth/google", "POST", {
             credential: await credential(nonce, "rotation-user"),
+    ageDeclaration: adult,
           });
         } finally {
           if (priorNodeEnv === undefined)

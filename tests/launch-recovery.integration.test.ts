@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -116,7 +117,7 @@ async function run(mode = 'tick', id = '') {
 }
 async function actor() {
   const id = randomUUID(), sid = randomUUID();
-  await database().insert(users).values({ id, googleSub: `launch-${id}`, email: `${id}@example.invalid` });
+  await database().insert(users).values({ id, googleSub: `launch-${id}`, email: `${id}@example.invalid`, ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION });
   await database().insert(authSessions).values({ id: sid, userId: id, expiresAt: new Date(Date.now() + 3_600_000) });
   const jwt = await new SignJWT({ sid }).setProtectedHeader({ alg: 'HS256' }).setSubject(id)
     .setIssuer('kakareel').setAudience('kakareel-studio').setExpirationTime('10m').sign(new TextEncoder().encode(secret));

@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -37,6 +38,7 @@ function request(
 async function login() {
   const r = await request("/session", "POST", "", {
     code: process.env.DEMO_ACCESS_CODE,
+    ageDeclaration: { birthDate: "1990-01-01", confirmed: true, policyVersion: AGE_POLICY_VERSION },
   });
   assert.equal(r.status, 200);
   return r.headers.get("set-cookie")!.split(";")[0];

@@ -104,6 +104,8 @@ const requireIdentity: import("hono").MiddlewareHandler<{
     );
   c.set("owner", who.owner);
   c.set("identity", who);
+  if (c.req.method === "POST" && ["/api/jobs", "/api/jobs/quote"].includes(c.req.path) && !who.ageConfirmed)
+    return c.json({ error: "Confirm that you are at least 18 before generating videos.", code: "AGE_REQUIRED" }, 428);
   await next();
 };
 app.use("/jobs", requireIdentity);

@@ -96,7 +96,7 @@ export async function api(path: string, options: RequestInit = {}) {
   // across tabs with refresh/sign-in/out, without announcing an identity change.
   // Browsers without Web Locks retain the existing within-tab queue only.
   const needsSessionLock = changesIdentity ||
-    (path === "/auth/challenge" && options.method === "POST");
+    (["/auth/challenge", "/auth/age", "/session"].includes(path) && options.method === "POST");
   const request = async () => {
     assertIdentity(expected);
     let r = await send(path, options);
@@ -109,7 +109,9 @@ export async function api(path: string, options: RequestInit = {}) {
       assertIdentity(expected);
       if (r.status === 401 && data.code === "SESSION_EXPIRED") sessionEnded();
     }
-    if (!r.ok) throw new Error(data.error ?? "Request failed. Please try again.");
+    if (!r.ok) throw Object.assign(new Error(data.error ?? "Request failed. Please try again."), {
+      code: data.code, status: r.status,
+    });
     if (path === "/auth/google" && data.claimedGuestId && data.userId) {
       try {
         adoptLegacyPendingRequest(data.claimedGuestId);

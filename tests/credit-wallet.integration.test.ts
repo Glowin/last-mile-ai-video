@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -31,7 +32,7 @@ after(async()=>{
   else process.env.DATABASE_URL=originalDatabaseUrl;
 });
 async function user() {
- const id=randomUUID();await database().insert(users).values({id,googleSub:`qa-${id}`,email:`${id}@example.test`});return id;
+ const id=randomUUID();await database().insert(users).values({id,googleSub:`qa-${id}`,email:`${id}@example.test`,ageConfirmedAt:new Date(),agePolicyVersion:AGE_POLICY_VERSION});return id;
 }
 async function purchase(userId:string,credits=150,environment:CreditEnvironment='test',paidAt=new Date(),grant=true) {
   const orderId=randomUUID();

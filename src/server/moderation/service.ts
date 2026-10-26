@@ -6,7 +6,7 @@ import { jobs } from '../schema';
 import { lockWallet, settleCredits } from '../credits/wallet';
 import { getGenerationCost, lockGenerationCostBudget, releaseUnsubmittedGenerationCost } from '../costs';
 
-export const POLICY_VERSION = '2026-10-25.1';
+export const POLICY_VERSION = '2026-10-26.1';
 export type Job = typeof jobs.$inferSelect;
 export type Phase = 'input' | 'output';
 export type Review = {

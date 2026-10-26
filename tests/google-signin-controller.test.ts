@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION, type AgeDeclaration } from "../src/lib/age-declaration";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GoogleSignInController, type SignInState } from "../src/lib/google-signin-controller";
@@ -6,7 +7,7 @@ import type { GoogleIdentity } from "../src/lib/google-identity";
 const tick = () => new Promise<void>((done) => setImmediate(done));
 function setup(options: {
   user?: boolean; dismissed?: boolean; expiresInMs?: number;
-  authenticate?: () => Promise<unknown>;
+  authenticate?: (credential: string, age?: AgeDeclaration) => Promise<unknown>;
   config?: () => Promise<{ googleClientId?: string }>;
   sdk?: (google: GoogleIdentity) => Promise<GoogleIdentity>;
 } = {}) {
@@ -25,7 +26,7 @@ function setup(options: {
     config: options.config ?? (async () => ({ googleClientId: "test-client" })),
     challenge: async () => ({ nonce: `nonce-${++counts.challenge}`, expiresInMs: options.expiresInMs }),
     sdk: async () => options.sdk ? options.sdk(google) : google,
-    authenticate: async () => { counts.auth++; await options.authenticate?.(); user = true; controller.identityChanged("sign-in"); },
+    authenticate: async (credential, age) => { counts.auth++; await options.authenticate?.(credential, age); user = true; controller.identityChanged("sign-in"); },
     dismissed: () => dismissed,
     rememberDismissal: (value) => { dismissed = value; },
     schedule: (work, ms) => { delay = ms; timer = work; return 1 as unknown as ReturnType<typeof setTimeout>; },
@@ -332,5 +333,42 @@ test("manual credential completion hides the overlay and clears intent for subse
   h.controller.retry();
   await tick();
   assert.ok(h.states.slice(signedInStates).every((state) => !state.visible));
+  assert.equal(h.counts.auth, 1);
+});
+
+const adult = { birthDate: "1990-01-01", confirmed: true, policyVersion: AGE_POLICY_VERSION };
+const ageRequired = () => Object.assign(new Error("Age required"), { code: "AGE_REQUIRED" });
+test("One Tap AGE_REQUIRED opens only the next-step form, reuses credential once and never re-prompts", async () => {
+  const calls: { credential: string; age?: AgeDeclaration }[] = [];
+  const h = setup({ authenticate: async (credential, age) => {
+    calls.push({ credential, age }); if (!age) throw ageRequired();
+  } });
+  await h.controller.start();
+  assert.equal(h.controller.state.visible, false);
+  h.credential(); await tick();
+  assert.equal(h.controller.state.phase, "age-required");
+  assert.equal(h.controller.state.visible, true);
+  assert.ok(h.counts.cancel > 0);
+  assert.ok(h.delay > 0 && h.delay <= 120000);
+  h.credential(); // late duplicate native callback must not replace age flow
+  await tick();
+  await h.controller.confirmAge(adult);
+  assert.equal(h.controller.state.phase, "signed-in");
+  assert.equal(h.controller.state.visible, false);
+  assert.equal(h.counts.prompt, 1);
+  assert.equal(h.counts.challenge, 1);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].credential, calls[1].credential);
+  assert.deepEqual(calls[1].age, adult);
+  assert.ok(!JSON.stringify(h.controller.snapshot()).includes("test-credential"));
+});
+for (const action of ["close", "expire", "external", "stop"] as const) test(`age credential cleared on ${action}`, async () => {
+  const h = setup({ authenticate: async () => { throw ageRequired(); } });
+  await h.controller.start(); h.credential(); await tick();
+  if (action === "close") h.controller.close();
+  else if (action === "expire") h.expire();
+  else if (action === "external") await h.controller.identityChanged("external");
+  else h.controller.stop();
+  await h.controller.confirmAge(adult);
   assert.equal(h.counts.auth, 1);
 });

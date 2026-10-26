@@ -5,7 +5,7 @@ import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { database } from "./db";
-import { users, authSessions, refreshTokens, guestClaims } from "./schema";
+import { users, authSessions, refreshTokens, guestClaims, guestAgeDeclarations } from "./schema";
 import { sessionOwner } from "./auth";
 
 const google = new OAuth2Client();
@@ -22,6 +22,7 @@ export type Identity = {
   owner: string;
   user: Account | null;
   canGenerate: boolean;
+  ageConfirmed: boolean;
   sessionId?: string;
 };
 
@@ -74,7 +75,7 @@ export async function verifyGoogle(credential: string, nonce: string) {
   };
 }
 export function publicUser(u: Account) {
-  return { id: u.id, email: u.email, name: u.name };
+  return { id: u.id, email: u.email, name: u.name, ageConfirmed: !!u.ageConfirmedAt };
 }
 export async function lockGuest(tx: Transaction, guest: string) {
   await tx.execute(
@@ -93,7 +94,9 @@ export async function guestIdentity(cookie?: string): Promise<Identity | null> {
     .select()
     .from(guestClaims)
     .where(eq(guestClaims.guestId, id));
-  return claim ? null : { owner: id, user: null, canGenerate: true };
+  if (claim) return null;
+  const [age] = await database().select().from(guestAgeDeclarations).where(eq(guestAgeDeclarations.guestId, id));
+  return { owner: id, user: null, canGenerate: !!age, ageConfirmed: !!age };
 }
 async function accessPayload(raw?: string) {
   if (!raw) return null;
@@ -135,7 +138,8 @@ export async function identity(c: Context): Promise<Identity | null> {
         owner: row.user.id,
         user: row.user,
         sessionId: row.session.id,
-        canGenerate: !!row.user.invitedAt,
+        canGenerate: !!row.user.invitedAt && !!row.user.ageConfirmedAt,
+        ageConfirmed: !!row.user.ageConfirmedAt,
       };
   }
   // Never silently fall back to a guest when an account session needs refresh.

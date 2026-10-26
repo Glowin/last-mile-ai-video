@@ -50,6 +50,8 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   name: text("name"),
   invitedAt: timestamp("invited_at", { withTimezone: true }),
+  ageConfirmedAt: timestamp("age_confirmed_at", { withTimezone: true }),
+  agePolicyVersion: text("age_policy_version"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -92,3 +94,8 @@ export const authNonces = pgTable(
   },
   (t) => [index("auth_nonces_expiry_idx").on(t.expiresAt)],
 );
+export const guestAgeDeclarations = pgTable("guest_age_declarations", {
+  guestId: uuid("guest_id").primaryKey(),
+  ageConfirmedAt: timestamp("age_confirmed_at", { withTimezone: true }).notNull(),
+  agePolicyVersion: text("age_policy_version").notNull(),
+});

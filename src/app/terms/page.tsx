@@ -6,11 +6,21 @@ export default function Terms() {
       <SiteHeader />
       <main id="main" className="shell prose">
         <h1>Terms & credit offer.</h1>
-        <p>Updated October 25, 2026. The paid offer below is published in preparation for launch. Packs are not yet on sale.</p>
+        <p>Updated October 26, 2026. The paid offer below is published in preparation for launch. Packs are not yet on sale.</p>
         <p>
           KakaReel is an independent, open-source AI video studio under
           development. Preview access is by invitation. It is not an official
           website of ByteDance, Kuaishou, or MiniMax.
+        </p>
+        <h2>Age eligibility and agreement</h2>
+        <p>
+          You must be at least 18 years old and legally able to enter into this
+          agreement to create an account or use KakaReel, including preview and
+          guest access. By using the service, you confirm that you meet these
+          requirements and agree to these terms and our{" "}
+          <a href="/acceptable-use">acceptable-use policy</a>. Please also read
+          our <a href="/privacy">privacy policy</a>. Do not use the service if
+          you do not meet these requirements or do not agree.
         </p>
         <h2>Access and usage</h2>
         <p>
@@ -88,7 +98,8 @@ export default function Terms() {
           violations, fraud, attempts to bypass review, or a legal requirement
           may lead us to decline further generation requests during human review. These decisions are
           made through human review; contact support to ask for the reason or
-          request reconsideration.
+          request reconsideration. Our <a href="/acceptable-use#enforcement">enforcement policy</a> explains
+          the available actions and <a href="/acceptable-use#response-times">response targets</a>.
         </p>
         <p>
           A restriction does not automatically delete your account or forfeit
@@ -100,7 +111,7 @@ export default function Terms() {
           your order. Privacy or deletion requests are handled separately under
           our <a href="/privacy">privacy policy</a>.
         </p>
-        <h2>Service limitations and responsibility</h2>
+        <h2>Disclaimer: service availability and AI outputs</h2>
         <p>
           To the extent permitted by applicable law, the service is provided
           as is and as available. We do not guarantee uninterrupted availability,
@@ -109,7 +120,12 @@ export default function Terms() {
           resemble other outputs, or involve third-party rights. Review a video
           and the rights needed for your intended use before publishing it;
           generation alone does not guarantee that commercial use is permitted.
+          Human content review does not certify accuracy, ownership, or fitness
+          for your purpose. Outputs are not medical, legal, financial, or other
+          professional advice; consult a qualified professional before relying
+          on them for those decisions.
         </p>
+        <h2>Limitation of liability</h2>
         <p>
           To the extent permitted by applicable law, KakaReel is not responsible
           for indirect or consequential business losses, such as lost profits

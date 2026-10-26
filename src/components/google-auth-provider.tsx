@@ -23,7 +23,7 @@ export function GoogleAuthProvider({ children }: { children: React.ReactNode }) 
     session: () => api("/session"),
     config: () => api("/config"),
     challenge: () => api("/auth/challenge", { method: "POST" }),
-    authenticate: (credential) => api("/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
+    authenticate: (credential, ageDeclaration) => api("/auth/google", { method: "POST", body: JSON.stringify({ credential, ageDeclaration }) }),
     sdk: loadGoogleIdentity,
     dismissed: () => { try { return sessionStorage.getItem(CLOSED_KEY) === "1"; } catch { return false; } },
     rememberDismissal: (closed) => { try { sessionStorage.setItem(CLOSED_KEY, closed ? "1" : "0"); } catch { /* Optional storage. */ } },

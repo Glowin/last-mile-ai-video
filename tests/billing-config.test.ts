@@ -52,7 +52,7 @@ function liveEnvironment(): NodeJS.ProcessEnv {
     PANCAKE_LIVE_PLATFORM_PUBLIC_KEY: liveKeys.publicKey };
 }
 const user = { id: randomUUID(), googleSub: "offline-fixture", email: "fixture@example.invalid",
-  name: null, invitedAt: null, createdAt: new Date() };
+  name: null, invitedAt: null, ageConfirmedAt: null, agePolicyVersion: null, createdAt: new Date() };
 const checkoutInput = { productId: "starter-pack", provider: "pancake" as const, requestId: randomUUID() };
 const billingCode = (code: string) => (e: unknown) => e instanceof BillingError && e.code === code;
 
