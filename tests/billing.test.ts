@@ -1,7 +1,8 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import postgres from "postgres";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
@@ -27,7 +28,7 @@ const pack = (id = "test-pack"): CreditPack => ({ id, name: "Test-only pack", de
   providerProducts: { pancake: { test: "test-provider-product" } } });
 class MockProvider implements BillingProvider {
   readonly id = "pancake" as const;
-  readonly environment = "test" as const;
+  constructor(readonly environment: "test" | "live" = "test") {}
   readonly merchantAccountId = "test-merchant";
   readonly checkoutHosts = ["checkout.example.invalid"];
   readonly capabilities = { hostedCheckout: true, fullRefundEvents: true, subscriptions: false } as const;
@@ -72,7 +73,7 @@ class BridgeMock extends MockProvider {
 }
 function bridgeEvent(provider: BridgeMock, orderId: string, changes: Partial<PancakePaymentEvent> = {}): PancakePaymentEvent {
   const c = provider.commands.get(orderId)!;
-  return { evidenceType: "pancake", eventId: `paid-${orderId}`, environment: "test", merchantAccountId: provider.merchantAccountId,
+  return { evidenceType: "pancake", eventId: `paid-${orderId}`, environment: provider.environment, merchantAccountId: provider.merchantAccountId,
     orderId, userId: c.userId, productId: c.productId, providerProductId: c.providerProductId, priceVersion: c.priceVersion,
     providerOrderId: `external-${orderId}`, paymentId: `payment-${orderId}`, kind: "payment.succeeded", currency: "USD",
     amountMinor: 1375, subtotalMinor: 1250, taxMinor: 125, totalMinor: 1375, originalPaidAmountMinor: 1375,
@@ -105,7 +106,7 @@ function enabled(provider = new MockProvider()) {
 type TestApp = ReturnType<typeof harness>;
 async function actor() {
   const id = randomUUID(), sessionId = randomUUID();
-  await database().insert(users).values({ id, googleSub: `billing-fixture-${id}`, email: `${id}@example.invalid` });
+  await database().insert(users).values({ id, googleSub: `billing-fixture-${id}`, email: `${id}@example.invalid`, ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION });
   await database().insert(authSessions).values({ id: sessionId, userId: id, expiresAt: new Date(Date.now() + 86400_000) });
   const jwt = await new SignJWT({ sid: sessionId }).setProtectedHeader({ alg: "HS256" }).setSubject(id)
     .setIssuer("kakareel").setAudience("kakareel-studio").setIssuedAt().setExpirationTime("10m")
@@ -127,7 +128,7 @@ async function checkout(app: TestApp, who: Actor, body = input()) {
 function event(provider: MockProvider, orderId: string, changes: Partial<CheckoutPaymentEvent> = {}): CheckoutPaymentEvent {
   const command = provider.commands.get(orderId)!;
   assert.ok(command);
-  return { eventId: randomUUID(), environment: "test", merchantAccountId: provider.merchantAccountId,
+  return { eventId: randomUUID(), environment: provider.environment, merchantAccountId: provider.merchantAccountId,
     orderId, userId: command.userId, productId: command.productId, providerProductId: command.providerProductId,
     checkoutId: `checkout-${orderId}`, paymentId: `payment-${orderId}`, kind: "payment.succeeded",
     amountMinor: command.amountMinor, currency: command.currency, ...changes };
@@ -151,6 +152,10 @@ before(async () => {
   if (!integration) return;
   const url = new URL(process.env.BILLING_TEST_DATABASE_URL!);
   assert.equal(url.hostname, "127.0.0.1", "Billing tests only reset a disposable loopback database");
+  assert.equal(url.protocol, "postgresql:");
+  assert.ok(url.username && url.username !== "postgres", "Use a dedicated test role");
+  assert.ok(url.port && url.port !== "5432", "Use a disposable test port");
+  assert.equal(url.search, ""); assert.equal(url.hash, "");
   assert.equal(url.pathname, "/video_billing_qa");
   process.env.DATABASE_URL = process.env.BILLING_TEST_DATABASE_URL;
   process.env.SESSION_SECRET = testSecret;
@@ -158,6 +163,9 @@ before(async () => {
   global.fetch = async () => { throw new Error("Network calls forbidden in billing tests"); };
   const db = postgres(process.env.DATABASE_URL!, { max: 1 });
   try {
+    const [identity] = await db`SELECT current_database() AS db,current_user AS role`;
+    assert.equal(identity.db, url.pathname.slice(1));
+    assert.equal(identity.role, url.username);
     await db`DROP SCHEMA public CASCADE`;
     await db`CREATE SCHEMA public`;
     await db`CREATE TABLE schema_migrations(name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`;
@@ -180,7 +188,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     const rows = await database().execute(sql`SELECT owner FROM video_jobs WHERE id=${legacyJob}::uuid`);
     assert.equal(rows[0].owner, legacyUser);
     const versions = await database().execute(sql`SELECT name FROM schema_migrations ORDER BY name`);
-    assert.deepEqual(versions.map((r) => r.name), ["0001-init.sql", "0002-google-auth.sql", "0003-billing.sql", "0004-credit-wallet.sql", "0005-pancake-bridge.sql"]);
+    assert.deepEqual(versions.map((r) => r.name), (await readdir(new URL("../db/", import.meta.url))).filter(f => /^\d{4}-.+\.sql$/.test(f)).sort());
     const count = await database().execute(sql`SELECT count(*)::int AS n FROM credit_ledger`);
     assert.equal(count[0].n, 0);
   });
@@ -213,6 +221,42 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     assert.deepEqual((await (await request(app, who, "/billing/orders")).json()).orders, []);
     const summary = await (await request(app, who, "/billing")).json();
     assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
+  });
+  await t.test("internally approved live fixture completes isolated purchase and refund without touching the test wallet", async () => {
+    // Synthetic adapter and disposable DB only: no real merchant, money or network.
+    const provider = new BridgeMock("live");
+    const livePack: CreditPack = { ...pack(), amountMinor: 1900, credits: 150,
+      providerProducts: { pancake: { live: "live-fixture-product" } } };
+    const options: BillingOptions = { environment: "live", salesEnabled: true,
+      releaseApproval: { liveSalesApproved: true }, providers: { pancake: provider }, catalog: [livePack] };
+    const who = await actor(), app = harness(options), service = new BillingService(options);
+    const closed = harness({ ...options, releaseApproval: { liveSalesApproved: false } });
+    assert.equal((await request(closed, who, "/billing/checkout", "POST", input())).status, 503);
+    assert.equal(provider.calls, 0);
+    const order = await checkout(app, who);
+    const payment = bridgeEvent(provider, order.id, { amountMinor: 1900, subtotalMinor: 1900,
+      taxMinor: 0, totalMinor: 1900, originalPaidAmountMinor: 1900 });
+    assert.equal((await webhook(app, { ...payment, environment: "test" })).status, 403);
+    assert.equal((await totals(order.id)).n, 0);
+    assert.equal((await webhook(app, payment)).status, 200);
+    assert.equal((await webhook(app, payment)).status, 200);
+    assert.deepEqual(await totals(order.id), { n: 1, credits: 150 });
+    const funded = await (await request(app, who, "/billing")).json();
+    assert.equal(funded.availableCredits, 150); assert.equal(funded.testAvailableCredits, 0);
+    assert.equal(funded.generationChargingEnabled, false);
+    const foreign = bridge(), testOrder = await checkout(foreign.app, who);
+    await assert.rejects(service.reconcile(testOrder.id), (e: any) => e.code === "PAYMENT_SCOPE_MISMATCH");
+    await assert.rejects(service.requestRefund(who.id, testOrder.id), (e: any) => e.code === "PAYMENT_SCOPE_MISMATCH");
+    assert.equal(provider.refundCalls.length, 0);
+    await service.requestRefund(who.id, order.id);
+    assert.equal(provider.refundCalls.length, 1);
+    provider.recovered = [{ ...payment, eventId: `refunded-${order.id}`, kind: "payment.refunded" }];
+    await service.reconcile(order.id);
+    await service.reconcile(order.id);
+    assert.deepEqual(await totals(order.id), { n: 2, credits: 0 });
+    const refunded = await (await request(app, who, "/billing")).json();
+    assert.equal(refunded.availableCredits, 0); assert.equal(refunded.testAvailableCredits, 0);
+    assert.equal(provider.refundCalls.length, 1, "read-only recovery never resubmits refund");
   });
   await t.test("Google sessions required, expired sessions refreshable, owner mandatory for checkout and checked for reads", async () => {
     const { app } = enabled(), who = await actor();
@@ -479,16 +523,19 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     const response = await request(app, who, `/billing/orders/${old.id}/refund`, "POST", {});
     assert.equal(response.status, 409); assert.equal((await response.json()).code, "REFUND_WINDOW_CLOSED");
   });
-  await t.test("old unknown checkout never calls create again; live adapter never sells even with code option", async () => {
+  await t.test("old unknown checkout never calls create again; mismatched live adapter cannot sell", async () => {
     const { app, provider } = bridge(), who = await actor(), body = input(), order = await checkout(app, who, body);
     await database().execute(sql`UPDATE billing_orders SET created_at=now()-interval '24 hours',checkout_status='unknown' WHERE id=${order.id}::uuid`);
     const response = await request(app, who, "/billing/checkout", "POST", body);
     assert.equal(response.status, 409); assert.equal((await response.json()).code, "CHECKOUT_RECONCILIATION_REQUIRED");
     assert.equal(provider.calls, 1);
     Object.defineProperty(provider, "environment", { value: "live" });
-    assert.equal((await request(app, who, "/billing/checkout", "POST", input())).status, 503);
+    const mismatched = await request(app, who, "/billing/checkout", "POST", input());
+    assert.equal(mismatched.status, 503);
+    assert.equal((await mismatched.json()).code, "PROVIDER_ENVIRONMENT_MISMATCH");
+    assert.equal(provider.calls, 1);
     const c = await (await request(app, undefined, "/billing/catalog")).json();
-    assert.equal(c.environment, "live"); assert.equal(c.checkoutEnabled, false);
+    assert.equal(c.environment, null); assert.equal(c.checkoutEnabled, false);
   });
 
   await t.test("late payment query enriches both order and batch time so refund retains full 14-day window", async () => {

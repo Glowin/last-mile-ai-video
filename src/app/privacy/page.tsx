@@ -6,7 +6,7 @@ export default function Privacy() {
       <SiteHeader />
       <main id="main" className="shell prose">
         <h1>Your data.</h1>
-        <p>This page describes the preview and preparation for paid access, updated October 23, 2026.</p>
+        <p>This page describes the preview and preparation for paid access, updated October 26, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For
@@ -23,6 +23,15 @@ export default function Privacy() {
           are available. We remember dismissal of our sign-in card in this
           tab’s session storage; it contains no Google credentials. You can
           reopen sign-in from the page header or your account page.
+        </p>
+        <h2>Age confirmation</h2>
+        <p>
+          KakaReel is for adults aged 18 or older. We ask for your date of birth
+          and an explicit declaration when age confirmation is required. The
+          server checks your eligibility without saving your full date of birth;
+          it stores the confirmation time and policy version for your account or
+          guest session. This is a self-declaration, not identity or document
+          verification. We do not send this information to Analytics.
         </p>
         <h2>Essential cookies and sessions</h2>
         <p>
@@ -48,10 +57,23 @@ export default function Privacy() {
         <p>
           Generating a video sends your prompt, settings, and optional image to
           VibeToken and its upstream model provider. The app temporarily stores
-          the submission payload to recover interrupted requests, then removes
-          that payload after the provider accepts or definitively rejects the
-          job. Do not upload confidential material or personal data during this
-          preview.
+          the submission payload to recover interrupted requests. It removes that
+          operational copy after the provider accepts or definitively rejects the
+          job, but a separate content-review record can retain the prompt,
+          settings and uploaded image. Do not upload confidential material or
+          unnecessary personal data.
+        </p>
+        <h2>Content review and reports</h2>
+        <p>
+          KakaReel's founder may inspect prompts, uploaded images and generated
+          videos to review content before submission or delivery and investigate
+          reports. We retain review snapshots, result references, content hashes,
+          decisions and audit records. Support reports are handled privately;
+          internal records may refer to your support email and affected task.
+          These records do not have an automatic deletion schedule. See our
+          {" "}<a href="/acceptable-use">acceptable-use policy</a> or
+          {" "}<a href="/support">contact support</a> to ask about a decision or
+          request deletion.
         </p>
         <h2>History and result retention</h2>
         <p>
@@ -81,6 +103,13 @@ export default function Privacy() {
           prompts, public issues, or support messages. Order and payment records
           may need to be retained to meet accounting and legal obligations even
           if you request account deletion.
+        </p>
+        <h2>Fonts and session recording</h2>
+        <p>
+          KakaReel serves its site font from its own domain, without calling an
+          external font service. We do not use session replay, screen recordings,
+          keystroke recordings, or form-content recordings. Google sign-in is a
+          separate Google-hosted service and may load its own interface assets.
         </p>
         <h2>Analytics and requests</h2>
         <p>

@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "db:migrate": "node scripts/migrate.mjs",
-    "credits:worker": "tsx scripts/credit-worker.ts"
+    "credits:worker": "tsx scripts/credit-worker.ts",
+    "billing:reconcile": "node --import tsx scripts/billing-reconcile-worker.ts"
   },
   "dependencies": {
     "@waffo/pancake-ts": "0.26.0",

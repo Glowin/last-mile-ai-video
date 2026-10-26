@@ -1,3 +1,4 @@
+import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -37,6 +38,7 @@ function request(
 async function login() {
   const r = await request("/session", "POST", "", {
     code: process.env.DEMO_ACCESS_CODE,
+    ageDeclaration: { birthDate: "1990-01-01", confirmed: true, policyVersion: AGE_POLICY_VERSION },
   });
   assert.equal(r.status, 200);
   return r.headers.get("set-cookie")!.split(";")[0];
@@ -60,7 +62,13 @@ before(async () => {
     "Integration tests require the dedicated loopback QA DB",
   );
   assert.equal(u.pathname, "/video_qa");
-  await database().execute(sql`TRUNCATE credit_allocations,credit_audit,video_quotes,video_jobs,demo_login_attempts`);
+  assert.equal(u.protocol, "postgresql:");
+  assert.ok(u.username && u.username !== "postgres", "Use a dedicated test role");
+  assert.ok(u.port && u.port !== "5432");
+  assert.equal(u.search, ""); assert.equal(u.hash, "");
+  const [identity] = await database().execute(sql`SELECT current_database() AS db,current_user AS role`);
+  assert.equal(identity.db, "video_qa"); assert.equal(identity.role, u.username);
+  await database().execute(sql`TRUNCATE credit_allocations,credit_audit,video_quotes,video_jobs,demo_login_attempts CASCADE`);
   global.fetch = async (url, init) => {
     assert.ok(
       String(url).startsWith("https://vibetoken.cn/v1/videos/generations"),

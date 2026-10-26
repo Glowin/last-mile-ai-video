@@ -1,16 +1,31 @@
+x-app-environment: &app-environment
+  DATABASE_URL: ${DATABASE_URL:?Set the project database URL in Dokploy}
+  VIBETOKEN_API_KEY: ${VIBETOKEN_API_KEY:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GA_MEASUREMENT_ID: ${GA_MEASUREMENT_ID:-}
+  SESSION_SECRET: ${SESSION_SECRET:?Set a project-specific secret}
+  DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-}
+  APP_URL: ${APP_URL:?Set the public origin}
+  GENERATION_DAILY_LIMIT: ${GENERATION_DAILY_LIMIT:-10}
+
+# Server-only payment configuration; never merge into the generation worker.
+x-billing-environment: &billing-environment
+  BILLING_TEST_ENABLED: "false"
+  BILLING_LIVE_ENABLED: ${BILLING_LIVE_ENABLED:-false}
+  BILLING_DEPLOYMENT_MODE: ${BILLING_DEPLOYMENT_MODE:-}
+  BILLING_LIVE_APP_ORIGIN: ${BILLING_LIVE_APP_ORIGIN:-}
+  PANCAKE_LIVE_MERCHANT_ID: ${PANCAKE_LIVE_MERCHANT_ID:-}
+  PANCAKE_LIVE_STORE_ID: ${PANCAKE_LIVE_STORE_ID:-}
+  PANCAKE_LIVE_PRODUCT_ID: ${PANCAKE_LIVE_PRODUCT_ID:-}
+  PANCAKE_LIVE_PRIVATE_KEY: ${PANCAKE_LIVE_PRIVATE_KEY:-}
+  PANCAKE_LIVE_PLATFORM_PUBLIC_KEY: ${PANCAKE_LIVE_PLATFORM_PUBLIC_KEY:-}
+
 services:
   web:
     build: .
     restart: unless-stopped
-    environment: &app-environment
-      DATABASE_URL: ${DATABASE_URL:?Set the project database URL in Dokploy}
-      VIBETOKEN_API_KEY: ${VIBETOKEN_API_KEY:-}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GA_MEASUREMENT_ID: ${GA_MEASUREMENT_ID:-}
-      SESSION_SECRET: ${SESSION_SECRET:?Set a project-specific secret}
-      DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-}
-      APP_URL: ${APP_URL:?Set the public origin}
-      GENERATION_DAILY_LIMIT: ${GENERATION_DAILY_LIMIT:-10}
+    environment:
+      <<: [*app-environment, *billing-environment]
     expose:
       - "3000"
     depends_on:
@@ -22,6 +37,21 @@ services:
       target: worker
     restart: unless-stopped
     environment: *app-environment
+    depends_on:
+      db:
+        condition: service_healthy
+  billing-reconciliation:
+    build:
+      context: .
+      target: worker
+    command: ["node", "scripts/start.mjs", "node", "--import", "tsx", "scripts/billing-reconcile-worker.ts", "run"]
+    restart: unless-stopped
+    stop_grace_period: 8m
+    environment:
+      <<: *billing-environment
+      DATABASE_URL: ${DATABASE_URL:?Set the project database URL in Dokploy}
+      SESSION_SECRET: ${SESSION_SECRET:?Set a project-specific secret}
+      APP_URL: ${APP_URL:?Set the public origin}
     depends_on:
       db:
         condition: service_healthy

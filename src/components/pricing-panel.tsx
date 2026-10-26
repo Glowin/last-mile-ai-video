@@ -131,6 +131,7 @@ export function PricingPanel() {
               <li><ArrowRight size={17} aria-hidden="true" />14-day refund for a wholly unused pack</li>
             </ul>
             <StarterPackAction catalog={catalog} notice={catalogState} />
+            <p className={styles.small}>One payment of US$19 plus applicable tax. No subscription or automatic renewal. Buying another pack is a separate purchase.</p>
             <p className={styles.small}>Signing in creates no order or payment commitment.</p>
           </article>
         </div>

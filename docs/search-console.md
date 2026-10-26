@@ -2,7 +2,7 @@
 title: "KakaReel 搜索平台接入与接续"
 date: 2026-10-21
 source: "Google Search Console、Bing Webmaster、Cloudflare 控制台实际操作；江昪会话指示"
-status: "Google 与 Bing sitemap 均成功；索引与排名另验"
+status: "2026-10-25 首页 Google／Bing 索引均确认；Google 已有少量展示与点击，持续排名未验"
 ---
 
 # 搜索平台接入
@@ -16,7 +16,22 @@ status: "Google 与 Bing sitemap 均成功；索引与排名另验"
 | Google Search Console | Domain property `sc-domain:kakareel.com`；根域 DNS TXT 验证；提交 `https://kakareel.com/sitemap.xml` | Ownership verified；sitemap Success；提交与读取日期 2026-10-20；发现页面 5，视频 0 |
 | Bing Webmaster | 手动添加 `https://kakareel.com/`；Cloudflare 验证 CNAME 为 DNS only，指向 `verify.bing.com`；公共 DNS 查询确认生效 | 2026-10-21 登录恢复后确认 Site already added；sitemap 提交后刷新显示 Success，发现 6 URL、错误 0、警告 0；CNAME Verify 按钮仍曾报 Unexpected error，不伪造单独的验证成功提示 |
 
-Google 的发现页面数不是索引数。新资源报告仍在处理数据；不宣称已经收录、已有排名或搜索流量。TXT/CNAME 实际验证值、账户资料与平台配置均留库外，不写入这个公开仓库。
+Google 的发现页面数不是索引数。2026-10-21 接入时新资源报告仍在处理数据；当时尚未核到收录、排名或流量。后续实际观测见下节。TXT/CNAME 实际验证值、账户资料与平台配置均留库外，不写入这个公开仓库。
+
+## 2026-10-25 索引与搜索观测
+
+通过已登录 Chrome Glow 的两个平台，分别检查 `https://kakareel.com/`：
+
+- [Google URL Inspection](https://search.google.com/search-console?resource_id=sc-domain%3Akakareel.com) 显示 **URL is on Google／Page is indexed**。
+- [Bing URL Inspection](https://www.bing.com/webmasters/urlinspection?siteUrl=https://kakareel.com/) 显示 **Indexed successfully／URL can appear on Bing**，当前检查未发现 SEO/GEO 问题。
+
+这是两个平台的首页索引证据，不等同于所有页面已索引、稳定排名或获客完成。本轮没有重新提交 sitemap 或 Request indexing。
+
+Google Performance 当时选择 **3 months／Web**，图表实际可见日期为 **2026-10-19 至 2026-10-22**，页面标示最近更新约 3.5 小时前：总点击 3、展示 11。可见查询仅 `kakareel` 一行，2 点击／3 展示；查询表并未解释全部总量，不能将差额猜成某个关键词或将品牌搜索归因于独立新用户。此时小样本均位 1.5 不代表通用 AI 视频词已有竞争排名。
+
+Pages 表显示 HTTPS 首页 3 点击／7 展示，Kling 模型页 0／7，HTTP 首页 0／4，Seedance 模型页 0／4，Build 页 0／3，Pricing 页 0／3。页面行的展示之和与总览不同，此处保留原平台读数，不相加替换总展示数。随后只读核对当前首页：HTTP 返回 308，Location 为 HTTPS 首页；HTTPS 返回 200。HTTP 历史展示不等于当前缺失跳转，本轮未修改重定向。原始截图在库外项目验收档案，账户信息不公开。
+
+继续观察非品牌查询、展示页面和实际试用转化；本轮只取得一次人工观测，不声明已建立持续监控。
 
 ## Bing 接续结果（2026-10-21）
 
