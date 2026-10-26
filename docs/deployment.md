@@ -44,14 +44,14 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 | `PANCAKE_LIVE_MERCHANT_ID` | 空 | 正式商户 ID |
 | `PANCAKE_LIVE_STORE_ID` | 空 | 同一正式商户的店铺 ID |
 | `PANCAKE_LIVE_PRODUCT_ID` | 空 | 与应用积分包金额、币种和税类对应的正式商品 ID |
-| `PANCAKE_LIVE_PRIVATE_KEY` | 空 | 正式商户签名私钥；通过平台 secret 设置保留 PEM 换行 |
+| `PANCAKE_LIVE_PRIVATE_KEY` | 空 | 正式商户签名私钥；优先保留平台单行 PKCS#8 值；使用 PEM 时须由 secret 机制可靠保留换行 |
 | `PANCAKE_LIVE_PLATFORM_PUBLIC_KEY` | 空 | 正式渠道验签公钥；支持平台提供的单行 base64 DER SPKI，也兼容 PEM；不回退使用沙盒公钥 |
 
-2026-10-26 主会话实测平台公钥为单行 base64 DER SPKI。Dokploy 环境设置优先保留该单行值，避免手动转成多行 PEM 后破坏生成的 `.env` 行结构。服务端只将严格有效的 DER SPKI 正规化为 PEM，再由原 adapter 检查 RSA／至少2048位；错误编码、尾随数据或不合格密钥直接拒绝，不尝试其他环境公钥。此格式支持为本地修复，实际部署与回调仍须主会话验收。
+2026-10-26 主会话实测平台公钥为单行 base64 DER SPKI。Dokploy 环境设置优先保留该单行值，避免手动转成多行 PEM 后破坏生成的 `.env` 行结构。服务端只将严格有效的 DER SPKI 正规化为 PEM，再由原 adapter 检查 RSA／至少2048位；错误编码、尾随数据或不合格密钥直接拒绝，不尝试其他环境公钥。此格式修复已随 `3e172e1` 自动部署；无签名空回调拒绝通过，官方正向投递仍待验。
 
 两个支付服务的 `BILLING_TEST_ENABLED` 固定为 `false`，不透传 `BILLING_TEST_APP_ORIGIN` 或 `PANCAKE_TEST_*`。正式数据库名不能以 `_billing_sandbox` 结尾，角色不能以 `_billing_test` 结尾；运行时还会核实际数据库和角色与连接串一致。真实值只在库外或 Dokploy 环境／secret 设置中提供，不写入此文件、Compose、构建参数或前端变量。
 
-`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。默认不开启任何正式 adapter；仅设置 `BILLING_LIVE_ENABLED=true` 仍不能装配或开售。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。原正式环境接线已于2026-10-26上线，下面新增准备模式仅完成本地代码，尚未部署或开启生产开关；业务复审仍在审核中，正式资源与税务验收由主会话核实。
+`src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。默认不开启任何正式 adapter；仅设置 `BILLING_LIVE_ENABLED=true` 仍不能装配或开售。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。原正式环境接线已于2026-10-26上线，新增准备模式已随 `3e172e1` 部署并启用，正式Key、下架商品及Webhook已配置；业务复审、税务与正式交易验收仍未完成。
 
 2026-10-26 新增关售准备模式：显式设置 `BILLING_LIVE_PREPARATION_ENABLED=true` 后，使用上表全部正式配置，严格校验来源、数据库命名、必填值和密钥格式；缺失或错误直接失败，不回退测试配置。保留 `BILLING_LIVE_ENABLED=false`；即使同时请求销售或未来代码已批准，准备模式也强制 `salesEnabled=false`、有效 `liveSalesApproved=false`。catalog 显示 `environment=live`、`checkoutEnabled=false`、provider／商品不可购买；checkout 在数据库和渠道调用前返回 `503 SALES_DISABLED`。
 
