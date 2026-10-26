@@ -1,6 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createPublicKey, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { billingOptionsFromEnvironment, productionBillingRelease } from "../src/server/billing/config";
 import { BillingError, BillingService } from "../src/server/billing/service";
 import { BillingReconciliationWorker } from "../src/server/billing/reconciliation-worker";
@@ -55,6 +55,7 @@ function liveEnvironment(): NodeJS.ProcessEnv {
 function preparationEnvironment(): NodeJS.ProcessEnv {
   return { ...liveEnvironment(), BILLING_LIVE_ENABLED: "false", BILLING_LIVE_PREPARATION_ENABLED: "true" };
 }
+const livePublicDer = createPublicKey(liveKeys.publicKey).export({ format: "der", type: "spki" });
 const user = { id: randomUUID(), googleSub: "offline-fixture", email: "fixture@example.invalid",
   name: null, invitedAt: null, ageConfirmedAt: null, agePolicyVersion: null, createdAt: new Date() };
 const checkoutInput = { productId: "starter-pack", provider: "pancake" as const, requestId: randomUUID() };
@@ -189,10 +190,30 @@ test("provider and product environment mismatches reject checkout before isolati
   assert.equal(isolationCalls, 0);
 });
 
+test("single-line platform keys reject malformed base64, non-SPKI, trailing data, weak RSA and other algorithms", () => {
+  const encoded = livePublicDer.toString("base64");
+  const weak = generateKeyPairSync("rsa", { modulusLength: 1024 }).publicKey;
+  const ec = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).publicKey;
+  for (const value of [
+    "not-a-key", "AAAA", encoded + "!", encoded + "=", encoded.slice(0, -1),
+    encoded.slice(0, 12) + "\n" + encoded.slice(12),
+    Buffer.concat([livePublicDer, Buffer.from([0])]).toString("base64"),
+    createPublicKey(liveKeys.publicKey).export({ format: "der", type: "pkcs1" }).toString("base64"),
+    liveKeys.privateKey, "-----BEGIN PUBLIC KEY-----\nbroken\n-----END PUBLIC KEY-----",
+    ...[weak, ec].flatMap(key => [key.export({ format: "der", type: "spki" }).toString("base64"),
+      key.export({ format: "pem", type: "spki" }).toString()]),
+  ]) {
+    assert.throws(() => billingOptionsFromEnvironment({ ...environment(), ...preparationEnvironment(),
+      BILLING_TEST_ENABLED: "false", PANCAKE_LIVE_PLATFORM_PUBLIC_KEY: value,
+      WAFFO_WEBHOOK_PUBLIC_KEY: keys.publicKey }), "invalid live key must not fall back to valid test/generic keys");
+  }
+});
+
 test("configured adapters accept their signed payment scope and reject the opposite mode or platform key", async (t) => {
   for (const [env, approval, signer, wrongSigner, mode] of [
     [liveEnvironment(), approvedFixture, liveKeys, keys, "prod"],
     [preparationEnvironment(), productionBillingRelease, liveKeys, keys, "prod"],
+    [{ ...preparationEnvironment(), PANCAKE_LIVE_PLATFORM_PUBLIC_KEY: livePublicDer.toString("base64") }, productionBillingRelease, liveKeys, keys, "prod"],
     [environment(), productionBillingRelease, keys, liveKeys, "test"],
   ] as const) {
     const options = billingOptionsFromEnvironment(env, approval);

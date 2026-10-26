@@ -1,8 +1,9 @@
+import { createPublicKey } from "node:crypto";
 import { TaxCategory } from "@waffo/pancake-ts";
 import { eq, sql } from "drizzle-orm";
 import { database } from "../db";
 import { defaultCatalog } from "./catalog";
-import { PancakeBillingProvider } from "./pancake";
+import { PancakeBillingProvider, PancakeError } from "./pancake";
 import { billingOrders } from "./schema";
 import type { BillingOptions } from "./service";
 
@@ -10,6 +11,23 @@ import type { BillingOptions } from "./service";
  * This is server code, never an environment variable or request option. */
 export type BillingReleaseApproval = Readonly<{ liveSalesApproved: boolean }>;
 export const productionBillingRelease: BillingReleaseApproval = Object.freeze({ liveSalesApproved: false });
+
+// The dashboard supplies single-line base64 DER SPKI. Convert only that exact
+// encoding; the adapter remains responsible for RSA type and minimum key size.
+function platformPublicKey(value: string): string {
+  const text = value.trim();
+  if (/^-----BEGIN (?:RSA )?PUBLIC KEY-----/.test(text)) return text;
+  try {
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(text) || !text)
+      throw new Error();
+    const der = Buffer.from(text, "base64");
+    if (der.toString("base64") !== text) throw new Error();
+    const key = createPublicKey({ key: der, format: "der", type: "spki" });
+    // Reject trailing bytes or a different ASN.1 encoding accepted by OpenSSL.
+    if (!key.export({ format: "der", type: "spki" }).equals(der)) throw new Error();
+    return key.export({ format: "pem", type: "spki" }).toString();
+  } catch { throw new PancakeError("PANCAKE_INVALID_PLATFORM_KEY"); }
+}
 
 /** Server-only runtime configuration. Never reads files or credential directories.
  * The second argument is an internal dependency-injection seam for offline tests;
@@ -50,7 +68,7 @@ export function billingOptionsFromEnvironment(
   const pack = defaultCatalog[0];
   const adapter = new PancakeBillingProvider({ environment,
     merchantId: required("MERCHANT_ID"), storeId: required("STORE_ID"),
-    privateKey: required("PRIVATE_KEY"), platformPublicKey: required("PLATFORM_PUBLIC_KEY"),
+    privateKey: required("PRIVATE_KEY"), platformPublicKey: platformPublicKey(required("PLATFORM_PUBLIC_KEY")),
     successUrl: new URL("/billing/return", app).href,
     products: [{ productId: pack.id, providerProductId, priceVersion: pack.priceVersion,
       amountMinor: pack.amountMinor!, credits: pack.credits!, currency: "USD", taxCategory: TaxCategory.SaaS }],

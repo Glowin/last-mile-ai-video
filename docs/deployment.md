@@ -45,7 +45,9 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 | `PANCAKE_LIVE_STORE_ID` | 空 | 同一正式商户的店铺 ID |
 | `PANCAKE_LIVE_PRODUCT_ID` | 空 | 与应用积分包金额、币种和税类对应的正式商品 ID |
 | `PANCAKE_LIVE_PRIVATE_KEY` | 空 | 正式商户签名私钥；通过平台 secret 设置保留 PEM 换行 |
-| `PANCAKE_LIVE_PLATFORM_PUBLIC_KEY` | 空 | 正式渠道验签公钥；保留 PEM 换行，不回退使用沙盒公钥 |
+| `PANCAKE_LIVE_PLATFORM_PUBLIC_KEY` | 空 | 正式渠道验签公钥；支持平台提供的单行 base64 DER SPKI，也兼容 PEM；不回退使用沙盒公钥 |
+
+2026-10-26 主会话实测平台公钥为单行 base64 DER SPKI。Dokploy 环境设置优先保留该单行值，避免手动转成多行 PEM 后破坏生成的 `.env` 行结构。服务端只将严格有效的 DER SPKI 正规化为 PEM，再由原 adapter 检查 RSA／至少2048位；错误编码、尾随数据或不合格密钥直接拒绝，不尝试其他环境公钥。此格式支持为本地修复，实际部署与回调仍须主会话验收。
 
 两个支付服务的 `BILLING_TEST_ENABLED` 固定为 `false`，不透传 `BILLING_TEST_APP_ORIGIN` 或 `PANCAKE_TEST_*`。正式数据库名不能以 `_billing_sandbox` 结尾，角色不能以 `_billing_test` 结尾；运行时还会核实际数据库和角色与连接串一致。真实值只在库外或 Dokploy 环境／secret 设置中提供，不写入此文件、Compose、构建参数或前端变量。
 
