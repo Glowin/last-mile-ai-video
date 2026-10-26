@@ -15,6 +15,7 @@ status: "首版已接入；域名已注册"
 - `public/brand/kakapo-mascot.png`：首页吉祥物。
 - 两个文件均由内置 imagegen 生成、透明 PNG，保留原始尺寸；网页显示经 Next Image 优化。当前并非矢量文件。
 - 图像不代表模型生成的视频样例，也不暗示与野生动物保护机构存在合作。
+- 全站 UI 语义色阶、三级字体排印、空间圆角与组件状态规范见 [design-system.md](design-system.md)。
 
 ## 生成提示词
 

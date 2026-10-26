@@ -220,7 +220,7 @@ export function AccountPanel() {
       )}
       {state === "ready" && profile && (
         <>
-        <section className="controls-panel" aria-labelledby="account-credits" style={{ marginBottom: 24 }}>
+        <section className="controls-panel account-section" aria-labelledby="account-credits">
           <h2 id="account-credits">Credits & orders</h2>
           {billingError && <p className="error-message" role="alert">{billingError}</p>}
           {!billing && <p>Credit balance is not available yet. Refresh to check again.</p>}
@@ -236,10 +236,12 @@ export function AccountPanel() {
           <p><strong>Starter Pack · US$19 + applicable taxes · 150 credits</strong><br />One-time purchase · No expiry · No automatic renewal</p>
           <p className="micro">Buy again to add credits. A wholly unused pack is refundable within 14 days, including tax, with no additional KakaReel fee. Review the final tax and total before payment.</p>
           {testCheckout && <p className={styles.testNotice}><strong>Test mode · No real payment</strong><br />This checkout is a sandbox test. The Starter Pack is not yet on sale. Test credits cannot be used for live generation.</p>}
-          <button className="button" disabled={busy || !starterCheckoutProvider(catalog)} onClick={() => void billingAction("checkout")}>
-            {testCheckout ? "Continue to test checkout" : starterCheckoutProvider(catalog) ? "Continue to checkout" : "Not yet on sale"}
-          </button>{" "}
-          <button className="button secondary" disabled={busy} onClick={() => void load()}>Refresh balance & orders</button>
+          <div className="account-actions">
+            <button className="button" disabled={busy || !starterCheckoutProvider(catalog)} onClick={() => void billingAction("checkout")}>
+              {testCheckout ? "Continue to test checkout" : starterCheckoutProvider(catalog) ? "Continue to checkout" : "Not yet on sale"}
+            </button>
+            <button className="button secondary" disabled={busy} onClick={() => void load()}>Refresh balance & orders</button>
+          </div>
           <p><a href="/pricing#access-options">View pricing</a> · <Link href="/terms">Offer & refund terms</Link></p>
           <h3>Your orders</h3>
           {billing && !orders.length && <p>No orders yet.</p>}
@@ -258,37 +260,41 @@ export function AccountPanel() {
                 <div><dt>Total</dt><dd>{billingMoney(order.totalMinor, order.currency)}</dd></div>
                 <div><dt>Amount paid</dt><dd>{billingMoney(order.paidAmountMinor, order.currency)}</dd></div>
               </dl>
-              <Link className="button secondary small" href={`/billing/return?orderId=${encodeURIComponent(order.id)}`}>Check order status</Link>{" "}
-              {order.status === "paid" && <button className="button secondary small" disabled={busy || !["none", "failed", "rejected"].includes(order.refundStatus)}
-                onClick={() => { if (confirm("Request a refund for this wholly unused pack? Eligibility and the amount actually paid will be checked. A pending request is not a completed refund.")) void billingAction("refund", order.id); }}>Request unused-pack refund</button>}
+              <div className="account-actions">
+                <Link className="button secondary small" href={`/billing/return?orderId=${encodeURIComponent(order.id)}`}>Check order status</Link>
+                {order.status === "paid" && <button className="button secondary small" disabled={busy || !["none", "failed", "rejected"].includes(order.refundStatus)}
+                  onClick={() => { if (confirm("Request a refund for this wholly unused pack? Eligibility and the amount actually paid will be checked. A pending request is not a completed refund.")) void billingAction("refund", order.id); }}>Request unused-pack refund</button>}
+              </div>
             </li>)}
           </ul>
         </section>
         <div className="workspace">
           <section className="controls-panel" aria-labelledby="account-profile">
             <h2 id="account-profile">Profile</h2>
-            <dl style={{ overflowWrap: "anywhere" }}>
+            <dl className="account-dl">
               <dt className="field-label">Name</dt>
-              <dd style={{ margin: 0 }}>{profile.user.name || "Not provided"}</dd>
+              <dd>{profile.user.name || "Not provided"}</dd>
               <dt className="field-label">Google email</dt>
-              <dd style={{ margin: 0 }}>{profile.user.email}</dd>
+              <dd>{profile.user.email}</dd>
               <dt className="field-label">Account created</dt>
-              <dd style={{ margin: 0 }}><time dateTime={profile.user.createdAt}>{new Date(profile.user.createdAt).toLocaleString("en-US")}</time></dd>
+              <dd><time dateTime={profile.user.createdAt}>{new Date(profile.user.createdAt).toLocaleString("en-US")}</time></dd>
               <dt className="field-label">Preview access</dt>
-              <dd style={{ margin: 0 }}>{profile.canGenerate ? "Enabled" : "Preview code required"}</dd>
+              <dd>{profile.canGenerate ? "Enabled" : "Preview code required"}</dd>
             </dl>
             <p className="micro">{profile.canGenerate
               ? "Generation remains subject to preview availability and limits."
               : "Redeem a preview code in the studio to enable generation."}</p>
-            <p><Link className="button secondary small" href="/create">Open studio</Link></p>
-            <button className="button secondary small" disabled={busy} onClick={() => void signOut(false)}>Sign out of this session</button>
+            <div className="account-actions">
+              <Link className="button secondary small" href="/create">Open studio</Link>
+              <button className="button secondary small" disabled={busy} onClick={() => void signOut(false)}>Sign out of this session</button>
+            </div>
           </section>
           <section className="controls-panel" aria-labelledby="account-sessions">
             <h2 id="account-sessions">Active sessions</h2>
             <p>These are your active browser sessions. Device names and locations are not collected. Tabs in the same browser may share a session.</p>
-            <ul style={{ paddingLeft: "1.25rem" }}>
+            <ul className="session-list">
               {[...profile.sessions].sort((a, b) => Number(b.current) - Number(a.current)).map((session, index) => (
-                <li key={session.id} style={{ marginBottom: "1rem", overflowWrap: "anywhere" }}>
+                <li key={session.id}>
                   <b>{session.current ? "This session" : `Other session ${index}`}</b>
                   <p className="micro">Expires <time dateTime={session.expiresAt}>{new Date(session.expiresAt).toLocaleString("en-US")}</time></p>
                 </li>

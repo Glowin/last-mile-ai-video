@@ -433,11 +433,17 @@ export function Studio() {
           <span>KakaReel</span>
         </HomeLink>
         <span className="eyebrow">WORKSPACE</span>
-        <button className="side-nav active" onClick={() => setTab("preview")}>
+        <button
+          className={`side-nav${tab === "preview" ? " active" : ""}`}
+          onClick={() => setTab("preview")}
+        >
           <Sparkles size={18} />
           Video studio
         </button>
-        <button className="side-nav" onClick={() => setTab("history")}>
+        <button
+          className={`side-nav${tab === "history" ? " active" : ""}`}
+          onClick={() => setTab("history")}
+        >
           <Clock size={18} />
           My videos<span>{jobs.length}</span>
         </button>
@@ -528,7 +534,7 @@ export function Studio() {
           </div>
           <div className="workspace">
             <section className="controls-panel" aria-labelledby="video-settings-heading">
-              <h2 id="video-settings-heading" className="field-label" style={{ marginTop: 0, letterSpacing: 0, lineHeight: "normal" }}>
+              <h2 id="video-settings-heading" className="field-label panel-heading">
                 Video settings
               </h2>
               <div className="mode-tabs">
@@ -638,7 +644,7 @@ export function Studio() {
                     {prompt.length}/{f.maxPrompt}
                   </span>
                 </div>
-                <h3 className="field-label" style={{ letterSpacing: 0 }}>
+                <h3 className="field-label panel-heading-sub">
                   Output settings<span>03</span>
                 </h3>
                 <div className="settings-grid">
