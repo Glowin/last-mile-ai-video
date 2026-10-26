@@ -94,10 +94,10 @@ scope: "kakareel.com 全站视觉令牌（Design Tokens）、三级字体排印�
 | **Studio H1** | `.studio-title h1` | `2.0625rem` (`33px`) | `1.75rem` (`28px`) | `-0.025em` | `1.15` |
 | **Heading 3** | `h3`（卡片／步骤标题） | `1.375rem–1.625rem` (`22px–26px`) | `1.25rem–1.375rem` | `-0.018em` | `1.25` |
 | **Lead** | `.hero-copy > p` / `.lead` | `1.0625rem` (`17px`) | `0.9375rem` (`15px`) | `-0.005em` | `1.62` |
-| **Body** | 正文段落 `.prose p` / FAQ 标题 | `0.9375rem` (`15px`) | `0.9375rem` (`15px`) | `0` | `1.68` |
-| **UI / Small** | 卡片正文、按钮、表格、控制面板 | `0.8125rem–0.875rem` (`13px–14px`) | `13px–14px`（输入框 `16px`） | `0` | `1.55` |
-| **Micro** | `.micro` 辅助条款说明 | `0.75rem` (`12px`) | `0.75rem` (`12px`) | `0` | `1.6` |
-| **Eyebrow / Code** | `.eyebrow` / `.preview-tag` / 边码 | `0.6875rem` (`11px`) | `0.6875rem` (`11px`) | `0.12em–0.15em`（大写） | `1.5` |
+| **Body** | 正文段落 `.prose p` / FAQ 标题 | `0.9375rem–1rem` (`15px–16px`) | `0.9375rem` (`15px`) | `0` | `1.68` |
+| **UI / Small** | 卡片正文、按钮、表格、控制面板 | `0.84375rem–0.90625rem` (`13.5px–14.5px`) | `13.5px–14.5px`（输入框 `16px`） | `0` | `1.55` |
+| **Micro / Helper** | `.micro` 辅助条款、提示词计数 `.prompt-helper`、上传与底部提示 | `0.78125rem–0.84375rem` (`12.5px–13.5px`) | `12px–13px` | `0` | `1.6` |
+| **Eyebrow / Code** | `.eyebrow` / `.preview-tag` / 边码 | `0.75rem` (`12px`) | `0.6875rem–0.75rem` (`11px–12px`) | `0.12em–0.14em`（大写） | `1.5` |
 
 ---
 
@@ -134,10 +134,10 @@ scope: "kakareel.com 全站视觉令牌（Design Tokens）、三级字体排印�
    - **Secondary（`.button.secondary` / `.secondaryButton`）**：透明底＋细边框 `var(--line-strong)`，悬停态 `var(--bg-active)`。
    - **Small（`.button.small`）**：紧凑内边距，顶栏与侧栏内保持最小触控高度 `44px`（或视觉紧凑但具备充足点击热区）。
 2. **取景框与杂志眉题（Eyebrow & Viewfinder Marks）**：
-   - `.eyebrow` 统一采用 `11px` 大写、字距 `0.14em`；带 `<i />` 时前置 `6px` 苔绿圆点（`var(--moss)`）。
+   - `.eyebrow` 统一采用 `12px` 大写、字距 `0.14em`；带 `<i />` 时前置 `6px` 苔绿圆点（`var(--moss)`）。
    - `.art-frame` 与 `.preview-corners` 四角采用 `1px` 光学取景折线，配合等宽字体边码，强化摄影棚监视器语言。
 3. **编号表单控件（Indexed Studio Controls）**：
-   - `.field-label` 左侧为 `12px` 加粗字段名，右侧 `<span>` 为 `11px` `--font-mono` 编号（`01`、`02`、`03`）。
+   - `.field-label` 左侧为 `13.5px` 加粗字段名，右侧 `<span>` 为 `12px` `--font-mono` 编号（`01`、`02`、`03`）；底部 `.prompt-helper` 与参数标签统一采用 `12.5px–13.5px` 确保辅助说明清晰易读。
    - 输入框、下拉框与文本域在静态下采用柔和底色或纯白底色＋`var(--line)` 边框，悬停时边框加深为 `var(--line-strong)`，聚焦时呈现 `3px solid var(--focus-ring)`。
 4. **数据表与订单台账（Tables & Receipt Ledgers）**：
    - 费率表（`.rates table`）与订单明细（`.orderDetails`）中的金额、积分、时长、订单编号统一启用 `tabular-nums`，确保纵向数字列严格对齐。

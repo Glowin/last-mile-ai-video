@@ -228,7 +228,7 @@ p {
 .site-header nav {
   display: flex;
   gap: 32px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink-secondary);
 }
@@ -274,7 +274,7 @@ p {
 }
 
 .button.small {
-  font-size: 12px;
+  font-size: 13px;
   padding: 11px 16px;
   gap: 10px;
 }
@@ -293,9 +293,9 @@ p {
 
 .eyebrow {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   line-height: 1.5;
   color: var(--ink-secondary);
@@ -344,22 +344,22 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ink);
 }
 
 .micro {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
-  line-height: 1.6;
+  line-height: 1.62;
 }
 
 .hero .micro {
   display: block;
   margin-top: 22px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   letter-spacing: -0.01em;
 }
 
@@ -382,7 +382,7 @@ p {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   opacity: 0.86;
   z-index: 4;
@@ -488,7 +488,7 @@ p {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .art-caption span {
@@ -499,7 +499,7 @@ p {
 
 .art-caption span:last-child {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   opacity: 0.78;
 }
@@ -527,7 +527,7 @@ p {
 }
 
 .floating-prompt div > span {
-  font-size: 13px;
+  font-size: 14px;
   display: block;
   font-weight: 600;
 }
@@ -536,7 +536,7 @@ p {
   display: block;
   margin-top: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .prompt-icon {
@@ -563,7 +563,7 @@ p {
 
 .model-strip > span {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   line-height: 1.65;
   color: var(--muted);
@@ -578,7 +578,7 @@ p {
 .model-strip small {
   display: block;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12.5px;
   letter-spacing: 0.02em;
   font-weight: 400;
   margin-top: 4px;
@@ -604,7 +604,7 @@ p {
 
 .section-heading > p {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 15px;
   margin: 0;
 }
 
@@ -705,9 +705,10 @@ p {
 }
 
 .model-card p {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.62;
   color: var(--muted);
-  min-height: 56px;
+  min-height: 58px;
   margin-bottom: 18px;
 }
 
@@ -721,11 +722,11 @@ p {
 .model-specs span {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-secondary);
   background: var(--bg-subtle);
   border: 1px solid var(--line-subtle);
-  padding: 4px 8px;
+  padding: 5px 9px;
   border-radius: var(--radius-xs);
 }
 
@@ -735,7 +736,7 @@ p {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-secondary);
   align-items: center;
 }
@@ -856,7 +857,7 @@ p {
   left: 14px;
   bottom: 14px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   color: var(--panel);
   background: rgba(21, 42, 35, 0.56);
@@ -885,17 +886,17 @@ p {
 
 .starter-prompt {
   margin: 0 0 14px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-left: 2px solid var(--line-strong);
   background: var(--bg-subtle);
   border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
-  font-size: 12px;
-  line-height: 1.58;
+  font-size: 13.5px;
+  line-height: 1.62;
   color: var(--ink-secondary);
 }
 
 .starter-card > p {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink);
   display: flex;
@@ -946,7 +947,8 @@ p {
 }
 
 .steps p {
-  font-size: 13px;
+  font-size: 14.5px;
+  line-height: 1.62;
   color: var(--muted);
   margin-bottom: 0;
 }
@@ -981,7 +983,7 @@ p {
   justify-content: space-between;
   align-items: center;
   gap: 20px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -1001,7 +1003,8 @@ p {
 }
 
 .faq p {
-  font-size: 14px;
+  font-size: 14.5px;
+  line-height: 1.65;
   color: var(--muted);
   margin: 16px 24px 0 0;
 }
@@ -1025,7 +1028,7 @@ p {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   margin-top: 22px;
 }
@@ -1055,7 +1058,7 @@ p {
 .site-footer > span,
 .site-footer a:not(.brand),
 .site-footer .analytics-settings {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -1137,7 +1140,7 @@ p {
 
 .spec-ledger dt {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--subtle);
@@ -1148,7 +1151,7 @@ p {
   margin: 0;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--ink);
 }
@@ -1177,7 +1180,7 @@ p {
 
 .detail-card-head span {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--subtle);
 }
 
@@ -1191,7 +1194,8 @@ p {
 
 .detail-grid p,
 .model-detail > .muted {
-  font-size: 14px;
+  font-size: 14.5px;
+  line-height: 1.65;
   color: var(--muted);
 }
 
@@ -1235,12 +1239,12 @@ p {
 
 .prose-nav a:not(.button):not(.text-link) {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   text-decoration: none;
   color: var(--ink-secondary);
   background: var(--panel);
   border: 1px solid var(--line-subtle);
-  padding: 6px 11px;
+  padding: 7px 12px;
   border-radius: var(--radius-xs);
   transition:
     border-color 0.15s var(--ease-out),
@@ -1318,7 +1322,7 @@ p {
 }
 
 .studio-sidebar > .eyebrow {
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--subtle);
   margin: 0 12px 14px;
 }
@@ -1330,7 +1334,7 @@ p {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--ink-secondary);
   padding: 12px 12px;
@@ -1359,7 +1363,7 @@ p {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ink-secondary);
-  font-size: 11px;
+  font-size: 12px;
   background: rgba(255, 255, 255, 0.65);
   padding: 2px 7px;
   border-radius: var(--radius-xs);
@@ -1380,7 +1384,7 @@ p {
 }
 
 .side-bottom a {
-  font-size: 12px;
+  font-size: 13px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1409,7 +1413,7 @@ p {
   align-items: center;
   justify-content: space-between;
   padding: 14px 36px;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .studio-header > div {
@@ -1435,7 +1439,7 @@ p {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .studio-account-link:hover {
@@ -1463,7 +1467,7 @@ p {
 .studio-spec-pill {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-secondary);
   background: var(--bg-active);
   border: 1px solid var(--line-strong);
@@ -1478,7 +1482,7 @@ p {
 
 .preview-tag {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   display: inline-flex;
   align-items: center;
@@ -1515,7 +1519,7 @@ p {
 }
 
 .studio-title .eyebrow {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace {
@@ -1553,7 +1557,7 @@ p {
   border: 0;
   background: transparent;
   padding: 10px 8px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 500;
   border-radius: var(--radius-xs);
   display: flex;
@@ -1577,7 +1581,7 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   letter-spacing: 0;
   margin: 22px 0 9px;
@@ -1586,7 +1590,7 @@ p {
 
 .field-label span {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--subtle);
   font-weight: 500;
 }
@@ -1601,7 +1605,7 @@ p {
   background: var(--bg-subtle);
   color: var(--ink);
   padding: 12px 13px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   transition:
     border-color 0.15s var(--ease-out),
@@ -1618,7 +1622,7 @@ p {
   resize: vertical;
   min-height: 140px;
   background: var(--panel);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
 }
 
@@ -1633,7 +1637,7 @@ p {
   gap: 8px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--subtle);
   margin-top: 8px;
 }
@@ -1646,7 +1650,7 @@ p {
 
 .settings-grid label,
 .ratio-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -1666,7 +1670,7 @@ p {
   gap: 8px;
   align-items: center;
   margin-top: 20px;
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 .audio-toggle input {
@@ -1676,7 +1680,7 @@ p {
 .audio-toggle .muted {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .generate-button {
@@ -1703,7 +1707,7 @@ p {
 }
 
 .controls-panel .centered {
-  font-size: 11px;
+  font-size: 13px;
   margin: 12px 0 0;
 }
 
@@ -1717,11 +1721,11 @@ p {
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .access-panel p {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
   margin: 10px 0;
 }
@@ -1751,7 +1755,7 @@ p {
 
 .age-legend {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1760,7 +1764,7 @@ p {
 }
 
 .age-help {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--muted);
   margin: 6px 0 12px;
@@ -1768,7 +1772,7 @@ p {
 
 .age-field-label {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink-secondary);
   margin-bottom: 6px;
@@ -1779,7 +1783,7 @@ p {
   gap: 8px;
   align-items: flex-start;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--ink-secondary);
 }
@@ -1816,7 +1820,7 @@ p {
 }
 
 .wallet-stat > .eyebrow {
-  font-size: 10px;
+  font-size: 11.5px;
   margin-bottom: 8px;
 }
 
@@ -1876,7 +1880,7 @@ p {
   border-bottom: 2px solid transparent;
   background: none;
   padding: 0 4px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--muted);
 }
@@ -1890,7 +1894,7 @@ p {
 .result-tabs button span {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: 12px;
   background: var(--bg-tinted);
   border-radius: var(--radius-xs);
   padding: 2px 7px;
@@ -1952,7 +1956,7 @@ p {
 }
 
 .empty-state > .eyebrow {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--subtle);
   letter-spacing: 0.12em;
   margin-bottom: 12px;
@@ -1967,10 +1971,10 @@ p {
 }
 
 .empty-state p {
-  font-size: 13px;
-  line-height: 1.75;
+  font-size: 14.5px;
+  line-height: 1.7;
   color: var(--muted);
-  max-width: 310px;
+  max-width: 340px;
 }
 
 .preview-corners {
@@ -1989,7 +1993,7 @@ p {
   display: flex;
   gap: 14px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--subtle);
   margin-top: 16px;
 }
@@ -2004,7 +2008,7 @@ p {
   position: absolute;
   bottom: 24px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   color: var(--subtle);
 }
@@ -2026,7 +2030,7 @@ p {
 }
 
 .studio-tip p {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
   margin-bottom: 0;
 }
@@ -2039,7 +2043,7 @@ p {
 }
 
 .error-message {
-  font-size: 12px;
+  font-size: 13.5px;
   padding: 12px 14px;
   background: var(--status-danger-bg);
   color: var(--status-danger);
@@ -2088,13 +2092,13 @@ p {
 }
 
 .upload-zone b {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
 .upload-zone span {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--muted);
 }
 
@@ -2108,7 +2112,7 @@ p {
   align-items: center;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   margin-top: 6px;
 }
@@ -2158,7 +2162,7 @@ p {
 
 .job-details > small {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
   margin-top: 8px;
 }
@@ -2178,7 +2182,7 @@ p {
   border-radius: var(--radius-md);
   margin-bottom: 10px;
   padding: 16px 18px;
-  font-size: 12px;
+  font-size: 13px;
   transition:
     border-color 0.15s var(--ease-out),
     box-shadow 0.15s var(--ease-out);
@@ -2196,7 +2200,7 @@ p {
 
 .history-item b {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -2209,12 +2213,12 @@ p {
   font-family: var(--font-mono);
   color: var(--muted);
   margin-top: 5px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .history-item > span:last-of-type {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   max-width: 90px;
 }
@@ -2413,7 +2417,7 @@ p {
   .side-nav {
     margin: 0;
     padding: 10px 12px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .studio-layout {
     display: block;
@@ -2501,7 +2505,7 @@ p {
     top: 33%;
   }
   .art-top {
-    font-size: 10px;
+    font-size: 11px;
     top: 18px;
     left: 18px;
     right: 18px;
@@ -2516,14 +2520,14 @@ p {
     gap: 10px;
   }
   .floating-prompt div > span {
-    font-size: 12px;
+    font-size: 13px;
   }
   .floating-prompt small {
-    font-size: 11px;
+    font-size: 12px;
   }
   .art-caption {
     bottom: 65px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .model-strip {
     flex-wrap: wrap;
@@ -2532,7 +2536,7 @@ p {
   }
   .model-strip > span {
     width: 100%;
-    font-size: 11px;
+    font-size: 12px;
   }
   .model-strip b {
     font-size: 20px;
@@ -2546,7 +2550,7 @@ p {
     letter-spacing: -0.025em;
   }
   .section-heading > p {
-    font-size: 13px;
+    font-size: 14px;
   }
   .model-grid,
   .starter-grid {
@@ -2592,7 +2596,7 @@ p {
     grid-template-columns: 1fr;
   }
   .faq summary {
-    font-size: 14px;
+    font-size: 15px;
   }
   .closing {
     margin-top: 50px;
@@ -2645,15 +2649,15 @@ p {
     width: 18px;
   }
   .side-nav > span {
-    font-size: 10px;
+    font-size: 11px;
     margin-left: 6px;
   }
   .studio-header {
     padding: 12px 18px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .studio-header .preview-tag {
-    font-size: 10px;
+    font-size: 11px;
   }
   .crumb {
     margin: 0 8px;
@@ -2696,13 +2700,13 @@ p {
     font-size: 16px;
   }
   .prompt-helper {
-    font-size: 11px;
+    font-size: 12px;
   }
   .field-label {
-    font-size: 12px;
+    font-size: 13px;
   }
   .mode-tabs button {
-    font-size: 12px;
+    font-size: 13px;
   }
 }
 
@@ -2737,7 +2741,7 @@ p {
   }
   .site-header-actions .button {
     padding: 11px 13px;
-    font-size: 11px;
+    font-size: 12px;
     gap: 7px;
   }
 }
@@ -2807,7 +2811,7 @@ p {
 }
 
 .google-signin-card p {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   margin: 8px 0 12px;
 }
@@ -2839,7 +2843,7 @@ p {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 @media (max-width: 600px) {
