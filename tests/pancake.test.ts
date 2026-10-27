@@ -2,7 +2,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { TaxCategory } from "@waffo/pancake-ts";
-import { PancakeError, PancakeClient, pancakeDisplayAmount, pancakeMinorAmount,
+import { PancakeError, PancakeClient, PancakeBillingProvider, pancakeDisplayAmount, pancakeMinorAmount,
   verifyPancakePaymentEvidence, safePancakeDiagnosticCode, type PancakeOptions } from "../src/server/billing/pancake";
 import { defaultProviders, type CheckoutCommand } from "../src/server/billing/providers";
 
@@ -66,7 +66,7 @@ function signedRaw(raw: string | Uint8Array, timestamp = Date.now(), privateKey 
 const signed = (f = paymentFixture()) => signedRaw(JSON.stringify(f));
 const errorCode = (code: string) => (error: unknown) => error instanceof PancakeError && error.code === code;
 
-function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path: string, data: any, body?: any) => any) {
+function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path: string, data: any, body: any, headers: Headers) => any) {
   const calls: { path: string; headers: Headers; body: any; raw: string; method: string | undefined; redirect: RequestRedirect | undefined }[] = [];
   const transport: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -97,15 +97,16 @@ function harness(overrides: Partial<PancakeOptions> = {}, mutateResponse?: (path
       refundTicketMerchantExternalId: JSON.parse(raw).refundTicketMerchantExternalId,
     } };
     else throw new Error("Unexpected SDK endpoint");
-    const response = mutateResponse ? mutateResponse(url.pathname, data, JSON.parse(raw)) : data;
+    const response = mutateResponse ? mutateResponse(url.pathname, data, JSON.parse(raw), headers) : data;
     return response instanceof Response ? response : Response.json({ data: response });
   };
-  const client = new PancakeClient({ ...scope, merchantId, privateKey: merchant.privateKey,
+  const options: PancakeOptions = { ...scope, merchantId, privateKey: merchant.privateKey,
     successUrl: "https://example.com/billing/return",
     products: [{ productId: command.productId, providerProductId, priceVersion: command.priceVersion,
       amountMinor: 2900, currency: "USD", credits: 80, taxCategory: TaxCategory.SaaS }],
-    getOrderCreatedAt: async () => new Date(Date.now() - 60_000), fetch: transport, ...overrides });
-  return { client, calls };
+    getOrderCreatedAt: async () => new Date(Date.now() - 60_000), fetch: transport, ...overrides };
+  const client = new PancakeClient(options);
+  return { client, calls, options };
 }
 
 test("actual SDK sends authenticated checkout, integer price and stable idempotency; no sale registration", async () => {
@@ -166,7 +167,7 @@ test("lost response remains unconfirmed; retry uses exactly the same order key",
 
 test("checkout validates real SDK response shape and hosted URL", async () => {
   for (const change of [
-    { sessionId: "" }, { expiresAt: "2020-01-01T00:00:00.000Z" },
+    { sessionId: "" }, { sessionId: "cs_not-a-uuid" }, { expiresAt: "not-a-date" },
     { checkoutUrl: `http://pancake.waffo.ai/store/fixture/checkout/${sessionId}` },
     { checkoutUrl: `https://pancake.waffo.ai.evil.invalid/store/fixture/checkout/${sessionId}` },
     { checkoutUrl: `https://user@pancake.waffo.ai/store/fixture/checkout/${sessionId}` },
@@ -175,6 +176,121 @@ test("checkout validates real SDK response shape and hosted URL", async () => {
     const { client } = harness({}, (path, data) => path.endsWith("create-session") ? { ...data, ...change } : data);
     await assert.rejects(client.createCheckout(command), errorCode("PANCAKE_INVALID_CHECKOUT_RESPONSE"));
   }
+});
+
+test("provider session IDs accept UUID-shaped hex without RFC variant/version constraints", async () => {
+  // Synthetic identifiers: provider references are not our RFC UUID order IDs.
+  const opaqueSession = "cs_12345678-abcd-0123-3456-123456789abc";
+  const opaqueRenewal = "cs_87654321-dcba-f123-2345-cba987654321";
+  const fresh = harness({}, (path, data) => path.endsWith("create-session")
+    ? { ...data, sessionId: opaqueSession, checkoutUrl: `https://pancake.waffo.ai/store/fixture/checkout/${opaqueSession}` } : data);
+  assert.equal((await fresh.client.createCheckout(command)).sessionId, opaqueSession);
+  const renewed = renewalHarness({
+    rootChange: checkoutReceipt(opaqueSession, new Date(Date.now() - 1000).toISOString()),
+    renewalChange: checkoutReceipt(opaqueRenewal, new Date(Date.now() + 3_600_000).toISOString()),
+  });
+  const result = await renewed.client.createCheckout(command);
+  assert.equal(result.sessionId, opaqueRenewal); assert.equal(result.replacesCheckoutId, opaqueSession);
+  for (const malformed of ["cs_12345678-abcd-0123-3456-123456789abz", "cs_12345678-abcd-0123-3456-123456789ab",
+    "cs_12345678abcd01233456123456789abc", `prefix-${opaqueSession}`]) {
+    const invalid = renewalHarness({ rootChange: checkoutReceipt(malformed, new Date(Date.now() - 1000).toISOString()) });
+    await assert.rejects(invalid.client.createCheckout(command), errorCode("PANCAKE_INVALID_CHECKOUT_RESPONSE"));
+    assert.equal(invalid.calls.filter(c => c.path === "/v1/graphql").length, 0);
+  }
+});
+
+const renewedSessionId = "cs_850e8400-e29b-41d4-a716-446655440003";
+const checkoutReceipt = (id: string, expiresAt: string) => ({ sessionId: id,
+  checkoutUrl: `https://pancake.waffo.ai/store/fixture/checkout/${id}`, expiresAt });
+function renewalHarness(options: {
+  queryResult?: unknown; rootChange?: Record<string, unknown>; renewalChange?: Record<string, unknown>;
+  loseRenewalResponse?: boolean; environment?: "test" | "live"; store?: string;
+} = {}) {
+  let lost = false;
+  const root = checkoutReceipt(sessionId, new Date(Date.now() - 1000).toISOString());
+  const renewal = checkoutReceipt(renewedSessionId, new Date(Date.now() + 3_600_000).toISOString());
+  return harness({ environment: options.environment ?? "test", storeId: options.store ?? storeId,
+    getOrderCreatedAt: async () => new Date(Date.now() - 2 * 3_600_000) }, (path, data, body, headers) => {
+    if (path === "/v1/graphql") {
+      assert.deepEqual(body.variables, { storeId: options.store ?? storeId, ref: orderId });
+      assert.doesNotMatch(body.query, /status\s*:/, "must query all order and payment states");
+      return options.queryResult === undefined ? { onetimeOrders: [], payments: [] } : options.queryResult;
+    }
+    if (!path.endsWith("create-session")) return data;
+    if (headers.get("x-idempotency-key") === orderId) return { ...root, ...options.rootChange };
+    if (options.loseRenewalResponse && !lost) { lost = true; throw new Error("offline lost renewal response"); }
+    return { ...renewal, ...options.renewalChange };
+  });
+}
+
+test("expired checkout renews once under the same order with a stable scoped key, including provider retries", async () => {
+  const { calls, options } = renewalHarness();
+  const provider = new PancakeBillingProvider(options);
+  const first = await provider.createCheckout(command), repeated = await provider.createCheckout(command);
+  assert.deepEqual(first, repeated);
+  assert.equal(first.checkoutId, renewedSessionId);
+  assert.equal(first.replacesCheckoutId, sessionId);
+  const sessions = calls.filter(c => c.path.endsWith("create-session"));
+  const keys = sessions.map(c => c.headers.get("x-idempotency-key"));
+  assert.equal(keys[0], orderId); assert.equal(keys[2], orderId);
+  assert.match(keys[1]!, /^[0-9a-f]{64}$/); assert.equal(keys[1], keys[3]);
+  assert.notEqual(keys[1], orderId);
+  assert.ok(sessions.every(c => c.body.expiresInSeconds === 3600 && c.body.orderMerchantExternalId === orderId));
+  assert.ok(sessions.every(c => JSON.stringify(c.body) === JSON.stringify(sessions[0].body)), "only the key changes");
+  assert.equal(calls.filter(c => c.path === "/v1/graphql").length, 2);
+  for (const variant of [{ environment: "live" as const }, { store: "STO_other" }]) {
+    const scoped = renewalHarness(variant); await scoped.client.createCheckout(command);
+    assert.notEqual(scoped.calls.filter(c => c.path.endsWith("create-session"))[1].headers.get("x-idempotency-key"), keys[1]);
+  }
+});
+
+test("renewal rejects any provider record, missing arrays, GraphQL errors and unconfirmed query responses", async () => {
+  const fixtures: unknown[] = [null, {}, { onetimeOrders: [] }, { payments: [] },
+    { onetimeOrders: null, payments: [] }, { onetimeOrders: [], payments: {} },
+    Response.json({ data: { onetimeOrders: [], payments: [] }, errors: [{ message: "offline query failed" }] }),
+    Response.json({ data: { onetimeOrders: [], payments: [] } }, { status: 503 })];
+  for (const status of ["pending", "failed", "canceled", "completed", "succeeded", "unknown"])
+    for (const entity of ["onetimeOrders", "payments"])
+      fixtures.push({ onetimeOrders: [], payments: [], [entity]: [{ id: "fixture", status }] });
+  for (const queryResult of fixtures) {
+    const { client, calls } = renewalHarness({ queryResult });
+    await assert.rejects(client.createCheckout(command), errorCode("PANCAKE_CHECKOUT_RENEWAL_BLOCKED"));
+    assert.equal(calls.filter(c => c.path.endsWith("create-session")).length, 1, "no renewal write");
+  }
+});
+
+test("malformed root receipts never authorize renewal and an expired replacement never recurses", async () => {
+  for (const rootChange of [{ sessionId: "invalid" }, { expiresAt: "not-a-date" },
+    { checkoutUrl: `https://attacker.invalid/checkout/${sessionId}` },
+    { checkoutUrl: `https://pancake.waffo.ai/store/fixture/checkout/${renewedSessionId}` }]) {
+    const { client, calls } = renewalHarness({ rootChange });
+    await assert.rejects(client.createCheckout(command), errorCode("PANCAKE_INVALID_CHECKOUT_RESPONSE"));
+    assert.equal(calls.filter(c => c.path === "/v1/graphql").length, 0);
+    assert.equal(calls.filter(c => c.path.endsWith("create-session")).length, 1);
+  }
+  const expired = renewalHarness({ renewalChange: { expiresAt: new Date(Date.now() - 1).toISOString() } });
+  for (let i = 0; i < 2; i++)
+    await assert.rejects(expired.client.createCheckout(command), errorCode("PANCAKE_CHECKOUT_RENEWAL_EXPIRED"));
+  const keys = expired.calls.filter(c => c.path.endsWith("create-session")).map(c => c.headers.get("x-idempotency-key"));
+  assert.equal(keys.length, 4); assert.equal(new Set(keys).size, 2, "no third session key");
+  for (const renewalChange of [checkoutReceipt(sessionId, new Date(Date.now() + 1000).toISOString()),
+    { checkoutUrl: "https://attacker.invalid/checkout" }, { expiresAt: "not-a-date" }]) {
+    const { client } = renewalHarness({ renewalChange });
+    await assert.rejects(client.createCheckout(command), errorCode("PANCAKE_INVALID_CHECKOUT_RESPONSE"));
+  }
+});
+
+test("lost renewal response retries the same replacement key and original checkout age cannot be reset", async () => {
+  const { client, calls } = renewalHarness({ loseRenewalResponse: true });
+  await assert.rejects(client.createCheckout(command), errorCode("PANCAKE_CHECKOUT_UNCONFIRMED"));
+  const recovered = await client.createCheckout(command);
+  assert.equal(recovered.sessionId, renewedSessionId); assert.equal(recovered.replacesCheckoutId, sessionId);
+  const keys = calls.filter(c => c.path.endsWith("create-session")).map(c => c.headers.get("x-idempotency-key"));
+  assert.deepEqual(keys, [orderId, keys[1], orderId, keys[1]]);
+  const old = renewalHarness();
+  const expiredAge = new PancakeClient({ ...old.options, getOrderCreatedAt: async () => new Date(Date.now() - 23 * 3_600_000) });
+  await assert.rejects(expiredAge.createCheckout(command), errorCode("PANCAKE_CHECKOUT_RECONCILIATION_REQUIRED"));
+  assert.equal(old.calls.length, 0);
 });
 
 test("exact decimal conversions cover supported currencies without rounding or coercion", () => {

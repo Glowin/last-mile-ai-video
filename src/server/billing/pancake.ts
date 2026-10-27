@@ -2,7 +2,7 @@ import { createHash, createPrivateKey, createPublicKey, sign, type KeyObject } f
 import { WaffoPancake, WaffoPancakeError, verifyWebhook, ErrorLayer, type TaxCategory } from "@waffo/pancake-ts";
 import { z } from "zod";
 import { diagnosePancakeRefund } from "./refund-diagnostics";
-import { queryPancakeOrder, inspectPancakeSchema } from "./pancake-query";
+import { queryPancakeOrder, inspectPancakeSchema, assertPancakeCheckoutUnstarted } from "./pancake-query";
 import type { BillingEnvironment } from "../../lib/billing";
 import type { BillingProvider, CheckoutCommand, PancakePaymentEvent, RefundCommand, RefundResult } from "./providers";
 
@@ -314,7 +314,7 @@ export class PancakeClient {
     this.merchantSigningKey = createPrivateKey(pem);
     if (this.merchantSigningKey.asymmetricKeyType !== "rsa") reject("PANCAKE_INVALID_MERCHANT_KEY");
   }
-  async createCheckout(command: CheckoutCommand): Promise<{ sessionId: string; checkoutUrl: string }> {
+  async createCheckout(command: CheckoutCommand): Promise<{ sessionId: string; checkoutUrl: string; replacesCheckoutId?: string }> {
     z.uuid().parse(command.orderId); z.uuid().parse(command.userId);
     z.email().parse(command.buyerEmail);
     if (command.idempotencyKey !== command.orderId) reject("PANCAKE_INVALID_IDEMPOTENCY_KEY");
@@ -335,24 +335,46 @@ export class PancakeClient {
     };
     const successUrl = new URL(this.options.successUrl);
     successUrl.searchParams.set("orderId", command.orderId);
-    let result;
-    try {
-      result = await this.client.checkout.authenticated.create({
-        productId: command.providerProductId, currency: command.currency, priceSnapshot,
-        buyerIdentity: command.userId, buyerEmail: command.buyerEmail, orderMerchantExternalId: command.orderId,
-        metadata, successUrl: successUrl.href, expiresInSeconds: 3600,
-      }, { idempotencyKey: command.orderId });
-    } catch { reject("PANCAKE_CHECKOUT_UNCONFIRMED"); }
-    try {
-      if (!reference.safeParse(result.sessionId).success ||
-        !Number.isFinite(Date.parse(result.expiresAt)) || Date.parse(result.expiresAt) <= Date.now())
-        reject("PANCAKE_INVALID_CHECKOUT_RESPONSE");
-      const url = new URL(result.checkoutUrl);
-      if (url.protocol !== "https:" || url.username || url.password || url.port ||
-        !this.checkoutHosts.includes(url.hostname) ||
-        !result.token || url.hash !== `#token=${result.token}`) reject("PANCAKE_INVALID_CHECKOUT_RESPONSE");
-      return { sessionId: result.sessionId, checkoutUrl: result.checkoutUrl };
-    } catch { reject("PANCAKE_INVALID_CHECKOUT_RESPONSE"); }
+    const params = {
+      productId: command.providerProductId, currency: command.currency, priceSnapshot,
+      buyerIdentity: command.userId, buyerEmail: command.buyerEmail, orderMerchantExternalId: command.orderId,
+      metadata, successUrl: successUrl.href, expiresInSeconds: 3600,
+    };
+    const issue = async (idempotencyKey: string) => {
+      try { return await this.client.checkout.authenticated.create(params, { idempotencyKey }); }
+      catch { reject("PANCAKE_CHECKOUT_UNCONFIRMED"); }
+    };
+    const validate = (result: Awaited<ReturnType<typeof issue>>) => {
+      try {
+        // Provider session IDs have UUID-shaped hex groups, but need not use
+        // RFC UUID version/variant bits. They are opaque provider references.
+        if (!/^cs_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.sessionId) ||
+          !z.iso.datetime({ offset: true }).safeParse(result.expiresAt).success)
+          reject("PANCAKE_INVALID_CHECKOUT_RESPONSE");
+        const url = new URL(result.checkoutUrl);
+        if (url.protocol !== "https:" || url.username || url.password || url.port ||
+          !this.checkoutHosts.includes(url.hostname) || !url.pathname.endsWith(`/checkout/${result.sessionId}`) ||
+          typeof result.token !== "string" || !result.token || url.hash !== `#token=${result.token}`)
+          reject("PANCAKE_INVALID_CHECKOUT_RESPONSE");
+        return Date.parse(result.expiresAt);
+      } catch { reject("PANCAKE_INVALID_CHECKOUT_RESPONSE"); }
+    };
+    // Always replay the root key within its original 23h window. A replacement
+    // is anchored to that receipt, never to a mutable current DB binding.
+    const root = await issue(command.orderId);
+    if (validate(root) > Date.now()) return { sessionId: root.sessionId, checkoutUrl: root.checkoutUrl };
+    await assertPancakeCheckoutUnstarted(this.client, this.options, command.orderId);
+    if (Date.now() - createdAt!.getTime() >= 23 * 3_600_000) reject("PANCAKE_CHECKOUT_RECONCILIATION_REQUIRED");
+    const renewalKey = createHash("sha256").update(JSON.stringify([
+      "kakareel-checkout-renew-v1", this.environment, this.merchantId, this.storeId, command.orderId, root.sessionId,
+    ])).digest("hex");
+    const renewed = await issue(renewalKey);
+    const expiresAt = validate(renewed);
+    if (renewed.sessionId === root.sessionId) reject("PANCAKE_INVALID_CHECKOUT_RESPONSE");
+    // Exactly one replacement. Never recursively renew, reset order age, or
+    // change the external order ID after an uncertain result.
+    if (expiresAt <= Date.now()) reject("PANCAKE_CHECKOUT_RENEWAL_EXPIRED");
+    return { sessionId: renewed.sessionId, checkoutUrl: renewed.checkoutUrl, replacesCheckoutId: root.sessionId };
   }
   normalizeWebhook(input: { rawBody: Uint8Array; headers: Headers }): PancakePaymentEvent {
     const e = verifyEnvelope(input, this.options), d = e.data;
@@ -479,7 +501,8 @@ export class PancakeBillingProvider implements BillingProvider {
   isConfigured() { return true; }
   async createCheckout(command: CheckoutCommand) {
     const r = await this.client.createCheckout(command);
-    return { checkoutId: r.sessionId, checkoutUrl: r.checkoutUrl };
+    return { checkoutId: r.sessionId, checkoutUrl: r.checkoutUrl,
+      ...(r.replacesCheckoutId ? { replacesCheckoutId: r.replacesCheckoutId } : {}) };
   }
   async verifyAndNormalizeWebhook(input: { rawBody: Uint8Array; headers: Headers }) { return this.client.normalizeWebhook(input); }
   reconcile(orderId: string) { return this.client.reconcile(orderId); }

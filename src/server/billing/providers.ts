@@ -31,7 +31,9 @@ export interface BillingProvider {
   readonly merchantAccountId: string; readonly checkoutHosts: readonly string[];
   readonly capabilities: { hostedCheckout: true; fullRefundEvents: true; subscriptions: false };
   isConfigured(): boolean;
-  createCheckout(command: CheckoutCommand): Promise<{ checkoutId: string; checkoutUrl: string }>;
+  createCheckout(command: CheckoutCommand): Promise<{ checkoutId: string; checkoutUrl: string;
+    /** Provider-verified expired root session; never accepted from browser input. */
+    replacesCheckoutId?: string }>;
   verifyAndNormalizeWebhook(input: { rawBody: Uint8Array; headers: Headers }): Promise<VerifiedPaymentEvent>;
   reconcile?(orderId: string): Promise<VerifiedPaymentEvent[]>;
   requestRefund?(command: RefundCommand): Promise<RefundResult>;

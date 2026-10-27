@@ -401,6 +401,54 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     assert.ok(!String(dump[0].record).includes("test-only-transient"), "checkout URL/token must not be persisted");
     assert.equal((await totals(first.id)).n, 0);
   });
+  await t.test("verified expired Pancake session replacement preserves the one pilot order and rejects unbound replacements", async () => {
+    const who = await actor(), { app, provider, body } = pilotFixture(who);
+    const first = await checkout(app, who, body);
+    const original = provider.createCheckout.bind(provider);
+    const root = `checkout-${first.id}`, replacement = `renewed-${first.id}`;
+    const mocked = t.mock.method(provider, "createCheckout", async (command: CheckoutCommand) => ({
+      ...(await original(command)), checkoutId: replacement, replacesCheckoutId: root,
+    }));
+    try {
+      assert.equal((await checkout(app, who, body)).id, first.id);
+      assert.equal((await checkout(app, who, body)).id, first.id);
+      const [stored] = await database().execute(sql`SELECT provider_checkout_id FROM billing_orders WHERE id=${first.id}::uuid`);
+      assert.equal(stored.provider_checkout_id, replacement);
+      assert.equal((await (await request(app, who, "/billing/orders")).json()).orders.length, 1);
+      assert.equal((await totals(first.id)).n, 0);
+      mocked.mock.mockImplementation(async (command: CheckoutCommand) => ({
+        ...(await original(command)), checkoutId: "unbound-replacement", replacesCheckoutId: root,
+      }));
+      const rejected = await request(app, who, "/billing/checkout", "POST", body);
+      assert.equal(rejected.status, 503);
+      assert.equal((await rejected.json()).code, "PROVIDER_IDEMPOTENCY_VIOLATION");
+      assert.equal((await request(app, who, "/billing/checkout", "POST", { ...body, replacesCheckoutId: root })).status, 400);
+      await database().execute(sql`UPDATE billing_orders SET provider_checkout_id=NULL WHERE id=${first.id}::uuid`);
+      const unbound = await request(app, who, "/billing/checkout", "POST", body);
+      assert.equal(unbound.status, 503);
+      assert.equal((await unbound.json()).code, "PROVIDER_IDEMPOTENCY_VIOLATION");
+    } finally { mocked.mock.restore(); }
+  });
+  await t.test("a payment callback during session replacement prevents returning a second payable URL", async () => {
+    const { app, provider } = bridge(), who = await actor(), body = input();
+    const first = await checkout(app, who, body);
+    const original = provider.createCheckout.bind(provider);
+    const mocked = t.mock.method(provider, "createCheckout", async (command: CheckoutCommand) => {
+      const result = await original(command);
+      assert.equal((await webhook(app, bridgeEvent(provider, first.id))).status, 200);
+      return { ...result, checkoutId: "renewed-after-callback", replacesCheckoutId: result.checkoutId };
+    });
+    try {
+      const response = await request(app, who, "/billing/checkout", "POST", body);
+      assert.equal(response.status, 409);
+      const result = await response.json();
+      assert.equal(result.code, "ORDER_NOT_PAYABLE");
+      assert.equal(result.checkoutUrl, undefined);
+      assert.deepEqual(await totals(first.id), { n: 1, credits: 80 });
+      const [stored] = await database().execute(sql`SELECT provider_checkout_id FROM billing_orders WHERE id=${first.id}::uuid`);
+      assert.equal(stored.provider_checkout_id, `checkout-${first.id}`);
+    } finally { mocked.mock.restore(); }
+  });
   await t.test("concurrent checkout, lost response, expired lease and invalid redirect do not create another payment", async () => {
     const { app, provider } = enabled(), who = await actor(), body = input();
     let release!: () => void, entered!: () => void;

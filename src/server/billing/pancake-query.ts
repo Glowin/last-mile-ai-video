@@ -32,6 +32,23 @@ export const PANCAKE_RECOVERY_QUERY = `query($storeId: String!, $ref: String!) {
     refunds { id paymentId status testMode pspAmountDetails { amount currency } }
   }
 }`;
+// Renewal needs absence of *all* provider records, not absence of successful
+// payment evidence. Never reuse queryPancakeOrder's filtered event result here.
+export async function assertPancakeCheckoutUnstarted(client: WaffoPancake, scope: PancakeOptions, orderId: string): Promise<void> {
+  z.uuid().parse(orderId);
+  try {
+    const response = await client.graphql.query({
+      query: `query($storeId: String!, $ref: String!) {
+        onetimeOrders(storeId: $storeId, filter: { orderMerchantExternalId: { eq: $ref } }, limit: 1) { id status }
+        payments(storeId: $storeId, filter: { orderMerchantExternalId: { eq: $ref } }, limit: 1) { id status }
+      }`, variables: { storeId: scope.storeId, ref: orderId },
+    });
+    const parsed = z.object({ errors: z.array(z.unknown()).nullish(), data: z.object({
+      onetimeOrders: z.array(z.unknown()).length(0), payments: z.array(z.unknown()).length(0),
+    }) }).safeParse(response);
+    if (!parsed.success || parsed.data.errors?.length) fail("PANCAKE_CHECKOUT_RENEWAL_BLOCKED");
+  } catch { fail("PANCAKE_CHECKOUT_RENEWAL_BLOCKED"); }
+}
 export async function queryPancakeOrder(client: WaffoPancake, scope: PancakeOptions, orderId: string): Promise<PancakePaymentEvent[]> {
   z.uuid().parse(orderId);
   const response = await client.graphql.query<{ onetimeOrders: unknown[]; payments: unknown[] }>({

@@ -246,9 +246,16 @@ export class BillingService {
       const saved = await database().transaction(async (tx) => {
         await lockWallet(tx, user.id, adapter.environment);
         const [current] = await tx.select().from(orders).where(eq(orders.id, row.id)).for("update");
+        if (result.replacesCheckoutId && (current.reviewReason || current.status !== "pending" || current.providerOrderId || current.providerPaymentId))
+          throw new BillingError(409, "ORDER_NOT_PAYABLE", "This order is no longer awaiting payment. Refresh its status.");
         if (current.leaseToken !== leaseToken)
           throw new BillingError(409, "CHECKOUT_IN_PROGRESS", "Another retry is preparing checkout. Retry with the same request ID.");
-        if (current.providerCheckoutId && current.providerCheckoutId !== result.checkoutId)
+        const verifiedReplacement = adapter.id === "pancake" && !!current.providerCheckoutId &&
+          id.safeParse(result.replacesCheckoutId).success && current.providerCheckoutId === result.replacesCheckoutId;
+        if (result.replacesCheckoutId !== undefined && !(adapter.id === "pancake" &&
+          id.safeParse(result.replacesCheckoutId).success && (verifiedReplacement || current.providerCheckoutId === result.checkoutId)))
+          throw new BillingError(503, "PROVIDER_IDEMPOTENCY_VIOLATION", "Checkout needs review before another attempt.");
+        if (current.providerCheckoutId && current.providerCheckoutId !== result.checkoutId && !verifiedReplacement)
           throw new BillingError(503, "PROVIDER_IDEMPOTENCY_VIOLATION", "Checkout needs review before another attempt.");
         const [updated] = await tx.update(orders).set({ providerCheckoutId: result.checkoutId,
           checkoutStatus: "ready", leaseToken: null, leaseUntil: null, updatedAt: new Date() })
