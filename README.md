@@ -42,6 +42,7 @@ Real configuration stays **outside the checkout, even ignored files**. Only empt
 - [VibeToken API contracts and limitations](docs/vibetoken.md)
 - [KakaReel brand and mascot](docs/brand.md)
 - [Competitor research: Higgsfield, Canva, Runway](docs/research/2026-10-19-ai-video-sites.md)
+- [Competitor research: PicLumen and Media.io — product, SEO and conversion](docs/research/2026-10-27-piclumen-mediaio-zombie-video-research.md)
 - [Google Trends keyword notes from the livestream](docs/research/2026-10-20-google-trends-keyword-notes.md)
 - [Video pricing research and cost model](docs/research/2026-10-21-video-pricing.md)
 - [Pancake and payment integration research](docs/research/2026-10-21-payment-integration.md)
