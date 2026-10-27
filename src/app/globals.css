@@ -1706,6 +1706,33 @@ p {
   margin-right: auto;
 }
 
+.studio-spinner {
+  animation: studio-spin 1s linear infinite;
+}
+
+@keyframes studio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.generation-feedback {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tinted);
+  overflow-wrap: anywhere;
+}
+
+.generation-feedback .micro {
+  margin: 0;
+}
+
+.generation-feedback .button {
+  margin-top: 10px;
+}
+
 .controls-panel .centered {
   font-size: 13px;
   margin: 12px 0 0;
@@ -1858,6 +1885,31 @@ p {
 /* Results & Viewfinder Stage */
 .results-panel {
   min-width: 0;
+  scroll-margin-top: 24px;
+}
+
+.results-panel:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 6px;
+}
+
+.media-feedback {
+  padding: 16px;
+  margin-top: 12px;
+  border: 1px solid var(--status-warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--status-warning-bg);
+}
+
+.media-feedback p {
+  margin: 0 0 12px;
+}
+
+.media-feedback > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
 .result-tabs {
@@ -2637,13 +2689,18 @@ p {
   }
   .studio-sidebar {
     padding: 12px 16px;
-    gap: 4px;
+    gap: 6px;
     flex-wrap: wrap;
   }
+  .studio-sidebar > .brand {
+    flex-basis: 100%;
+  }
   .side-nav {
-    font-size: 0;
-    gap: 0;
-    padding: 8px;
+    font-size: 13px;
+    gap: 6px;
+    padding: 8px 10px;
+    min-height: 40px;
+    flex: 0 0 auto;
   }
   .side-nav svg {
     width: 18px;

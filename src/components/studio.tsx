@@ -16,6 +16,7 @@ import {
   Clock,
   Download,
   RefreshCw,
+  LoaderCircle,
   LockKeyhole,
   Check,
   LogOut,
@@ -29,7 +30,6 @@ import {
   resolutions,
   type FamilySlug,
   type Mode,
-  type PublicJob,
 } from "@/lib/models";
 
 import { api, generationRequestId, paidGenerationAllowed, usableGenerationQuote, type GenerationQuote, SESSION_ENDED, IDENTITY_CHANGED_KEY, IDENTITY_CHANGED_EVENT } from "@/lib/api";
@@ -42,14 +42,7 @@ import { AgeDeclarationFields } from "./age-declaration-fields";
 import { emptyAgeDeclaration } from "@/lib/age-declaration";
 import type { BillingSummaryResponse } from "@/lib/billing";
 import { videoCredits } from "@/lib/video-credit-rates";
-
-type StudioJob = PublicJob & {
-  billingMode?: "preview" | "paid";
-  credits?: number;
-  creditState?: "none" | "reserved" | "consumed" | "released";
-  reviewRequired?: boolean;
-  moderation?: { phase: "input" | "output"; state: "pending" | "approved" | "rejected" | "expired"; version: number }[];
-};
+import { focusStudioProgress, StudioRequests, studioJobState, studioJobDescription, studioHistoryHint, studioHistoryView, type StudioHistoryState, type StudioJob } from "@/lib/studio-generation";
 const creditStateLabel = {
   none: "No purchased credits used",
   reserved: "Credits reserved · outcome pending",
@@ -62,21 +55,6 @@ const quoteReason: Record<string, string> = {
   INSUFFICIENT_CREDITS: "You do not have enough available credits for this generation.",
   UNVERIFIED_VIDEO_PRICE: "Paid pricing has not been verified for these settings.",
 };
-const statusLabel: Record<string, string> = {
-  submitting: "Submitting",
-  pending: "Generating",
-  unknown: "Outcome unconfirmed",
-  success: "Ready",
-  failed: "Generation failed",
-};
-function jobLabel(job: StudioJob) {
-  const review = job.moderation?.find((r) => r.state === "rejected" || r.state === "expired")
-    ?? job.moderation?.find((r) => r.state === "pending");
-  if (review?.state === "rejected") return "Content review declined";
-  if (review?.state === "expired") return "Content review expired";
-  if (job.reviewRequired) return "Awaiting review";
-  return statusLabel[job.status];
-}
 export function Studio() {
   const params = useSearchParams();
   const initial = getFamily(params.get("model") ?? "") ?? families[0];
@@ -117,6 +95,20 @@ export function Studio() {
   const [quoting, setQuoting] = useState(false);
   const quoteFlight = useRef(false);
   const generationFlight = useRef(false);
+  const submittedRequests = useRef(new StudioRequests());
+  const [submitting, setSubmitting] = useState(false);
+  const [lastSubmitted, setLastSubmitted] = useState<string>();
+  const resultsPanel = useRef<HTMLElement>(null);
+  const refreshFlight = useRef(false);
+  const recoveryFlight = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [resultError, setResultError] = useState("");
+  const [historyState, setHistoryState] = useState<StudioHistoryState>("idle");
+  const [historyError, setHistoryError] = useState("");
+  const historyVersion = useRef(0);
+  const [mediaFailure, setMediaFailure] = useState<string>();
+  const [mediaRetry, setMediaRetry] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const identityEpoch = useRef(0);
   const sessionOwner = useRef<string | null>(null);
@@ -149,12 +141,23 @@ export function Studio() {
     return () => clearInterval(timer);
   }, []);
   const focused = jobs.find((j) => j.id === selected) ?? jobs[0];
+  const mediaKey = focused ? JSON.stringify([focused.id, focused.resultUrl]) : "";
+  const historyView = studioHistoryView(checked, authenticated, historyState, jobs.length);
+  const matchingJob = submittedRequests.current.job(payloadKey, billingMode, jobs);
+  const duplicatePending = !!matchingJob && studioJobState(matchingJob).unresolved;
+  const progressJob = matchingJob ?? jobs.find((j) => j.id === lastSubmitted) ?? focused;
+  const progressState = progressJob ? studioJobState(progressJob) : null;
+  const buttonSpinning = submitting || (!!matchingJob && studioJobState(matchingJob).active);
+  function viewProgress() {
+    if (progressJob) setSelected(progressJob.id);
+    setTab("preview");
+    if (resultsPanel.current) focusStudioProgress(resultsPanel.current, window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
   function update(j: StudioJob) {
-    setJobs((old) =>
-      [j, ...old.filter((x) => x.id !== j.id)].sort((a, b) =>
-        b.createdAt.localeCompare(a.createdAt),
-      ),
-    );
+    const next = [j, ...jobsRef.current.filter((x) => x.id !== j.id)]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    jobsRef.current = next;
+    setJobs(next);
   }
   function clearIdentity() {
     identityEpoch.current++;
@@ -171,16 +174,80 @@ export function Studio() {
     setQuoting(false);
     quoteFlight.current = false;
     generationFlight.current = false;
+    submittedRequests.current = new StudioRequests();
+    setSubmitting(false);
+    setLastSubmitted(undefined);
+    refreshFlight.current = false;
+    recoveryFlight.current = false;
+    setRefreshing(false);
+    setRecovering(false);
+    setResultError("");
+    historyVersion.current++;
+    setHistoryState("idle");
+    setHistoryError("");
+    setMediaFailure(undefined);
+    setMediaRetry(0);
+    setChecked(false);
     setBusy(false);
     setJobs([]);
+    jobsRef.current = [];
     setSelected(undefined);
     setPollError("");
     setDamagedPending(null);
   }
   async function refresh() {
     const epoch = identityEpoch.current;
-    const d = await api("/jobs");
-    if (epoch === identityEpoch.current) setJobs(d.jobs);
+    const version = ++historyVersion.current;
+    setHistoryState("loading");
+    setHistoryError("");
+    try {
+      const d = await api("/jobs");
+      if (epoch === identityEpoch.current && version === historyVersion.current) {
+        jobsRef.current = d.jobs;
+        setJobs(d.jobs);
+        setHistoryState("loaded");
+      }
+    } catch (cause) {
+      if (epoch === identityEpoch.current && version === historyVersion.current) {
+        setHistoryState("error");
+        setHistoryError((cause as Error).message);
+      }
+      throw cause;
+    }
+  }
+  async function refreshHistory() {
+    if (refreshFlight.current) return;
+    const epoch = identityEpoch.current;
+    refreshFlight.current = true;
+    setRefreshing(true);
+    setResultError("");
+    try {
+      await refresh();
+      if (epoch === identityEpoch.current) setPollError("");
+    } catch {
+      // refresh owns history errors and preserves the last known list.
+    } finally {
+      if (epoch === identityEpoch.current) { refreshFlight.current = false; setRefreshing(false); }
+    }
+  }
+  async function recoverJob(job: StudioJob) {
+    const owner = sessionOwner.current;
+    if (!owner || busy || recoveryFlight.current) return;
+    const epoch = identityEpoch.current;
+    recoveryFlight.current = true;
+    setRecovering(true);
+    setBusy(true);
+    setResultError("");
+    try {
+      const d = await api(`/jobs/${job.id}/recover`, { method: "POST", headers: { "X-KakaReel-Owner": owner } });
+      if (epoch !== identityEpoch.current) return;
+      update(d.job);
+      if (user) await refreshBilling();
+    } catch (cause) {
+      if (epoch === identityEpoch.current) setResultError((cause as Error).message);
+    } finally {
+      if (epoch === identityEpoch.current) { recoveryFlight.current = false; setRecovering(false); setBusy(false); }
+    }
   }
   async function refreshBilling() {
     const epoch = identityEpoch.current;
@@ -212,8 +279,8 @@ export function Studio() {
     setCanGenerate(s.canGenerate);
     setReady(s.ready);
     setChecked(true);
-    if (s.authenticated) await refresh();
-    else setJobs([]);
+    if (s.authenticated) await refresh().catch(() => { /* History has its own retry state. */ });
+    else { jobsRef.current = []; setJobs([]); setHistoryState("loaded"); }
     if (s.user && sessionOwner.current === s.owner) await refreshBilling();
   }
   useEffect(() => {
@@ -227,6 +294,7 @@ export function Studio() {
       });
     const ended = () => {
       clearIdentity();
+      setChecked(true);
       setError("Your session has ended. Please sign in again.");
     };
     const changed = (e: StorageEvent) => {
@@ -354,6 +422,8 @@ export function Studio() {
   async function requestQuote() {
     const owner = sessionOwner.current;
     if (!owner || !user || quoteFlight.current || busy || !prompt.trim() || (mode === "image" && !image)) return;
+    const existing = submittedRequests.current.job(payloadKey, "paid", jobsRef.current);
+    if (existing && studioJobState(existing).unresolved) return;
     quoteFlight.current = true;
     setQuoting(true);
     setQuote(null);
@@ -361,7 +431,11 @@ export function Studio() {
     const epoch = identityEpoch.current;
     const requestedPayload = payloadKey;
     try {
-      const requestId = await generationRequestId(owner, generationPayload, "paid");
+      // A terminal task found in server history acknowledges the original
+      // request even if its submission response was lost.
+      if (existing) clearPendingRequest(owner, existing.id);
+      const savedId = existing ? undefined : submittedRequests.current.id(payloadKey, "paid");
+      const requestId = savedId ?? await generationRequestId(owner, generationPayload, "paid");
       if (epoch !== identityEpoch.current || requestedPayload !== currentPayloadKey.current) return;
       const result: GenerationQuote = await api("/jobs/quote", {
         method: "POST", headers: { "X-KakaReel-Owner": owner },
@@ -384,12 +458,15 @@ export function Studio() {
     e.preventDefault();
     const owner = sessionOwner.current;
     if (busy || generationFlight.current || !owner) return;
+    const existing = submittedRequests.current.job(payloadKey, billingMode, jobsRef.current);
+    if (existing && studioJobState(existing).unresolved) return;
     if (billingMode === "paid" && (!paidReady || !usableGenerationQuote(currentQuote))) {
       setError(insufficientCredits ? "Insufficient available credits. Add credits before submitting this generation." : "Review a current quote before using paid credits.");
       return;
     }
     if (billingMode === "preview" && !canGenerate) return;
     generationFlight.current = true;
+    setSubmitting(true);
     setBusy(true);
     setError("");
     const epoch = identityEpoch.current;
@@ -397,9 +474,18 @@ export function Studio() {
     // network interruption cannot accidentally create and bill a second video.
     const body = { ...generationPayload, billingMode };
     try {
-      const requestId = billingMode === "paid" ? currentQuote!.requestId
-        : await generationRequestId(owner, generationPayload, "preview");
+      // A known terminal task permits a new generation. An interrupted submit
+      // must reuse its ID, including after editing away from these inputs.
+      if (existing) clearPendingRequest(owner, existing.id);
+      const savedId = existing ? undefined : submittedRequests.current.id(payloadKey, billingMode);
+      const requestId = savedId ?? (billingMode === "paid" ? currentQuote!.requestId
+        : await generationRequestId(owner, generationPayload, "preview"));
       if (epoch !== identityEpoch.current) return;
+      // History may already contain the saved request after a refresh/reload.
+      const savedJob = jobsRef.current.find((job) => job.id === requestId);
+      submittedRequests.current.remember(payloadKey, billingMode, requestId);
+      setLastSubmitted(requestId);
+      if (savedJob && studioJobState(savedJob).unresolved) return;
       const d = await api("/jobs", {
         method: "POST",
         headers: { "X-KakaReel-Owner": owner },
@@ -407,6 +493,7 @@ export function Studio() {
       });
       if (epoch !== identityEpoch.current) return;
       update(d.job);
+      setSubmitting(false);
       setSelected(d.job.id);
       setTab("preview");
       clearPendingRequest(owner, requestId);
@@ -422,7 +509,7 @@ export function Studio() {
         /* Keep the original error. */
       }
     } finally {
-      if (epoch === identityEpoch.current) { generationFlight.current = false; setBusy(false); }
+      if (epoch === identityEpoch.current) { generationFlight.current = false; setSubmitting(false); setBusy(false); }
     }
   }
   return (
@@ -481,7 +568,8 @@ export function Studio() {
             </span>
           </div>
           <div>
-            {!user && (
+            {!checked && <span className="micro" role="status">Checking your session…</span>}
+            {checked && !user && (
               <>
                 <span className="preview-tag">INVITE PREVIEW</span>
                 <a className="button small secondary" href="#google-sign-in">
@@ -518,6 +606,7 @@ export function Studio() {
                     await api("/session", { method: "DELETE", headers: sessionOwner.current ? { "X-KakaReel-Owner": sessionOwner.current } : {} });
                     window.google?.accounts.id.disableAutoSelect();
                     clearIdentity();
+                    setChecked(true);
                   } catch (e) {
                     setError((e as Error).message);
                   } finally {
@@ -717,7 +806,7 @@ export function Studio() {
                     ? `${currentQuote.credits} credits · ${usableGenerationQuote(currentQuote, now) ? `Quote expires at ${new Date(currentQuote.expiresAt).toLocaleTimeString("en-US")}` : "Quote expired. Request a new quote."}`
                     : quoteReason[currentQuote.reason ?? ""] || "A paid quote is not available for these settings."}</p>}
                   {insufficientCredits && <p role="alert">Insufficient available credits. This generation needs {currentQuote?.credits ?? estimatedCredits} credits; you have {billing?.availableCredits}. A Starter Pack contains 150 credits. <Link href="/account">View your balance and packs</Link>.</p>}
-                  <button type="button" className="button secondary small" disabled={!paidEnabled || busy || quoting || estimatedCredits === null || !prompt.trim() || (mode === "image" && !image)} onClick={() => void requestQuote()}>{quoting ? "Checking quote…" : "Get current quote"}</button>
+                  <button type="button" className="button secondary small" disabled={!paidEnabled || busy || quoting || duplicatePending || estimatedCredits === null || !prompt.trim() || (mode === "image" && !image)} onClick={() => void requestQuote()}>{quoting ? "Checking quote…" : "Get current quote"}</button>
                   <p className="micro">Quotes last five minutes. Credits are reserved during generation. Unknown outcomes remain pending; no automatic retry. Download completed videos promptly: storage is not permanent.</p>
                 </div>}
                 {error && (
@@ -739,24 +828,37 @@ export function Studio() {
                 <button
                   className="button generate-button"
                   type="submit"
+                  aria-describedby="generation-status"
+                  aria-busy={buttonSpinning}
                   disabled={
                     busy ||
+                    duplicatePending ||
                     (billingMode === "paid" ? !paidReady : !canGenerate) ||
                     !ready ||
                     !prompt.trim() ||
                     (mode === "image" && !image)
                   }
                 >
-                  <Sparkles size={18} />
-                  {busy ? "Working…" : billingMode === "paid" ? `Generate · ${currentQuote?.credits ?? estimatedCredits ?? "—"} credits` : "Generate preview video"}
-                  <ArrowUpRight size={18} />
+                  {buttonSpinning ? <LoaderCircle size={18} className="studio-spinner" aria-hidden="true" /> : <Sparkles size={18} aria-hidden="true" />}
+                  {submitting ? "Submitting…" : duplicatePending ? studioJobState(matchingJob!).label : busy ? "Working…" : billingMode === "paid" ? `Generate · ${currentQuote?.credits ?? estimatedCredits ?? "—"} credits` : "Generate preview video"}
+                  <ArrowUpRight size={18} aria-hidden="true" />
                 </button>
+                <div className="generation-feedback">
+                  <p id="generation-status" className="micro" role="status" aria-live="polite" aria-atomic="true">
+                    {submitting
+                      ? "Submitting your request. Progress will appear in the results panel; you can stay here."
+                      : progressJob && progressState
+                        ? `${progressState.label}. ${studioJobDescription(progressJob)}${duplicatePending ? " These inputs already have an unresolved task. You can edit the inputs for a different video." : ""}${pollError ? " Automatic status checks are paused. Refresh history to check again." : ""}`
+                        : !checked ? "Checking your session…" : "Your progress and video will appear in the results panel after you submit."}
+                  </p>
+                  {progressJob && !submitting && <button type="button" className="button secondary small" aria-controls="studio-results" onClick={viewProgress}>View progress <ArrowUpRight size={16} aria-hidden="true" /></button>}
+                </div>
                 <p className="micro centered">
                   {billingMode === "preview" ? "Uses the limited preview allowance. No purchased credits spent." : "Submitting reserves the quoted credits. Check pending tasks before starting another generation."}
                 </p>
                   <p className="micro">Prompts, uploaded images and finished videos may be reviewed by KakaReel's founder before generation or delivery. <a href="/acceptable-use">Content rules</a> · <a href="/support">Get help</a></p>
               </form>
-              {!user && (
+              {checked && !user && (
                 <div id="google-sign-in">
                   <GoogleSignIn />
                 </div>
@@ -777,7 +879,7 @@ export function Studio() {
                 <AgeDeclarationFields value={previewAge} onChange={setPreviewAge} disabled={busy} />
                 <button className="button small" disabled={busy || !previewAge.birthDate || !previewAge.confirmed}>Confirm age</button>
               </form>}
-              {!canGenerate && (!authenticated || ageConfirmed) && (
+              {checked && !canGenerate && (!authenticated || ageConfirmed) && (
                 <form className="access-panel" onSubmit={login}>
                   <div>
                     <LockKeyhole size={17} />
@@ -811,7 +913,7 @@ export function Studio() {
                 </form>
               )}
             </section>
-            <section className="results-panel" aria-label="Video results">
+            <section id="studio-results" ref={resultsPanel} className="results-panel" aria-label="Video results" tabIndex={-1}>
               <div className="result-tabs">
                 <div>
                   <button
@@ -830,17 +932,12 @@ export function Studio() {
                 {authenticated && (
                   <button
                     className="icon-button"
-                    aria-label="Refresh history"
-                    onClick={async () => {
-                      setPollError("");
-                      try {
-                        await refresh();
-                      } catch (e) {
-                        setPollError((e as Error).message);
-                      }
-                    }}
+                    aria-label={refreshing || historyState === "loading" ? "Refreshing history" : "Refresh history"}
+                    aria-busy={refreshing || historyState === "loading"}
+                    disabled={refreshing || historyState === "loading"}
+                    onClick={() => void refreshHistory()}
                   >
-                    <RefreshCw size={16} />
+                    <RefreshCw size={16} className={refreshing || historyState === "loading" ? "studio-spinner" : undefined} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -849,6 +946,10 @@ export function Studio() {
                   {pollError}
                 </p>
               )}
+              {resultError && <p className="error-message" role="alert">{resultError}</p>}
+              {historyState === "loading" && jobs.length > 0 && <p className="micro" role="status">Refreshing your videos… Your last known tasks are still shown.</p>}
+              {historyState === "loaded" && authenticated && <p className="micro" role="status">Video history loaded.</p>}
+              {historyState === "error" && jobs.length > 0 && <p className="error-message" role="alert">Couldn’t update your videos. Your last known tasks are still shown. {historyError}</p>}
               {tab === "history" ? (
                 <div className="history-list">
                   {jobs.length ? (
@@ -869,10 +970,15 @@ export function Studio() {
                             {new Date(j.createdAt).toLocaleDateString()}
                           </span>
                         </div>
-                        <span>{jobLabel(j)}</span>
+                        <span>{studioJobState(j).label}</span>
                         <ArrowUpRight size={17} />
                       </button>
                     ))
+                  ) : historyView === "loading" || historyView === "error" ? (
+                    <div className="empty-state" role={historyView === "error" ? "alert" : "status"}>
+                      <h2>{historyView === "error" ? "Your videos could not be loaded." : "Loading your videos…"}</h2>
+                      {historyView === "error" && <><p>{historyError}</p><button type="button" className="button secondary small" disabled={refreshing} onClick={() => void refreshHistory()}>Try loading again</button></>}
+                    </div>
                   ) : (
                     <div className="empty-state">
                       <Clock size={34} />
@@ -887,68 +993,54 @@ export function Studio() {
               ) : focused ? (
                 <div className="focused-job">
                   <div className="video-stage">
-                    {focused.status === "success" && focused.resultUrl ? (
+                    {studioJobState(focused).phase === "success" && focused.resultUrl ? (
                       <video
+                        key={`${mediaKey}:${mediaRetry}`}
                         controls
                         preload="metadata"
                         src={focused.resultUrl}
                         aria-label="Generated video"
+                        onError={() => setMediaFailure(mediaKey)}
+                        onLoadedData={() => setMediaFailure((current) => current === mediaKey ? undefined : current)}
                       />
                     ) : (
                       <div className="empty-state">
                         <div
-                          className={`empty-icon ${["pending", "submitting"].includes(focused.status) ? "working" : ""}`}
+                          className={`empty-icon ${studioJobState(focused).active ? "working" : ""}`}
                         >
                           <Film size={32} />
                         </div>
-                        <h2>{jobLabel(focused)}</h2>
-                        <p>
-                          {focused.reviewRequired
-                            ? "This task is on hold for review. Check the credit status below and contact support with the task ID if you need help. Recovery will not restart generation or approve content."
-                            : focused.status === "failed"
-                            ? "The provider could not finish this task. You can edit your prompt and create a new generation."
-                            : focused.status === "unknown"
-                              ? "The request may already be running. This is not a confirmed failure; any credit reservation remains pending. Recover this task to check it without automatically starting another video."
-                              : user
-                                ? "Your idea is with the model. This may take a few minutes. Sign in to this account to check it later on any device."
-                                : "Your idea is with the model. This may take a few minutes. You can safely leave this tab and return in the same browser."}
-                        </p>
-                        {focused.status === "unknown" && !focused.reviewRequired && (
+                        <h2>{studioJobState(focused).label}</h2>
+                        <p>{studioJobDescription(focused)}</p>
+                        <p>{studioHistoryHint(checked, !!user)}</p>
+                        {studioJobState(focused).phase === "unknown" && (
                           <button
                             className="button secondary"
                             disabled={busy}
-                            onClick={async () => {
-                              const epoch = identityEpoch.current;
-                              const owner = sessionOwner.current;
-                              if (!owner) return;
-                              setBusy(true);
-                              try {
-                                const d = await api(
-                                  `/jobs/${focused.id}/recover`,
-                                  { method: "POST", headers: { "X-KakaReel-Owner": owner } },
-                                );
-                                if (epoch !== identityEpoch.current) return;
-                                update(d.job);
-                              } catch (e) {
-                                setError((e as Error).message);
-                              } finally {
-                                setBusy(false);
-                              }
-                            }}
+                            aria-busy={recovering}
+                            onClick={() => void recoverJob(focused)}
                           >
-                            Recover this task <RefreshCw size={16} />
+                            {recovering ? "Checking task…" : "Recover this task"} <RefreshCw size={16} className={recovering ? "studio-spinner" : undefined} aria-hidden="true" />
                           </button>
                         )}
                       </div>
                     )}
                   </div>
+                  {mediaFailure === mediaKey && focused.resultUrl && <div className="media-feedback" role="alert">
+                    <p>This video could not be loaded. The generation is still complete. Reload the video or open its original link; neither action creates a new generation. The link may have expired.</p>
+                    <div>
+                      <button type="button" className="button secondary small" onClick={() => { setMediaFailure(undefined); setMediaRetry((value) => value + 1); }}>Reload video</button>
+                      <a className="button secondary small" href={focused.resultUrl} target="_blank" rel="noreferrer">Open original video</a>
+                      <a href="/support">Contact support</a>
+                    </div>
+                  </div>}
                   <div className="job-details">
                     <div className="job-heading">
                       <span className="preview-tag">
                         {getFamily(focused.family)?.name} · {focused.duration}s
                         · {focused.resolution}
                       </span>
-                      {focused.status === "success" && focused.resultUrl && (
+                      {studioJobState(focused).phase === "success" && focused.resultUrl && (
                         <a
                           className="button small"
                           href={focused.resultUrl}
@@ -970,10 +1062,15 @@ export function Studio() {
                     <p className="micro">Task ID: <code>{focused.id}</code></p>
                     <small>
                       Save completed videos promptly. Provider links may expire; permanent storage is not included.
-                      {user
-                        ? " Your video history is saved to your account."
-                        : " History belongs to this browser session. Sign in with Google to keep it with your account."}
+                      {" "}{studioHistoryHint(checked, !!user)}
                     </small>
+                  </div>
+                </div>
+              ) : historyView === "loading" || historyView === "error" ? (
+                <div className="empty-preview">
+                  <div className="empty-state" role={historyView === "error" ? "alert" : "status"}>
+                    <h2>{historyView === "error" ? "Your videos could not be loaded." : "Loading your videos…"}</h2>
+                    {historyView === "error" && <><p>{historyError}</p><button type="button" className="button secondary small" disabled={refreshing} onClick={() => void refreshHistory()}>Try loading again</button></>}
                   </div>
                 </div>
               ) : (

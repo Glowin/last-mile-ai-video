@@ -45,40 +45,74 @@ export async function providerRequest(
   }
   const key = process.env.VIBETOKEN_API_KEY;
   if (!key) throw new ProviderError(503);
-  const response = await fetch(
-    `https://vibetoken.cn/v1/videos/generations${path}`,
-    {
-      ...options,
-      redirect: "error",
-      cache: "no-store",
-      signal: AbortSignal.timeout(45_000),
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-        Authorization: `Bearer ${key}`,
+  const startedAt = performance.now();
+  const signal = AbortSignal.timeout(45_000);
+  let status: number | null = null;
+  let category: "network" | "invalid_response" | "http" = "network";
+  try {
+    const response = await fetch(
+      `https://vibetoken.cn/v1/videos/generations${path}`,
+      {
+        ...options,
+        redirect: "error",
+        cache: "no-store",
+        signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...options.headers,
+          Authorization: `Bearer ${key}`,
+        },
       },
-    },
-  );
-  if (!response.ok) {
-    // Keep enough evidence to distinguish submission rejection from a failed
-    // remote task without copying response bodies, credentials or result URLs.
-    const requestId = new Headers(options.headers).get("Idempotency-Key");
-    console.warn("video_provider_rejected", JSON.stringify({
-      operation: options.method?.toUpperCase() === "POST" ? "submit" : "query",
-      status: response.status,
-      ...(requestId && /^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId)
-        ? { jobId: requestId } : {}),
-    }));
-    throw new ProviderError(response.status);
+    );
+    status = response.status;
+    if (!response.ok) {
+      category = "http";
+      // Keep enough evidence to distinguish submission rejection from a failed
+      // remote task without copying response bodies, credentials or result URLs.
+      const requestId = new Headers(options.headers).get("Idempotency-Key");
+      console.warn("video_provider_rejected", JSON.stringify({
+        operation: options.method?.toUpperCase() === "POST" ? "submit" : "query",
+        status: response.status,
+        ...(requestId && /^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId)
+          ? { jobId: requestId } : {}),
+      }));
+      throw new ProviderError(response.status);
+    }
+    category = "invalid_response";
+    const parsed = taskSchema.safeParse(await response.json());
+    if (!parsed.success) throw new ProviderError(502);
+    if (
+      parsed.data.status === "success" &&
+      (!parsed.data.data?.[0] || !safeResultUrl(parsed.data.data[0].url))
+    )
+      throw new ProviderError(502);
+    return parsed.data;
+  } catch (error) {
+    // A lost/invalid submit response cannot prove whether a remote task exists.
+    // Log only allowlisted metadata, then rethrow the original error unchanged.
+    if (options.method?.toUpperCase() === "POST" && category !== "http") {
+      try {
+        let requestId: string | null = null;
+        try {
+          requestId = new Headers(options.headers).get("Idempotency-Key");
+        } catch {
+          // Malformed headers must not suppress a diagnostic or expose their value.
+        }
+        console.warn("video_provider_submit_failed", JSON.stringify({
+          operation: "submit",
+          category: signal.aborted || error instanceof Error && error.name === "TimeoutError"
+            ? "timeout" : error instanceof TypeError ? "network" : category,
+          status,
+          durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+          ...(requestId && /^[a-f\d]{8}(-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(requestId)
+            ? { jobId: requestId } : {}),
+        }));
+      } catch {
+        // Diagnostics must never replace the provider/transport error.
+      }
+    }
+    throw error;
   }
-  const parsed = taskSchema.safeParse(await response.json());
-  if (!parsed.success) throw new ProviderError(502);
-  if (
-    parsed.data.status === "success" &&
-    (!parsed.data.data?.[0] || !safeResultUrl(parsed.data.data[0].url))
-  )
-    throw new ProviderError(502);
-  return parsed.data;
 }
 export function safeResultUrl(value: string) {
   try {
