@@ -99,6 +99,8 @@ scope: "kakareel.com 全站视觉令牌（Design Tokens）、三级字体排印�
 | **Micro / Helper** | `.micro` 辅助条款、提示词计数 `.prompt-helper`、上传与底部提示 | `0.78125rem–0.84375rem` (`12.5px–13.5px`) | `12px–13px` | `0` | `1.6` |
 | **Eyebrow / Code** | `.eyebrow` / `.preview-tag` / 边码 | `0.75rem` (`12px`) | `0.6875rem–0.75rem` (`11px–12px`) | `0.12em–0.14em`（大写） | `1.5` |
 
+> **字号可读性底线（江昪 2026-10-26 审阅定案）**：桌面端严禁对提示、辅助说明或表单标签使用 `10px–11px` 小字号；提示词辅助栏（`.prompt-helper`）、创作贴士（`.studio-tip p`）、扣费与审核说明（`.controls-panel .centered`）、定价补充说明（`.small`）及 18+ 年龄确认说明统一保持在 **`12.5px–13.5px`**，表单字段名与控件正文保持在 **`13.5px–14.5px`**，眉题与技术角标底线为 **`12px`**。
+
 ---
 
 ## 4. 空间尺度、圆角与阴影（Spacing, Radii & Elevation）
@@ -148,4 +150,4 @@ scope: "kakareel.com 全站视觉令牌（Design Tokens）、三级字体排印�
 
 - **断点体系**：`1500px`（宽屏工作台扩展）、`1150px`（紧凑桌面端）、`960px/900px`（平板单列 Hero 与顶部横向工作台导航）、`760px/650px`（移动端单列卡片与防缩放 `16px` 表单字号）、`480px`（超小屏表格与账单明细折叠）。
 - **键盘与焦点可见性**：全站所有可交互元素（`button`、`a`、`input`、`select`、`textarea`、`summary`、`[tabindex="0"]`）必须具备清晰的 `:focus-visible` 轮廓。
-- **减弱动态效果**：在 `@media (prefers-reduced-motion: reduce)` 下关闭平滑滚动與所有 CSS 动画／过渡。
+- **减弱动态效果**：在 `@media (prefers-reduced-motion: reduce)` 下关闭平滑滚动与所有 CSS 动画／过渡。
