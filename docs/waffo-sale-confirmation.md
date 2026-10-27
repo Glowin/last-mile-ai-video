@@ -1,11 +1,13 @@
 ---
 title: "KakaReel 税务、销售范围与首次实付确认材料"
 date: 2026-10-27
-status: "草稿已备；未发送，未开启销售或发起付款"
+status: "草稿待稍后微信反馈；仅本人实付入口已上线、结账已创建，尚未付款"
 source: "2026-10-27 用户指示、线上定价页与 catalog、官网条款源码及 Waffo 官方 MoR 页面；历史渠道事实见 launch-readiness.md"
 ---
 
 # 当前事实与边界
+
+2026-10-27 后续更新：江昪决定直播中先跳过税务追问，稍后微信反馈，并明确批准本人单笔实付入口上线。试点和商品短暂上架／立即下架的实际结果只维护在[开售清单](launch-readiness.md)；下文文案是首次实付前草稿，发送前须更新是否已支付等状态，不能照旧发送。税务未据此解决，也未发送消息或建立定时。
 
 2026-10-27 直接读取 [线上 catalog](https://kakareel.com/api/billing/catalog)，正式环境为 live，但 checkoutEnabled=false，商品及渠道 available=false；[定价页](https://kakareel.com/pricing)实际显示 Not yet on sale。审核通过不等于网站已经开放购买。正式商品此前已下架，本轮没有重新进入后台修改状态。
 
