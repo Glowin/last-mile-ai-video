@@ -60,6 +60,53 @@ const user = { id: randomUUID(), googleSub: "offline-fixture", email: "fixture@e
   name: null, invitedAt: null, ageConfirmedAt: null, agePolicyVersion: null, createdAt: new Date() };
 const checkoutInput = { productId: "starter-pack", provider: "pancake" as const, requestId: randomUUID() };
 const billingCode = (code: string) => (e: unknown) => e instanceof BillingError && e.code === code;
+const pilotEnvironment = (): NodeJS.ProcessEnv => ({ ...preparationEnvironment(),
+  BILLING_LIVE_PILOT_USER_ID: user.id, BILLING_LIVE_PILOT_REQUEST_ID: checkoutInput.requestId,
+  BILLING_LIVE_PILOT_EXPIRES_AT: new Date(Date.now() + 3_600_000).toISOString() });
+
+test("pilot configuration is complete, UUID-bound, at most 24h, preparation-only and restart-safe after expiry", () => {
+  const valid = pilotEnvironment();
+  const options = billingOptionsFromEnvironment(valid);
+  assert.deepEqual(options.livePilot, { userId: user.id, requestId: checkoutInput.requestId, expiresAt: valid.BILLING_LIVE_PILOT_EXPIRES_AT });
+  assert.equal(options.salesEnabled, false);
+  assert.equal(options.releaseApproval?.liveSalesApproved, false);
+  for (const field of ["USER_ID", "REQUEST_ID", "EXPIRES_AT"])
+    assert.throws(() => billingOptionsFromEnvironment({ ...valid, [`BILLING_LIVE_PILOT_${field}`]: "" }), /BILLING_PILOT_CONFIG_INVALID/);
+  for (const override of [
+    { BILLING_LIVE_PILOT_USER_ID: "not-uuid" }, { BILLING_LIVE_PILOT_REQUEST_ID: "not-uuid" },
+    { BILLING_LIVE_PILOT_EXPIRES_AT: "2026-10-27" }, { BILLING_LIVE_PILOT_EXPIRES_AT: "not-date" },
+    { BILLING_LIVE_PILOT_EXPIRES_AT: new Date(Date.now() + 25 * 3_600_000).toISOString() },
+  ]) assert.throws(() => billingOptionsFromEnvironment({ ...valid, ...override }), /BILLING_PILOT_CONFIG_INVALID/);
+  assert.throws(() => billingOptionsFromEnvironment({ ...valid, BILLING_LIVE_PREPARATION_ENABLED: "false" }), /BILLING_PILOT_PREPARATION_REQUIRED/);
+  assert.throws(() => billingOptionsFromEnvironment({ ...environment(), BILLING_LIVE_PILOT_USER_ID: user.id }), /BILLING_PILOT_PREPARATION_REQUIRED/);
+  const expired = billingOptionsFromEnvironment({ ...valid, BILLING_LIVE_PILOT_EXPIRES_AT: new Date(Date.now() - 1000).toISOString() });
+  assert.equal(expired.providers?.pancake?.environment, "live", "expired pilot still permits callback/recovery adapter on restart");
+});
+
+test("pilot never opens the public catalog and rejects wrong identity, request, offer or expiry before DB/provider calls", async () => {
+  const options = billingOptionsFromEnvironment(pilotEnvironment());
+  const boundary = new Error("OFFLINE_DATABASE_BOUNDARY");
+  let dbCalls = 0;
+  const scoped = { ...options, assertIsolation: async () => { dbCalls++; throw boundary; } };
+  const service = new BillingService(scoped);
+  const input = { ...checkoutInput, productId: "credits-starter" };
+  assert.equal(service.catalog().checkoutEnabled, false);
+  assert.ok(service.catalog().providers.every(p => !p.available));
+  assert.deepEqual(await service.pilot(randomUUID()), { catalog: null, requestId: null, expiresAt: null });
+  await assert.rejects(service.checkout({ ...user, id: randomUUID() }, input), billingCode("SALES_DISABLED"));
+  await assert.rejects(service.checkout(user, { ...input, requestId: randomUUID() }), billingCode("SALES_DISABLED"));
+  await assert.rejects(service.checkout(user, { ...input, productId: "different" }), billingCode("SALES_DISABLED"));
+  const expired = new BillingService({ ...scoped, livePilot: { ...options.livePilot!, expiresAt: new Date(Date.now() - 1).toISOString() } });
+  assert.deepEqual(await expired.pilot(user.id), { catalog: null, requestId: null, expiresAt: null });
+  await assert.rejects(expired.checkout(user, input), billingCode("SALES_DISABLED"));
+  for (const changed of [{ amountMinor: 1901 }, { credits: 151 }, { currency: "EUR" }, { priceVersion: "changed" }]) {
+    const altered = new BillingService({ ...scoped, catalog: [{ ...options.catalog![0], ...changed }] });
+    await assert.rejects(altered.checkout(user, input), billingCode("SALES_DISABLED"));
+  }
+  assert.equal(dbCalls, 0);
+  await assert.rejects(service.checkout(user, input), e => e === boundary);
+  assert.equal(dbCalls, 1, "only the exact live pilot can reach the isolation/DB boundary");
+});
 
 test("complete live configuration and env approval lookalikes cannot override the shipped OFF release", () => {
   assert.equal(productionBillingRelease.liveSalesApproved, false);

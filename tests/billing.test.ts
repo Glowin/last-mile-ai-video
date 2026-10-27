@@ -16,6 +16,7 @@ import { createBillingModule, isBillingWebhookRequest } from "../src/server/bill
 import { BillingService, type BillingOptions } from "../src/server/billing/service";
 import type { BillingProvider, CheckoutCommand, VerifiedPaymentEvent, CheckoutPaymentEvent, PancakePaymentEvent, RefundCommand, RefundResult } from "../src/server/billing/providers";
 import type { CreditPack } from "../src/server/billing/catalog";
+import { STARTER_CREDIT_OFFER } from "../src/lib/credit-offer";
 
 const integration = !!process.env.BILLING_TEST_DATABASE_URL;
 const originalFetch = global.fetch;
@@ -114,6 +115,13 @@ async function actor() {
   return { id, cookie: `kr_access=${jwt}` };
 }
 type Actor = Awaited<ReturnType<typeof actor>>;
+function pilotFixture(who: Actor, requestId = randomUUID(), provider = new BridgeMock("live"), expiresAt = new Date(Date.now() + 3_600_000).toISOString()) {
+  const options: BillingOptions = { environment: "live", salesEnabled: false, releaseApproval: { liveSalesApproved: false },
+    providers: { pancake: provider }, catalog: [{ ...pack(), ...STARTER_CREDIT_OFFER,
+      providerProducts: { pancake: { live: "pilot-fixture-product" } } }],
+    livePilot: { userId: who.id, requestId, expiresAt } };
+  return { options, provider, app: harness(options), body: { productId: "credits-starter", provider: "pancake", requestId } };
+}
 function request(app: TestApp, who: Actor | undefined, path: string, method = "GET", body?: unknown, headers: Record<string, string> = {}) {
   return app.request(`http://localhost/api${path}`, { method,
     headers: { "Content-Type": "application/json", origin, ...(who ? { cookie: who.cookie, "X-KakaReel-Owner": who.id } : {}), ...headers },
@@ -221,6 +229,103 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     assert.deepEqual((await (await request(app, who, "/billing/orders")).json()).orders, []);
     const summary = await (await request(app, who, "/billing")).json();
     assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
+  });
+  await t.test("private live pilot authenticates its offer, rejects spoofing, and callback funding remains possible after expiry", async () => {
+    const who = await actor(), stranger = await actor(), pilot = pilotFixture(who);
+    const { app, provider, body, options } = pilot;
+    const none = { catalog: null, requestId: null, expiresAt: null };
+    assert.equal((await request(app, undefined, "/billing/pilot")).status, 401);
+    assert.deepEqual(await (await request(app, stranger, "/billing/pilot")).json(), none);
+    assert.equal((await request(app, stranger, "/billing/pilot", "GET", undefined, { "X-KakaReel-Owner": who.id })).status, 409);
+    const catalog = await (await request(app, undefined, "/billing/catalog")).json();
+    assert.equal(catalog.checkoutEnabled, false);
+    assert.ok(catalog.products.every((p: {available: boolean}) => !p.available));
+    assert.equal(JSON.stringify(catalog).includes(body.requestId), false);
+    const offerResponse = await request(app, who, "/billing/pilot");
+    assert.equal(offerResponse.headers.get("cache-control"), "no-store");
+    const offer = await offerResponse.json();
+    assert.equal(offer.requestId, body.requestId);
+    assert.equal(offer.expiresAt, options.livePilot!.expiresAt);
+    assert.equal(offer.catalog.checkoutEnabled, true);
+    assert.deepEqual(offer.catalog.products[0].price, { amountMinor: 1900, currency: "USD" });
+    assert.equal(offer.catalog.products[0].credits, 150);
+    for (const [account, payload] of [[stranger, body], [who, { ...body, requestId: randomUUID() }],
+      [who, { ...body, productId: "test-pack" }], [who, { ...body, provider: "stripe" }]] as const)
+      assert.equal((await request(app, account, "/billing/checkout", "POST", payload)).status, 503);
+    assert.equal((await request(app, who, "/billing/checkout", "POST", { ...body, userId: who.id })).status, 400);
+    assert.equal((await request(app, who, "/billing/checkout", "POST", body, { origin: "https://attacker.invalid" })).status, 403);
+    assert.equal(provider.calls, 0);
+    const first = await checkout(app, who, body), again = await checkout(app, who, body);
+    assert.equal(first.id, again.id);
+    assert.equal(first.amountMinor, 1900); assert.equal(first.credits, 150);
+    assert.equal(provider.commands.size, 1);
+    const closed = harness({ ...options, livePilot: { ...options.livePilot!, expiresAt: new Date(Date.now() - 1000).toISOString() } });
+    assert.deepEqual(await (await request(closed, who, "/billing/pilot")).json(), none);
+    assert.equal((await request(closed, who, "/billing/checkout", "POST", body)).status, 503);
+    assert.equal(provider.calls, 2);
+    const payment = bridgeEvent(provider, first.id, { amountMinor: 1900, subtotalMinor: 1900, taxMinor: 0, totalMinor: 1900, originalPaidAmountMinor: 1900 });
+    assert.equal((await webhook(closed, payment)).status, 200);
+    assert.equal((await webhook(closed, payment)).status, 200);
+    assert.deepEqual(await totals(first.id), { n: 1, credits: 150 });
+    assert.deepEqual(await (await request(app, who, "/billing/pilot")).json(), none);
+    const summary = await (await request(app, who, "/billing")).json();
+    assert.equal(summary.availableCredits, 150); assert.equal(summary.testAvailableCredits, 0);
+    assert.equal(summary.generationChargingEnabled, false); assert.equal(summary.checkoutEnabled, false);
+    assert.equal((await request(app, who, "/billing/checkout", "POST", body)).status, 409);
+  });
+  await t.test("parallel pilot instances serialize both identical and different configured request IDs to one live order", async () => {
+    for (const sameRequest of [true, false]) {
+      const who = await actor(), provider = new BridgeMock("live"), first = pilotFixture(who, randomUUID(), provider);
+      const second = pilotFixture(who, sameRequest ? first.body.requestId : randomUUID(), provider);
+      let release!: () => void;
+      const waiting = new Promise<void>(r => { release = r; });
+      provider.gate = () => waiting;
+      const calls = [request(first.app, who, "/billing/checkout", "POST", first.body),
+        request(second.app, who, "/billing/checkout", "POST", second.body)];
+      try {
+        const loser = await Promise.race(calls);
+        assert.equal(loser.status, 409);
+        assert.equal((await loser.json()).code, sameRequest ? "CHECKOUT_IN_PROGRESS" : "PILOT_ORDER_LIMIT");
+        assert.equal(provider.calls, 1);
+      } finally { release(); }
+      const responses = await Promise.all(calls);
+      const winnerIndex = responses.findIndex(response => response.status === 200);
+      assert.notEqual(winnerIndex, -1);
+      const winner = winnerIndex === 0 ? first : second;
+      provider.gate = undefined;
+      const retried = await checkout(winner.app, who, winner.body);
+      assert.equal(provider.commands.size, 1);
+      assert.equal(provider.commands.has(retried.id), true);
+      const [count] = await database().execute(sql`SELECT count(*)::int AS n FROM billing_orders WHERE user_id=${who.id}::uuid AND environment='live'`);
+      assert.equal(count.n, 1);
+    }
+  });
+  await t.test("any previous live order consumes the pilot slot across statuses, merchant changes and new request IDs", async () => {
+    for (const status of ["pending", "failed", "canceled", "paid", "refunded"]) {
+      const who = await actor(), original = pilotFixture(who), order = await checkout(original.app, who, original.body);
+      await database().execute(sql`UPDATE billing_orders SET status=${status} WHERE id=${order.id}::uuid`);
+      const next = pilotFixture(who);
+      const result = await request(next.app, who, "/billing/checkout", "POST", next.body);
+      assert.equal(result.status, 409); assert.equal((await result.json()).code, "PILOT_ORDER_LIMIT");
+      assert.equal(next.provider.calls, 0);
+      assert.deepEqual(await (await request(next.app, who, "/billing/pilot")).json(), { catalog: null, requestId: null, expiresAt: null });
+    }
+    const who = await actor(), original = pilotFixture(who), order = await checkout(original.app, who, original.body);
+    await database().execute(sql`UPDATE billing_orders SET merchant_account_id='other-store' WHERE id=${order.id}::uuid`);
+    const result = await request(original.app, who, "/billing/checkout", "POST", original.body);
+    assert.equal(result.status, 409); assert.equal((await result.json()).code, "PILOT_ORDER_LIMIT");
+    assert.equal(original.provider.calls, 1);
+  });
+  await t.test("pilot rechecks its deadline after asynchronous isolation and does not create an expired order", async (t) => {
+    const who = await actor(), pilot = pilotFixture(who);
+    const app = harness({ ...pilot.options, assertIsolation: async () => {
+      t.mock.method(Date, "now", () => Date.parse(pilot.options.livePilot!.expiresAt) + 1);
+    } });
+    const result = await request(app, who, "/billing/checkout", "POST", pilot.body);
+    assert.equal(result.status, 503); assert.equal((await result.json()).code, "SALES_DISABLED");
+    assert.equal(pilot.provider.calls, 0);
+    const [count] = await database().execute(sql`SELECT count(*)::int AS n FROM billing_orders WHERE user_id=${who.id}::uuid`);
+    assert.equal(count.n, 0);
   });
   await t.test("internally approved live fixture completes isolated purchase and refund without touching the test wallet", async () => {
     // Synthetic adapter and disposable DB only: no real merchant, money or network.

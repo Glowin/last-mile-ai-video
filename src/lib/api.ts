@@ -1,4 +1,4 @@
-import type { BillingCatalogResponse, BillingProviderId, BillingOrdersResponse, BillingCheckoutResponse, BillingSummaryResponse } from "./billing";
+import type { BillingCatalogResponse, BillingProviderId, BillingOrdersResponse, BillingCheckoutResponse, BillingSummaryResponse, BillingPilotResponse } from "./billing";
 import { STARTER_CREDIT_OFFER } from "./credit-offer";
 import { adoptPendingRequest, adoptLegacyPendingRequest, pendingRequestId } from "./pending-request";
 let refreshFlight: Promise<void> | undefined;
@@ -179,25 +179,30 @@ export function paidGenerationAllowed(summary: BillingSummaryResponse | null, qu
 // Revalidate before creating an order. Serialize tabs so one checkout click cannot
 // overwrite another tab's saved attempt. Unknown results retain the same ID.
 let checkoutQueue = Promise.resolve();
-export async function prepareStarterCheckout(owner: string): Promise<BillingCheckoutResponse> {
+export async function prepareStarterCheckout(owner: string, pilot = false): Promise<BillingCheckoutResponse> {
   const expected = identityVersion();
   const work = async () => {
     assertIdentity(expected);
     const headers = { "X-KakaReel-Owner": owner };
-    const catalog: BillingCatalogResponse = await api("/billing/catalog");
+    const pilotOffer: BillingPilotResponse | null = pilot ? await api("/billing/pilot", { headers }) : null;
+    assertIdentity(expected);
+    if (pilot && (!pilotOffer?.catalog || !pilotOffer.requestId || !pilotOffer.expiresAt ||
+      !Number.isFinite(Date.parse(pilotOffer.expiresAt)) || Date.parse(pilotOffer.expiresAt) <= Date.now()))
+      throw new Error("Your payment check is not available. Refresh your account and review the existing order.");
+    const catalog: BillingCatalogResponse = pilotOffer?.catalog ?? await api("/billing/catalog");
     assertIdentity(expected);
     const provider = starterCheckoutProvider(catalog);
     if (!provider) throw new Error("Not yet on sale. No order was created.");
     const history: BillingOrdersResponse = await api("/billing/orders", { headers });
     assertIdentity(expected);
-    const key = `kr_checkout:${owner}:${STARTER_CREDIT_OFFER.id}:${provider}:${starterCheckoutEnvironment(catalog)}`;
+    const key = `kr_checkout:${owner}:${STARTER_CREDIT_OFFER.id}:${provider}:${starterCheckoutEnvironment(catalog)}${pilot ? ":pilot" : ""}`;
     const previousOrderId = localStorage.getItem(`${key}:order`);
     const previousOrder = history.orders.find((order) => order.id === previousOrderId);
     if (previousOrder && ["paid", "refunded", "failed", "canceled"].includes(previousOrder.status)) {
       localStorage.removeItem(key);
       localStorage.removeItem(`${key}:order`);
     }
-    let requestId = localStorage.getItem(key);
+    let requestId = pilotOffer?.requestId ?? localStorage.getItem(key);
     if (requestId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId))
       throw new Error("Saved checkout could not be read. Review your orders before trying again.");
     if (!requestId) {

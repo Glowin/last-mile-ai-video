@@ -4,11 +4,12 @@ import { z } from "zod";
 import { database } from "../db";
 import { lockWallet, grantPurchase, applyFullRefund, freezeRefund, unfreezeRefund, walletSummary, blockWalletForReview, resolveWalletReview } from "../credits/wallet";
 import { GENERATION_CHARGING_ENABLED } from "../credits/config";
+import { STARTER_CREDIT_OFFER } from "../../lib/credit-offer";
 import { safePancakeDiagnosticCode } from "./pancake";
 import { billingOptionsFromEnvironment, productionBillingRelease, type BillingReleaseApproval } from "./config";
 import type { Account } from "../account";
 import { billingProviderIds, type BillingCatalogResponse, type BillingCheckoutRequest,
-  type BillingCheckoutResponse, type BillingEnvironment, type BillingOrder, type BillingProviderId, type BillingRefundResponse } from "../../lib/billing";
+  type BillingCheckoutResponse, type BillingEnvironment, type BillingOrder, type BillingProviderId, type BillingRefundResponse, type BillingPilotResponse } from "../../lib/billing";
 import { defaultCatalog, priced, type CreditPack } from "./catalog";
 import { defaultProviders, type BillingProvider, type ProviderRegistry, type VerifiedPaymentEvent, type RefundCommand, type RefundResult } from "./providers";
 import { billingOrders as orders, billingEvents as events, creditLedger as ledger, type OrderRow } from "./schema";
@@ -66,6 +67,7 @@ export type BillingOptions = {
   // Internal server policy; never populated from request data. Test remains the default.
   environment?: BillingEnvironment;
   releaseApproval?: BillingReleaseApproval;
+  livePilot?: Readonly<{ userId: string; requestId: string; expiresAt: string }>;
   generationChargingEnabled?: boolean;
   assertIsolation?: () => Promise<void>;
 };
@@ -75,6 +77,7 @@ export class BillingService {
   private readonly salesEnabled: boolean;
   private readonly environment: BillingEnvironment;
   private readonly liveSalesApproved: boolean;
+  private readonly livePilot: BillingOptions["livePilot"];
   private readonly generationChargingEnabled: boolean;
   private readonly assertIsolation: () => Promise<void>;
   constructor(options?: BillingOptions) {
@@ -85,6 +88,9 @@ export class BillingService {
     this.salesEnabled = options.salesEnabled === true;
     this.environment = options.environment ?? "test";
     this.liveSalesApproved = (options.releaseApproval ?? productionBillingRelease).liveSalesApproved === true;
+    if (options.livePilot && (this.environment !== "live" || this.salesEnabled || this.liveSalesApproved))
+      throw new Error("BILLING_PILOT_REQUIRES_CLOSED_LIVE_SALES");
+    this.livePilot = options.livePilot ? Object.freeze({ ...options.livePilot }) : undefined;
     this.generationChargingEnabled = options.generationChargingEnabled ?? GENERATION_CHARGING_ENABLED;
     if (new Set(this.packs.map((p) => p.id)).size !== this.packs.length)
       throw new Error("Duplicate billing product IDs");
@@ -102,6 +108,40 @@ export class BillingService {
   }
   private salesAllowed() {
     return this.salesEnabled && (this.environment === "test" || this.liveSalesApproved);
+  }
+  private pilotAllowed(userId: string, input: BillingCheckoutRequest): boolean {
+    const pilot = this.livePilot;
+    const pack = this.packs.find(p => p.id === STARTER_CREDIT_OFFER.id);
+    return !!pilot && this.environment === "live" && !this.salesEnabled && !this.liveSalesApproved &&
+      userId === pilot.userId && input.requestId === pilot.requestId && Date.now() < Date.parse(pilot.expiresAt) &&
+      input.provider === "pancake" && input.productId === STARTER_CREDIT_OFFER.id &&
+      !!pack && priced(pack) && pack.amountMinor === 1900 && pack.currency === "USD" && pack.credits === 150 &&
+      pack.priceVersion === STARTER_CREDIT_OFFER.priceVersion && !!pack.providerProducts.pancake?.live;
+  }
+  private pilotOrderMatches(order: OrderRow, adapter: BillingProvider): boolean {
+    const pack = this.packs.find(p => p.id === STARTER_CREDIT_OFFER.id)!;
+    return order.requestId === this.livePilot?.requestId && order.provider === "pancake" &&
+      order.merchantAccountId === adapter.merchantAccountId && order.productId === pack.id &&
+      order.providerProductId === pack.providerProducts.pancake?.live && order.priceVersion === pack.priceVersion &&
+      order.amountMinor === 1900 && order.subtotalMinor === 1900 && order.currency === "USD" && order.credits === 150;
+  }
+  async pilot(userId: string): Promise<BillingPilotResponse> {
+    const unavailable: BillingPilotResponse = { catalog: null, requestId: null, expiresAt: null };
+    const pilot = this.livePilot;
+    if (!pilot || !this.pilotAllowed(userId, { productId: STARTER_CREDIT_OFFER.id, provider: "pancake", requestId: pilot.requestId }))
+      return unavailable;
+    const adapter = this.provider("pancake");
+    await this.assertIsolation();
+    const existing = await database().select().from(orders)
+      .where(and(eq(orders.userId, userId), eq(orders.environment, "live"))).limit(2);
+    if (existing.length > 1 || existing.some(order => !this.pilotOrderMatches(order, adapter) ||
+      order.reviewReason || ["paid", "refunded"].includes(order.status) || Date.now() - order.createdAt.getTime() >= 23 * 3_600_000))
+      return unavailable;
+    const catalog = this.catalog();
+    return { catalog: { ...catalog, checkoutEnabled: true,
+      products: catalog.products.filter(p => p.id === STARTER_CREDIT_OFFER.id).map(p => ({ ...p, available: true })),
+      providers: catalog.providers.map(p => ({ ...p, available: p.id === "pancake" })) },
+      requestId: pilot.requestId, expiresAt: pilot.expiresAt };
   }
   catalog(): BillingCatalogResponse {
     const providers = billingProviderIds.map((id) => {
@@ -144,7 +184,8 @@ export class BillingService {
   async checkout(user: Account, input: BillingCheckoutRequest): Promise<BillingCheckoutResponse> {
     // All availability checks happen before database access or reserving an order.
     const adapter = this.provider(input.provider);
-    if (!this.salesAllowed())
+    const pilotCheckout = !this.salesAllowed() && this.pilotAllowed(user.id, input);
+    if (!this.salesAllowed() && !pilotCheckout)
       throw new BillingError(503, "SALES_DISABLED", "Purchasing is not available yet.");
     const pack = this.packs.find((p) => p.id === input.productId);
     if (!pack || !priced(pack) || !pack.providerProducts[adapter.id]?.[adapter.environment])
@@ -153,6 +194,16 @@ export class BillingService {
     const leaseToken = randomUUID();
     const row = await database().transaction(async (tx) => {
       await lockWallet(tx, user.id, adapter.environment);
+      if (pilotCheckout) {
+        // Serialize across all request IDs, including differently configured
+        // instances. A failed/refunded/unknown live order still consumes the slot.
+        if (!this.pilotAllowed(user.id, input))
+          throw new BillingError(503, "SALES_DISABLED", "The private checkout window has closed.");
+        const liveOrders = await tx.select().from(orders)
+          .where(and(eq(orders.userId, user.id), eq(orders.environment, "live"))).limit(2);
+        if (liveOrders.length > 1 || liveOrders.some(order => !this.pilotOrderMatches(order, adapter)))
+          throw new BillingError(409, "PILOT_ORDER_LIMIT", "Only the original private acceptance order can be retried.");
+      }
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`billing:${user.id}:${input.requestId}`}, 0))`);
       const [prior] = await tx.select().from(orders)
         .where(and(eq(orders.userId, user.id), eq(orders.requestId, input.requestId))).for("update");
@@ -182,6 +233,8 @@ export class BillingService {
       return created;
     });
     try {
+      if (pilotCheckout && !this.pilotAllowed(user.id, input))
+        throw new BillingError(503, "SALES_DISABLED", "The private checkout window has closed.");
       const result = await adapter.createCheckout({
         orderId: row.id, userId: user.id, buyerEmail: user.email,
         productId: row.productId, providerProductId: row.providerProductId, priceVersion: row.priceVersion,

@@ -38,7 +38,10 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 | 变量 | Compose 默认值 | 正式配置要求 |
 |---|---|---|
 | `BILLING_LIVE_ENABLED` | `false` | 仅精确的 `true` 表示请求启用；仍受代码放行常量约束 |
-| `BILLING_LIVE_PREPARATION_ENABLED` | `false` | 仅精确的 `true` 启用正式配置校验、回调及查询恢复；始终禁止 checkout，与测试模式互斥 |
+| `BILLING_LIVE_PREPARATION_ENABLED` | `false` | 启用正式配置、回调及查询恢复，禁止公开 checkout；仅下述显式试点例外，与测试模式互斥 |
+| `BILLING_LIVE_PILOT_USER_ID` | 空 | 仅准备模式下可配置的单个验收用户 UUID；不放入公开仓库 |
+| `BILLING_LIVE_PILOT_REQUEST_ID` | 空 | 固定验收请求 UUID；失败或未知结果也不能换号重开一单 |
+| `BILLING_LIVE_PILOT_EXPIRES_AT` | 空 | 固定 ISO 截止时间，配置时最长24小时；到期停止新建／重试结账，仍处理原单回调 |
 | `BILLING_DEPLOYMENT_MODE` | 空 | 正式模式要求 `production` |
 | `BILLING_LIVE_APP_ORIGIN` | 空 | 必须等于 HTTPS `APP_URL` 的 origin，不带路径或尾斜线 |
 | `PANCAKE_LIVE_MERCHANT_ID` | 空 | 正式商户 ID |
@@ -53,7 +56,9 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 `src/server/billing/config.ts` 的 `productionBillingRelease.liveSalesApproved` 保持 `false`。默认不开启任何正式 adapter；仅设置 `BILLING_LIVE_ENABLED=true` 仍不能装配或开售。修改代码放行常量属于另一次经明确批准并完成运营验收的发布。原正式环境接线已于2026-10-26上线，新增准备模式已随 `3e172e1` 部署并启用，正式Key、下架商品及Webhook已配置；业务审核于2026-10-26已在渠道后台核实通过；税务、提款及正式交易验收仍待完成，本站销售放行不自动改变。
 
-2026-10-26 新增关售准备模式：显式设置 `BILLING_LIVE_PREPARATION_ENABLED=true` 后，使用上表全部正式配置，严格校验来源、数据库命名、必填值和密钥格式；缺失或错误直接失败，不回退测试配置。保留 `BILLING_LIVE_ENABLED=false`；即使同时请求销售或未来代码已批准，准备模式也强制 `salesEnabled=false`、有效 `liveSalesApproved=false`。catalog 显示 `environment=live`、`checkoutEnabled=false`、provider／商品不可购买；checkout 在数据库和渠道调用前返回 `503 SALES_DISABLED`。
+2026-10-26 新增关售准备模式：显式设置 `BILLING_LIVE_PREPARATION_ENABLED=true` 后，使用上表全部正式配置，严格校验来源、数据库命名、必填值和密钥格式；缺失或错误直接失败，不回退测试配置。保留 `BILLING_LIVE_ENABLED=false`；即使同时请求销售或未来代码已批准，准备模式也强制 `salesEnabled=false`、有效 `liveSalesApproved=false`。公开 catalog 显示 `environment=live`、`checkoutEnabled=false`、provider／商品不可购买；未配置试点时 checkout 在数据库和渠道调用前返回 `503 SALES_DISABLED`。
+
+2026-10-27 用户明确批准仅本人单笔正式付款验收。新增三项 `BILLING_LIVE_PILOT_*` 必须全填或全空；只在准备模式生效，错误 UUID／时间或未来超过24小时拒绝启动，已经过期则正常启动但禁止结账。鉴权 `GET /api/billing/pilot` 只向指定用户返回一次性 US$19／150积分套餐和固定请求标识；其他账户返回空，公开目录不变。钱包锁内检查该用户任意其他 live 订单，未知、失败和已退款也占用单笔额度；跨标签页和实例不能换请求编号再买。原单可幂等重试，已付／已退不可再付。退出试点时清空三项并部署，保留准备模式以接收延迟回调。截止或关售只阻止本站发起结账，不能撤销已生成的渠道付款链接；需渠道提供对应终止能力另行处理。此入口不启用付费生成，不修改预算或费率。
 
 准备模式的 `POST /api/billing/webhooks/pancake` 仅接受 `order.completed`、`refund.succeeded`，正式载荷 `mode=prod`；实际数据库隔离检查后进入原始 body 验签。关闭准备且未批准销售时仍返回 `503 PROVIDER_UNAVAILABLE`。对账 worker 会装配查询 adapter，不再因空 registry 直接空跑；它只查询渠道，但回调和对账可能按真实证据写入本地账本，不能称为无副作用演练。退款仍走本人订单、环境／商户、14天窗口及整包未用无预留等既有检查，没有新增退款入口或放宽权限。配置校验通过不证明平台商品归属、密钥环境或真实回调成功，主会话另验；通用测试通知缺少本站订单／metadata 时不能作为到账验收。
 

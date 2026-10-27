@@ -14,6 +14,10 @@ export type BillingCatalogResponse = {
   mode: "one-time-credits"; environment: BillingEnvironment | null; checkoutEnabled: boolean; products: BillingProduct[];
   providers: { id: BillingProviderId; available: boolean; environment: BillingEnvironment | null }[];
 };
+// Authenticated one-person acceptance offer; public catalog remains closed.
+export type BillingPilotResponse =
+  | { catalog: BillingCatalogResponse; requestId: string; expiresAt: string }
+  | { catalog: null; requestId: null; expiresAt: null };
 export type BillingSummaryResponse = {
   balanceCredits: number; testBalanceCredits: number;
   availableCredits: number; reservedCredits: number; testAvailableCredits: number; testReservedCredits: number;

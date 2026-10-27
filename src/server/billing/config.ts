@@ -1,6 +1,7 @@
 import { createPublicKey } from "node:crypto";
 import { TaxCategory } from "@waffo/pancake-ts";
 import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
 import { database } from "../db";
 import { defaultCatalog } from "./catalog";
 import { PancakeBillingProvider, PancakeError } from "./pancake";
@@ -42,6 +43,19 @@ export function billingOptionsFromEnvironment(
   const liveRequested = env.BILLING_LIVE_ENABLED === "true";
   const preparationRequested = env.BILLING_LIVE_PREPARATION_ENABLED === "true";
   if (testRequested && (liveRequested || preparationRequested)) throw new Error("BILLING_ENVIRONMENT_CONFLICT");
+  const pilotValues = [env.BILLING_LIVE_PILOT_USER_ID, env.BILLING_LIVE_PILOT_REQUEST_ID, env.BILLING_LIVE_PILOT_EXPIRES_AT];
+  let livePilot: BillingOptions["livePilot"];
+  if (pilotValues.some(value => value !== undefined && value !== "")) {
+    if (!preparationRequested) throw new Error("BILLING_PILOT_PREPARATION_REQUIRED");
+    const parsed = z.object({ userId: z.uuid(), requestId: z.uuid(), expiresAt: z.iso.datetime({ offset: true }) })
+      .safeParse({ userId: pilotValues[0], requestId: pilotValues[1], expiresAt: pilotValues[2] });
+    if (!parsed.success || Date.parse(parsed.data.expiresAt) > Date.now() + 24 * 3_600_000)
+      throw new Error("BILLING_PILOT_CONFIG_INVALID");
+    // Expired configuration disables checkout at request time without disabling
+    // callbacks or recovery on restart. Never extend this fixed deadline.
+    livePilot = Object.freeze({ userId: parsed.data.userId.toLowerCase(), requestId: parsed.data.requestId.toLowerCase(),
+      expiresAt: new Date(parsed.data.expiresAt).toISOString() });
+  }
   if (!testRequested && !preparationRequested && !(liveRequested && releaseApproval.liveSalesApproved === true)) return {};
   const environment = testRequested ? "test" : "live";
   const isolationError = environment === "test" ? "BILLING_TEST_ISOLATION_REQUIRED" : "BILLING_LIVE_ISOLATION_REQUIRED";
@@ -77,10 +91,10 @@ export function billingOptionsFromEnvironment(
       return order?.createdAt ?? null;
     },
   });
-  // Preparation registers the same strictly scoped adapter for callbacks/query
-  // recovery, but can never authorize checkout, even in a future approved release.
+  // Preparation never authorizes public checkout. The separately configured
+  // pilot is restricted by BillingService to one account and one durable order.
   // Refund requests retain BillingService's existing ownership/eligibility checks.
-  return { salesEnabled: !preparationRequested, environment,
+  return { salesEnabled: !preparationRequested, environment, livePilot,
     releaseApproval: preparationRequested ? Object.freeze({ liveSalesApproved: false }) : releaseApproval,
     assertIsolation: async () => {
       const [scope] = await database().execute(sql`SELECT current_database() AS name, current_user AS role`);

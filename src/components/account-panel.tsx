@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, prepareStarterCheckout, starterCheckoutEnvironment, starterCheckoutProvider, billingMoney, IDENTITY_CHANGED_KEY, SESSION_ENDED, IDENTITY_CHANGED_EVENT } from "@/lib/api";
 import { GoogleSignIn } from "./google-sign-in";
-import type { BillingCatalogResponse, BillingSummaryResponse, BillingOrder, BillingOrdersResponse, BillingRefundStatus } from "@/lib/billing";
+import type { BillingCatalogResponse, BillingSummaryResponse, BillingOrder, BillingOrdersResponse, BillingRefundStatus, BillingPilotResponse } from "@/lib/billing";
 import styles from "./pricing.module.css";
 
 const refundLabel: Record<BillingRefundStatus, string> = {
@@ -35,6 +35,7 @@ export function AccountPanel() {
   const [billing, setBilling] = useState<CreditSummary | null>(null);
   const [orders, setOrders] = useState<CreditOrder[]>([]);
   const [catalog, setCatalog] = useState<BillingCatalogResponse | null>(null);
+  const [pilot, setPilot] = useState<BillingPilotResponse | null>(null);
   const [billingError, setBillingError] = useState("");
   const epoch = useRef(0);
   const pending = useRef(false);
@@ -51,6 +52,7 @@ export function AccountPanel() {
     setBilling(null);
     setOrders([]);
     setCatalog(null);
+    setPilot(null);
     setBillingError("");
     setState("loading");
     setError("");
@@ -74,13 +76,15 @@ export function AccountPanel() {
       setMessage(notice);
       try {
         const headers = { "X-KakaReel-Owner": data.user.id };
-        const [summary, history, available]: [CreditSummary, BillingOrdersResponse, BillingCatalogResponse] = await Promise.all([
+        const [summary, history, available, pilotOffer]: [CreditSummary, BillingOrdersResponse, BillingCatalogResponse, BillingPilotResponse] = await Promise.all([
           api("/billing", { headers }), api("/billing/orders", { headers }), api("/billing/catalog"),
+          api("/billing/pilot", { headers }),
         ]);
         if (version !== epoch.current) return;
         setBilling(summary);
         setOrders(history.orders);
-        setCatalog(available);
+        setCatalog(pilotOffer.catalog ?? available);
+        setPilot(pilotOffer);
       } catch (cause) {
         if (version === epoch.current) setBillingError((cause as Error).message);
       }
@@ -101,6 +105,7 @@ export function AccountPanel() {
       setBilling(null);
       setOrders([]);
       setCatalog(null);
+      setPilot(null);
       setBillingError("");
       setState("signed-out");
       setMessage("");
@@ -182,7 +187,7 @@ export function AccountPanel() {
     setBillingError("");
     try {
       if (action === "checkout") {
-        const result = await prepareStarterCheckout(owner);
+        const result = await prepareStarterCheckout(owner, !!pilot?.catalog);
         if (version !== epoch.current || displayedMarker.current !== identityMarker()) return;
         window.location.assign(result.checkoutUrl);
       } else {
@@ -247,9 +252,13 @@ export function AccountPanel() {
             <p className={styles.testNotice}>Sandbox only: {billing.testAvailableCredits ?? "—"} available / {billing.testReservedCredits ?? "—"} reserved test credits. These are not purchased credits.{billing.testBlocked ? " Test credit spending is blocked." : ""}</p>}
           <p className="micro">Buy again to add credits. A wholly unused pack is refundable within 14 days, including tax, with no additional KakaReel fee. Review the final tax and total before payment.</p>
           {testCheckout && <p className={styles.testNotice}><strong>Test mode · No real payment</strong><br />This checkout is a sandbox test. The Starter Pack is not yet on sale. Test credits cannot be used for live generation.</p>}
+          {pilot?.catalog && <p className={styles.testNotice}><strong>Private payment check · Real charge</strong><br />
+            Only this account can start one US$19 + applicable taxes checkout. Public sales remain closed.
+            Start checkout before <time dateTime={pilot.expiresAt}>{new Date(pilot.expiresAt).toLocaleString("en-US")}</time>.
+            Review the final amount before paying. Paid video generation is not yet enabled.</p>}
           <div className="account-actions">
             <button className="button" disabled={busy || !starterCheckoutProvider(catalog)} onClick={() => void billingAction("checkout")}>
-              {testCheckout ? "Continue to test checkout" : starterCheckoutProvider(catalog) ? "Continue to checkout" : "Not yet on sale"}
+              {testCheckout ? "Continue to test checkout" : pilot?.catalog ? "Continue to real payment check" : starterCheckoutProvider(catalog) ? "Continue to checkout" : "Not yet on sale"}
             </button>
             <button className="button secondary" disabled={busy} onClick={() => void load()}>Refresh balance & orders</button>
           </div>

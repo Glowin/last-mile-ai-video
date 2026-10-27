@@ -45,6 +45,7 @@ export function createBillingModule(options?: BillingOptions) {
     await next();
   });
   routes.get("/", async (c) => c.json(await service.summary(c.get("billingUser").id, c.get("billingPreview"))));
+  routes.get("/pilot", async (c) => c.json(await service.pilot(c.get("billingUser").id)));
   routes.get("/orders", async (c) => c.json(await service.list(c.get("billingUser").id)));
   routes.get("/orders/:id", async (c) => c.json(await service.get(c.get("billingUser").id, c.req.param("id"))));
   routes.post("/orders/:id/refund", bodyLimit({ maxSize: 1024, onError: (c) => c.json({ error: "Refund request is too large.", code: "BODY_TOO_LARGE" }, 413) }), async (c) => {

@@ -139,6 +139,42 @@ test("identity change during catalog lookup prevents checkout and order reads", 
   } finally { state.restore(); }
 });
 
+test("private live checkout uses the server request across retries and lost local storage", async () => {
+  const state = browser();
+  const requestId = "11111111-1111-4111-8111-111111111111";
+  const attempts: string[] = [];
+  global.fetch = async (url, init) => {
+    assert.equal((init?.headers as Record<string, string>)["X-KakaReel-Owner"], "alice");
+    if (url === "/api/billing/pilot") return Response.json({ catalog: catalog(), requestId, expiresAt: new Date(Date.now() + 60_000).toISOString() });
+    if (url === "/api/billing/orders") return Response.json({ orders: [] });
+    assert.equal(url, "/api/billing/checkout");
+    attempts.push(JSON.parse(String(init?.body)).requestId);
+    if (attempts.length === 1) throw new Error("Lost response");
+    return Response.json({ order: { id: "pilot-order" }, checkoutUrl: "https://checkout.example.test/pilot" });
+  };
+  try {
+    await assert.rejects(prepareStarterCheckout("alice", true), /Lost response/);
+    state.values.clear();
+    await prepareStarterCheckout("alice", true);
+    assert.deepEqual(attempts, [requestId, requestId]);
+  } finally { state.restore(); }
+});
+
+test("unavailable or expired private checkout cannot fall back to public checkout", async () => {
+  const state = browser();
+  try {
+    for (const offer of [
+      { catalog: null, requestId: null, expiresAt: null },
+      { catalog: catalog(), requestId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(0).toISOString() },
+    ]) {
+      const calls: string[] = [];
+      global.fetch = async (url) => { calls.push(String(url)); return Response.json(offer); };
+      await assert.rejects(prepareStarterCheckout("alice", true), /payment check is not available/);
+      assert.deepEqual(calls, ["/api/billing/pilot"]);
+    }
+  } finally { state.restore(); }
+});
+
 test("refund and quote responses from a replaced account are discarded", async () => {
   const state = browser();
   try {
