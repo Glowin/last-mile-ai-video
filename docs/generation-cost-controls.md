@@ -29,6 +29,7 @@ status: "成本与审核接线、隔离验收已完成；生产配置与部署�
 | `reserveGenerationCost(tx, {jobId, fingerprint, spec})` | `POST /api/jobs`：服务端验证参数后，和任务创建、积分预留在同一事务中；任务 UUID、完整请求指纹与精确规格绑定。同一任务重试仅回原记录，不代表允许重新 POST |
 | `markGenerationSubmission(tx, jobId)` | runner 的 claim 事务：和 `submissionStartedAt`、lease 写入一起提交；仅返回 `maySubmit:true` 的调用者可在事务提交后执行一次供应商 POST。返回 false 必须查原任务，不能 POST |
 | `releaseUnsubmittedGenerationCost(tx, {jobId, actor, evidenceRef})` | 确认本地拒绝、并且任务从未被标记提交时释放。`submitted` 不可释放，包括网络超时、HTTP 错误、死 worker、审核拒绝、用户退款 |
+| `cancelUnsentPilotCost(tx, {jobId, leaseToken})` | 2026-10-28 本人单次试点的窄例外：仅仍持有原首次提交租约的进程、在调用transport之前同步发现授权过期／撤销时，连同任务终态和积分释放原子取消。保留原提交审计并追加未发送证明；不是超时、崩溃、恢复或供应商错误的释放入口。试点次数仍消耗，不再POST |
 | `recordGenerationOutcome(tx, {jobId, outcome, evidenceRef})` | runner 在验证任务身份、lease 后记录 unknown／success／failed；成本占用不变。unknown 可转终态，冲突终态报错，重复终态幂等 |
 | `recordActualGenerationCost(tx, {jobId, amountMinor, evidenceRef, actor})` | 有供应商最终收费证据时调用；同证据同金额幂等，冲突拒绝。返回 `priceIncreased:true` 时停用已在事务内写入，必须提交，不能用抛错回滚该停用 |
 | `getGenerationCost(dbOrTx, jobId)`／`getGenerationBudget(dbOrTx)` | 只读，用于后台诊断和原任务恢复，无新预留、无供应商 POST。不得直接开放成未授权的用户跨账号查询 |

@@ -180,6 +180,27 @@ export async function releaseUnsubmittedGenerationCost(tx: Transaction, x: {jobI
   await audit(tx,'release-unsubmitted',x.actor,x.evidenceRef,{},x.jobId);
   return reservation(updated);
 }
+/** Narrow exception for the ORIGINAL live pilot claimant, synchronously refused
+ * before invoking transport. Never call for a timeout, lost worker, provider error,
+ * or recovery. Caller holds cost -> wallet -> job locks and settles the job in this
+ * same transaction. The existing submission audit remains; cancellation adds proof. */
+export async function cancelUnsentPilotCost(tx: Transaction, x: {jobId:string; leaseToken:string}) {
+  jobId(x.jobId); jobId(x.leaseToken); await lockGenerationCostBudget(tx);
+  const [r]=await tx.execute(sql`SELECT r.* FROM generation_cost_reservations r
+    JOIN video_jobs j ON j.id=r.job_id WHERE r.job_id=${x.jobId}::uuid
+    AND j.lease_token=${x.leaseToken}::uuid AND j.billing_mode='paid' AND j.credit_environment='live'
+    AND j.status='submitting' AND j.credit_state='reserved' AND j.upstream_id IS NULL
+    AND j.submission_started_at IS NOT NULL
+    AND EXISTS(SELECT 1 FROM credit_audit a WHERE a.job_id=j.id AND a.action='generation-pilot-created')`);
+  if (!r || r.state!=='submitted' || r.outcome!=='pending' || r.actual_minor!==null)
+    fail('COST_UNSENT_PILOT_PROOF_REQUIRED');
+  await tx.execute(sql`UPDATE generation_cost_budget SET exposure_minor=exposure_minor-${r.exposure_minor}::bigint WHERE id=true`);
+  const [updated]=await tx.execute(sql`UPDATE generation_cost_reservations
+    SET state='released',submitted_at=NULL,exposure_minor=0,outcome='failed' WHERE job_id=${x.jobId}::uuid RETURNING *`);
+  await audit(tx,'cancel-unsent-pilot','worker','pilot-pre-transport-authorization-expired-or-revoked',
+    {leaseToken:x.leaseToken,transportInvoked:false},x.jobId);
+  return reservation(updated);
+}
 /** Failure/unknown never refunds provider budget, independently of customer credit releases. */
 export async function recordGenerationOutcome(tx: Transaction, x: {jobId:string; outcome:'unknown'|'success'|'failed'; evidenceRef:string}) {
   jobId(x.jobId);text(x.evidenceRef,'EVIDENCE');

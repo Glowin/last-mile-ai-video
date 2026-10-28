@@ -1,16 +1,20 @@
 ---
 title: "Content review and support operations"
 date: 2026-10-25
-scope: "KakaReel manual review, private support workflow and generation integration"
+scope: "Versioned generation policy, legacy manual review and private support operations"
 ---
 
 # Content review and support operations
+
+2026-10-28 policy change: the owner selected unattended `mvp-text-only-v1` for new jobs. Its implementation, rollout evidence and rollback are maintained in [unattended generation](unattended-generation.md). Only Waffo text `allow` permits submission; reference images and generated videos remain **unreviewed and permitted by MVP policy**, never human-approved. The manual input/output procedures below apply to historical/manual-policy jobs and deliberate report handling, not normal new MVP generation. Reports and appeals still need human operations. This change is not Waffo approval and does not satisfy its entire published input/output moderation coverage.
+
+## Historical manual-policy baseline (2026-10-26)
 
 Updated 2026-10-26. Owner: KakaReel founder (Glow Jiang). The founder handles the review queue and `support@kakareel.com`, checking them before operating generation and before ending each operating session. The public pages now set manual response targets, not guaranteed completion deadlines or 24/7 coverage; the operating procedure below must accompany their rollout. The module is integrated with the app and runner and has passed isolated PostgreSQL acceptance; the code was deployed on 2026-10-26 and the production non-root CLI successfully read the empty review/case queues. Full decisions were tested in isolation; no new paid production review was fabricated. See [launch readiness](launch-readiness.md) for current evidence.
 
 ## Boundaries and policy
 
-Inputs (full prompt, model settings, and every uploaded image) require human approval before the first upstream POST. Generated videos require a separate human review of the actual full video before KakaReel publishes its URL or consumes reserved credits. Review is not a keyword classifier or a claim that an AI has checked content. Do not approve files you have not viewed.
+For historical/manual-policy jobs, inputs (full prompt, model settings, and every uploaded image) require human approval before the first upstream POST. Generated videos require a separate human review of the actual full video before KakaReel publishes its URL or consumes reserved credits. Review is not a keyword classifier or a claim that an AI has checked content. Do not approve files you have not viewed.
 
 Apply every category in `/acceptable-use` to both inputs and the full output. Reject:
 
@@ -104,7 +108,7 @@ Exports are exclusive-create 0600 private files; choose a fresh filename. `queue
 4. For a provider outcome still unknown (separate from a moderation hold), query the **existing** task via the existing credit-worker `review` / `poll JOB_UUID` commands. Do not POST a replacement or claim failure from timeout. Only the existing audited compensation path may release an eligible unresolved reservation; it does not mark provider success/failure. Integrated polling respects content holds, even with force=true.
 5. For a payment/refund case use the billing reconciliation CLI on the original order; never re-create the payment/refund as a troubleshooting step. Reply only with verified state. Outbound support messages require normal owner authorization; the case queue itself does not send email.
 
-## Exact integration contract (main session)
+## Legacy manual-policy integration contract
 
 Exports from `src/server/moderation/service.ts`:
 

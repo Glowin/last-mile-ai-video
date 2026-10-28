@@ -1,11 +1,13 @@
 ---
 title: "本地开发与 Hostinger Dokploy 部署"
-date: 2026-10-26
+date: 2026-10-28
 source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档；用户 2026-10-26 最新决定"
-status: "35691b0 已部署；Web healthy、两个worker running，十项迁移已核；新生成及正式收费关闭"
+status: "cd3d93c 已部署并启用新任务 MVP 策略；11项迁移及真实文字allow已核；生成预算与公众收费保持关闭，单次新验收另行授权"
 ---
 
 # 运行结构
+
+2026-10-28 无人值守策略的迁移、凭证边界、生产验收与回滚入口见[无人值守生成](unattended-generation.md)。以下带日期的部署结果是历史记录；新策略不追溯修改旧任务，也不自动开放生成预算或公开收费。
 
 2026-10-26 现状：Waffo整改版本 `35691b0` 已完成停旧进程、备份、迁移和部署；十项迁移校验和匹配，四个旧用户与六条视频保留。当前Web、generation worker和billing reconciliation均运行；新生成预算及正式收费关闭。详细验收见 [开售执行清单](launch-readiness.md)。下列10月23日描述为历史基线。
 
@@ -33,7 +35,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 ### 正式支付运行时接线（2026-10-25，尚未放行）
 
-`compose.yaml` 通过独立的 `x-billing-environment` 环境块，仅向 `web` 和 `billing-reconciliation` 透传下列正式支付变量；两者共用同一组值。generation `worker` 只继承应用环境，不接收任何 `BILLING_*`／`PANCAKE_*` 变量。账单对账服务保留独立启动命令，不接收 VibeToken 上游密钥。
+`compose.yaml` 通过独立的 `x-billing-environment` 环境块，仅向 `web` 和 `billing-reconciliation` 透传下列正式支付变量；两者共用同一组值。原 generation `worker` 只继承应用环境。2026-10-28 经用户明确授权，新增独立 Prompt Sift 环境块，仅向该 worker 透传现有 `PANCAKE_LIVE_MERCHANT_ID` 与 `PANCAKE_LIVE_PRIVATE_KEY`；仍不透传 `BILLING_*`、商品、店铺或回调公钥，不启动支付对账能力。账单对账服务保留独立启动命令，不接收 VibeToken 上游密钥。
 
 | 变量 | Compose 默认值 | 正式配置要求 |
 |---|---|---|
@@ -62,7 +64,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 
 准备模式的 `POST /api/billing/webhooks/pancake` 仅接受 `order.completed`、`refund.succeeded`，正式载荷 `mode=prod`；实际数据库隔离检查后进入原始 body 验签。关闭准备且未批准销售时仍返回 `503 PROVIDER_UNAVAILABLE`。对账 worker 会装配查询 adapter，不再因空 registry 直接空跑；它只查询渠道，但回调和对账可能按真实证据写入本地账本，不能称为无副作用演练。退款仍走本人订单、环境／商户、14天窗口及整包未用无预留等既有检查，没有新增退款入口或放宽权限。配置校验通过不证明平台商品归属、密钥环境或真实回调成功，主会话另验；通用测试通知缺少本站订单／metadata 时不能作为到账验收。
 
-离线验证 Compose 时使用清空继承环境的进程、显式 `--env-file /dev/null` 和全合成必填值，避免自动读取 checkout 的 `.env`。分别检查未设置支付变量、显式空值、合成正式值及沙盒变量混入的场景：两个支付服务的正式值一致，沙盒开关始终关闭，generation worker 无支付变量。解析结果只在内存中断言，不将完整环境输出到日志；此检查不启动容器，也不代表真实支付验收。
+离线验证 Compose 时使用清空继承环境的进程、显式 `--env-file /dev/null` 和全合成必填值，避免自动读取 checkout 的 `.env`。分别检查未设置支付变量、显式空值、合成正式值及沙盒变量混入的场景：两个支付服务的正式值一致，沙盒开关始终关闭，generation worker 只得到经授权的两项 Prompt Sift 商户凭证，不得到支付开关、商品或店铺配置。解析结果只在内存中断言，不将完整环境输出到日志；此检查不启动容器，也不代表真实支付验收。
 
 ## 数据库凭证轮换
 

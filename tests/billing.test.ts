@@ -253,7 +253,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     }
     assert.deepEqual((await (await request(app, who, "/billing/orders")).json()).orders, []);
     const summary = await (await request(app, who, "/billing")).json();
-    assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
+    assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, generationPilot: null, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
   });
   await t.test("private live pilot authenticates its offer, rejects spoofing, and callback funding remains possible after expiry", async () => {
     const who = await actor(), stranger = await actor(), pilot = pilotFixture(who);

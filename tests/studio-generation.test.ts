@@ -4,13 +4,128 @@ import { generationRequestId } from "../src/lib/api";
 import { clearPendingRequest } from "../src/lib/pending-request";
 import {
   focusStudioProgress, StudioRequests, studioHistoryHint,
-  studioJobDescription, studioJobState, studioHistoryView, type StudioJob,
+  studioJobDescription, studioJobState, studioJobSafetyDisclosure, studioHistoryView, type StudioJob, type StudioSafety,
 } from "../src/lib/studio-generation";
 
 const job = (overrides: Partial<StudioJob> = {}): StudioJob => ({
   id: "task-a", family: "seedance", mode: "text", prompt: "A bird in flight",
   status: "pending", resultUrl: null, createdAt: "2026-10-27T00:00:00Z",
   duration: 5, resolution: "720p", ...overrides,
+});
+
+const safety = (status: StudioSafety["status"], overrides: Partial<StudioSafety> = {}): StudioSafety => ({
+  policyVersion: "unattended-mvp-test", status, reason: null, attempts: 1,
+  deadlineAt: "2026-10-28T01:00:00Z", imageReview: "not_applicable",
+  outputReview: "not_reviewed_mvp", ...overrides,
+});
+
+test("MVP checks distinguish checking and automatic confirmation from model generation", () => {
+  for (const [status, label, active] of [
+    ["checking", "Safety check in progress", true],
+    ["review", "Safety check pending confirmation", false],
+    ["allowed", "Generating", true],
+  ] as const) {
+    const current = job({ status: "submitting", safety: safety(status), moderation: null, reviewRequired: true });
+    const state = studioJobState(current);
+    assert.equal(state.label, label);
+    assert.equal(state.active, active);
+    assert.equal(state.unresolved, true, "all pre-terminal states block duplicates");
+    assert.doesNotMatch(state.label, /legacy|awaiting input|awaiting output|on hold/i);
+    assert.equal(studioJobState(job({ ...current, status: "pending" })).label, label);
+    if (status !== "allowed") assert.match(studioJobDescription(current), /generation has not started/);
+  }
+  assert.match(studioJobDescription(job({ safety: safety("review") })), /fixed time limit and may expire/);
+  assert.match(studioJobDescription(job({ safety: safety("review") })), /not a queue for operator approval/);
+  const confirming = job({ status: "unknown", safety: safety("allowed") });
+  assert.equal(studioJobState(confirming).label, "Confirming result");
+  assert.equal(studioJobState(confirming).phase, "unknown", "existing task recovery stays available");
+  assert.equal(studioJobState(confirming).unresolved, true);
+  assert.match(studioJobDescription(confirming), /not a content safety review/);
+});
+
+test("terminal MVP job outcomes outrank stale checking or review metadata", () => {
+  for (const status of ["checking", "review", "allowed"] as const) {
+    const failed = job({ status: "failed", safety: safety(status) });
+    assert.deepEqual(studioJobState(failed), { phase: "failed", label: "Failed", active: false, unresolved: false });
+    const delivered = job({ status: "success", resultUrl: "https://example.test/video.mp4", safety: safety(status) });
+    assert.deepEqual(studioJobState(delivered), { phase: "success", label: "Ready", active: false, unresolved: false });
+    assert.match(studioJobDescription(delivered), /ready/);
+    assert.doesNotMatch(studioJobDescription(failed), /being sent|awaiting confirmation/);
+  }
+});
+
+test("stopped safety checks override stale job status and never reveal provider reasons", () => {
+  for (const status of ["blocked", "expired", "error", "canceled"] as const) {
+    for (const jobStatus of ["submitting", "pending", "unknown", "failed", "success"] as const) {
+      const current = job({ status: jobStatus, safety: safety(status, { reason: "PRIVATE-provider-payload" }),
+        resultUrl: "https://example.test/withheld.mp4", creditState: "released" });
+      assert.deepEqual(studioJobState(current), { phase: "failed", label: "Failed", active: false, unresolved: false });
+      const description = studioJobDescription(current);
+      assert.match(description, /No video generation was started/);
+      assert.match(description, /reserved credits have been released/);
+      assert.doesNotMatch(description, /PRIVATE|provider-payload/);
+      assert.match(description, status === "blocked" ? /usage policy/ : /try again later/);
+    }
+  }
+  assert.match(studioJobDescription(job({ safety: safety("expired"), creditState: "reserved" })), /release is not yet confirmed/);
+});
+
+test("MVP success without a result URL remains recoverable and cannot claim delivery", () => {
+  const current = job({ status: "success", safety: safety("allowed"), resultUrl: null });
+  assert.equal(studioJobState(current).label, "Confirming result");
+  assert.equal(studioJobState(current).phase, "unknown");
+  assert.equal(studioJobState(current).unresolved, true);
+  assert.match(studioJobDescription(current), /Recover this task or refresh history/);
+  assert.doesNotMatch(studioJobDescription(current), /video is ready/);
+});
+
+test("MVP image and output limits never become a claim of review or retroactive approval", () => {
+  assert.equal(studioJobSafetyDisclosure(job()), null);
+  assert.equal(studioJobSafetyDisclosure(job({ safety: null, moderation: [] })), null);
+  for (const status of ["checking", "review", "allowed", "blocked", "expired", "error", "canceled"] as const) {
+    for (const imageReview of ["not_applicable", "not_reviewed_mvp"] as const) {
+      const disclosure = studioJobSafetyDisclosure(job({ safety: safety(status, { imageReview, reason: "PRIVATE" }) }))!;
+      assert.match(disclosure, imageReview === "not_applicable" ? /Reference image: not applicable/ : /Reference image: not reviewed/);
+      assert.match(disclosure, /Generated video: not reviewed/);
+      assert.match(disclosure, /neither individually human-reviewed nor automatically moderated/);
+      assert.match(disclosure, /text check does not approve an image or video/);
+      assert.match(disclosure, /Technical delivery verification is not a content safety check/);
+      assert.doesNotMatch(disclosure, /PRIVATE/);
+    }
+  }
+});
+
+test("legacy history keeps actual reviews and does not acquire an MVP safety check", () => {
+  for (const safetyValue of [undefined, null]) {
+    const legacy = job({ safety: safetyValue, status: "success", moderation: [
+      { phase: "input", state: "approved", version: 1 },
+      { phase: "output", state: "pending", version: 2 },
+    ] });
+    const before = JSON.stringify(legacy);
+    assert.equal(studioJobState(legacy).label, "Legacy: awaiting output review");
+    assert.equal(studioJobState(legacy).unresolved, true);
+    assert.match(studioJobDescription(legacy), /legacy.*human review/);
+    assert.equal(studioJobSafetyDisclosure(legacy), null);
+    assert.equal(JSON.stringify(legacy), before, "deriving labels never mutates history");
+  }
+});
+
+test("an MVP check survives history refresh/loading and retains the original duplicate guard", () => {
+  const requests = new StudioRequests();
+  requests.remember("input-a", "paid", "task-a");
+  requests.remember("input-b", "paid", "task-b");
+  for (const status of ["checking", "review", "allowed"] as const) {
+    const jobs = [job({ safety: safety(status), billingMode: "paid" })];
+    for (const loadState of ["loading", "error", "loaded"] as const) {
+      const snapshot = JSON.parse(JSON.stringify(jobs)) as StudioJob[];
+      assert.equal(studioHistoryView(true, true, loadState, snapshot.length), "jobs");
+      const original = requests.job("input-a", "paid", snapshot)!;
+      assert.equal(original.id, "task-a");
+      assert.equal(studioJobState(original).unresolved, true);
+      assert.equal(requests.id("input-b", "paid"), "task-b");
+    }
+  }
+  assert.equal(studioJobState(requests.job("input-a", "paid", [job({ safety: safety("expired") })])!).unresolved, false);
 });
 
 test("submission completion keeps generation active until a confirmed terminal outcome", () => {

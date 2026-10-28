@@ -18,10 +18,21 @@ export type BillingCatalogResponse = {
 export type BillingPilotResponse =
   | { catalog: BillingCatalogResponse; requestId: string; expiresAt: string }
   | { catalog: null; requestId: null; expiresAt: null };
+export type GenerationPilotOffer = {
+  requestId: string; expiresAt: string; available: boolean; jobId: string | null;
+  spec: { family: "minimax"; mode: "image"; duration: 6; resolution: "2K"; ratio: "adaptive"; audio: false };
+  credits: 23;
+};
+/** Browser hint only. The server independently checks identity, scope and slot. */
+export function generationPilotInputAllowed(pilot: GenerationPilotOffer, input: Record<string, unknown>, now = Date.now()): boolean {
+  return pilot.available && Number.isFinite(Date.parse(pilot.expiresAt)) && Date.parse(pilot.expiresAt) > now &&
+    Object.entries(pilot.spec).every(([key, value]) => input[key] === value);
+}
 export type BillingSummaryResponse = {
   balanceCredits: number; testBalanceCredits: number;
   availableCredits: number; reservedCredits: number; testAvailableCredits: number; testReservedCredits: number;
   blocked: boolean; testBlocked: boolean; checkoutEnabled: boolean; generationChargingEnabled: boolean; previewAccess: boolean;
+  generationPilot?: GenerationPilotOffer | null;
 };
 export type BillingOrder = {
   id: string; productId: string; productName: string; priceVersion: string;

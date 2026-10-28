@@ -5,11 +5,11 @@ import { generationFingerprint } from '../src/server/credits/quotes';
 import { publicAddress, videoHeader } from '../src/server/jobs/delivery';
 import { GENERATION_CHARGING_ENABLED } from '../src/server/credits/config';
 import { createApp } from '../src/server/app';
-test('only eight verified text prices are billable, with exact integer charges',()=>{
-  assert.deepEqual(VIDEO_CREDIT_RATES.map(x=>x.credits),[33,65,80,160,72,143,23,38]);
+test('eight text rates stay unchanged and only MiniMax 6s 2K image is added at 23 credits',()=>{
+  assert.deepEqual(VIDEO_CREDIT_RATES.map(x=>x.credits),[33,65,80,160,72,143,23,38,23]);
   for(const r of VIDEO_CREDIT_RATES) {
     assert.equal(videoCredits(r),r.credits);
-    assert.equal(videoCredits({...r,mode:'image'}),null);
+    assert.equal(videoCredits({...r,mode:'image'}),r.family==='minimax' && r.duration===6 ? 23 : null);
     assert.equal(videoCredits({...r,duration:30}),null);
   }
   assert.equal(GENERATION_CHARGING_ENABLED,false);
