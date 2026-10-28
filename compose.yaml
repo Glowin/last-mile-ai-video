@@ -30,6 +30,9 @@ services:
     restart: unless-stopped
     environment:
       <<: [*app-environment, *billing-environment]
+      # Server-side GA4 purchase events (web only). Empty = disabled.
+      GA_API_SECRET: ${GA_API_SECRET:-}
+      GA_MP_DEBUG: ${GA_MP_DEBUG:-}
     expose:
       - "3000"
     depends_on:

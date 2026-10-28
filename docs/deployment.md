@@ -129,7 +129,7 @@ Docker 生产阶段必须复制 `public/`，否则代码引用的鸮鹦鹉素材
 | `AUTH_TEST_DATABASE_URL` | `tests/auth.test.ts` | 主机 `127.0.0.1`，库名 `video_auth_qa`；测试自行 DROP／重建 public schema、构造旧版本并执行并发迁移 |
 | `BILLING_TEST_DATABASE_URL` | `tests/billing.test.ts` | 主机 `127.0.0.1`，库名 `video_billing_qa`；测试自行 DROP／重建 public schema、构造旧用户／任务并迁移 |
 | `ACCOUNT_TEST_DATABASE_URL` | `tests/account-profile.test.ts` | 协议 `postgresql:`，主机 `127.0.0.1`，库名 `video_account_qa`，角色 `account_test`；必须显式非 5432 端口，无 query／fragment；初始 public schema 无表。测试自行迁移，收尾清空自身 schema |
-| `CREDIT_TEST_DATABASE_URL` | `tests/credit-wallet.integration.test.ts`、`tests/credit-migration.integration.test.ts`、`tests/model-options.test.ts` 的 runner 集成用例 | 固定 `127.0.0.1:55439`，库名 `video_credit_qa`；先应用全部迁移。迁移回填测试另建随机 schema，验证后删除；其余用例会写测试用户、订单、钱包与任务 |
+| `CREDIT_TEST_DATABASE_URL` | `tests/credit-wallet.integration.test.ts`、`tests/credit-migration.integration.test.ts`、`tests/model-options.test.ts` 的 runner 集成用例、`tests/analytics.integration.test.ts` | 固定 `127.0.0.1:55439`，库名 `video_credit_qa`；先应用全部迁移。迁移回填测试另建随机 schema，验证后删除；其余用例会写测试用户、订单、钱包与任务 |
 
 上表库名、角色与端口是测试源码中的固定假设，不是生产配置。不要给五个变量填同一连接串；AUTH／BILLING 的 schema 重置会破坏其他测试的数据。ACCOUNT 库每次运行须保持空库前置条件。测试进程结束后由操作者回收自己创建的临时数据库／容器，不能据一次通过推断全部资源已清理。
 

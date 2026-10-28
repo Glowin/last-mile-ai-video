@@ -2,7 +2,7 @@
 title: "GA4 访问统计"
 date: 2026-10-23
 source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；本地与正式站浏览器验收"
-status: "已部署，GA 实时报告收到测试访问"
+status: "页面统计已部署；2026-10-28 分支 feat/analytics-attribution 增加渠道归因与转化事件，待合并"
 ---
 
 # 采集范围
@@ -11,7 +11,7 @@ status: "已部署，GA 实时报告收到测试访问"
 
 首次访问展示可拒绝的统计选择条；同意后才加载 Google tag。页脚 Cookie settings 可重新选择，撤回会禁用标签、清除本域 GA cookie 并刷新。选择保存在浏览器 localStorage；无法保存时仅在当前页面有效。
 
-仅手动发送 `page_view`，包含无 query／hash 的页面 URL 与标题；首次来源仅保留 origin。GA 自带会话、首次访问和参与度事件可能随标签发送。不传账户标识、邮箱、提示词、图片或支付详情；不接购买转化。移除 URL 参数也意味着 UTM 活动参数不会进入这版报表。
+手动发送 `page_view`，页面 URL 不含 hash，query 仅保留 `utm_*` 白名单（见下文 2026-10-28）；首次来源仅保留 origin。GA 自带会话、首次访问和参与度事件可能随标签发送。不传账户标识、邮箱、提示词、图片或支付卡信息。
 
 **控制台配置依赖：Web 数据流的 Enhanced measurement 必须关闭**，否则自动 history、表单、站内搜索等采集可能绕过页面参数过滤并重复计数。2026-10-23 已保存并回读为关闭。标签同时关闭广告个性化、Google signals。
 
@@ -65,3 +65,55 @@ status: "已部署，GA 实时报告收到测试访问"
 # 2026-10-26 隐私整改
 
 用户要求自行托管字体并关闭会话重放。本轮源码检查未发现会话重放 SDK／调用；上线前线上隐私页脚本来源仅本域（该测试浏览器未同意统计），无外部字体链接。保留已有同意后才加载的 GA 页面统计，不引入 replay 或输入录制。字体改为本域 `/fonts/inter-variable.woff2`，保留 Inter 官方 OFL 许可证；Google 登录独立框架自身资产不属于站点字体。最终上线资产与页面验收见 launch-readiness.md。
+
+# 2026-10-28 渠道归因与转化事件
+
+江昪要求补注册、生成、购买埋点并记录每位用户的来源渠道。实现分两层：自有库保存首次来源（可按渠道算收入），GA4 只收聚合事件。
+
+## 首次来源（自有数据库）
+
+- 浏览器在首次落地时写一方 cookie `kr_ft`（90 天，SameSite=Lax，非 HttpOnly，不含任何标识）。字段：`utm_source/medium/campaign/content/term`、`ref`（或 `via`）、来源站点主机名、落地路径（无 query／hash），以及是否带广告点击参数（只记类型如 `gclid`，不存值）。值一律小写、截断 100 字符，含 `@` 的值丢弃。规则为“首次非直接来源”：先直接访问、后带 UTM 访问时升级一次；已有来源后不再覆盖。
+- 同意模型：选择“拒绝统计”的浏览器不写，拒绝时立即删除；未选择或同意时写。理由：内容只有活动标签，不识别个人，不发送第三方，仅在本站创建账户时用于聚合渠道统计；隐私页“How you found us”已披露。若需要更严格（仅同意后写），在 `analytics.tsx` 把 `saved !== "denied"` 改为 `=== "granted"` 即可，代价是未选择的注册用户记为 `(direct)`。
+- 首次 Google 注册（`users` 新建）时，服务端在同一事务（savepoint，失败不阻塞注册）里重新校验 cookie 并写入 `user_attribution`；cookie 缺失或损坏仍写一行 `(direct)`。老用户无行，报表记 `(unattributed)`。
+- 订单收入通过 `billing_orders.user_id → user_attribution` 关联，**未改计费表结构或 `src/server/billing/` 代码**。
+
+## GA4 事件（均需统计同意）
+
+| 事件 | 触发点 | 参数 |
+| --- | --- | --- |
+| `page_view` | 每次路由 | `page_location` = origin + path + 白名单 `utm_source/medium/campaign/content/term/id`；token、code、预览码等其余参数和 hash 一律丢弃 |
+| `sign_up` | `/api/auth/google` 返回 `newUser: true`（仅首次建号） | `method=google` |
+| `generate_video` | `POST /api/jobs` 成功后，按任务 ID 去重 | `model`、`generation_mode`、`duration_seconds`、`resolution`、`billing_mode`、`credits`；不发 prompt／图片 |
+| `begin_checkout` | 点击购买、跳转托管收银台前 | `currency=USD`、`value=19`、`items=[credits-starter]` |
+| `purchase` | **服务端** Measurement Protocol，订单被 Pancake webhook／对账标记 `paid` 后 | `transaction_id`=订单 ID、`value`=税前小计、`tax`、`currency`、`items` |
+
+`purchase` 细节：
+- 同意统计后，前端用 `gtag('get', …, 'client_id')` 取 GA 浏览器 ID，登录用户 POST `/api/analytics/ga-client` 存入 `analytics_ga_clients`；拒绝时 DELETE 删除。无此 ID 的订单记 `skipped_no_consent`，不发送。
+- 去重：`analytics_purchase_events` 以订单 ID 为主键，带租约认领；只发 `live`、`status=paid`、无 `review_reason` 的订单；GA 非 2xx 记 `failed`，下次触发重试，最多 5 次。迁移时已有的已付／已退款订单（含 10-27 验收单）回填为 `skipped_backfill`，永不补发。
+- 触发：webhook 响应后、用户轮询 `GET /api/billing/orders/:id` 响应后（`app.ts` 中间件，异步不阻塞响应），以及 CLI `dispatch-purchases`。仅靠对账 worker 转为 paid 且用户未回到订单页的订单，要等下一次 webhook／轮询或手动 CLI。
+- 发送 `non_personalized_ads: true`，`ad_user_data`／`ad_personalization` 为 DENIED；72 小时内的订单带 `timestamp_micros`=付款时间。
+- 退款不会自动发 `refund` 事件（未做，避免改计费流程）。
+
+## 环境变量（只在 Dokploy 设置，不入库）
+
+- `GA_API_SECRET`：GA Admin → Data streams → KakaReel Web 流 → Measurement Protocol API secrets → Create。为空时服务端 purchase 完全不发送、不入队。
+- `GA_MP_DEBUG`：`true` 时 MP 事件带 `debug_mode`，出现在 DebugView；验收后清空。
+- 两者只注入 `web` 服务（`compose.yaml`）；`GA_MEASUREMENT_ID` 沿用现值。
+
+## 运营报表 CLI
+
+```
+pnpm analytics:report report --from 2026-10-01 --to 2026-10-31 [--tz Asia/Shanghai] [--group source|source_medium|campaign] [--environment live|test] [--json]
+pnpm analytics:report dispatch-purchases
+```
+
+只读事务；按首次来源汇总当期注册数、生成数（含付费生成）、已付／已退款订单数与收入（已付订单税前小计，最小货币单位换算）。source 取 `utm_source` → `ref` → 来源主机 → `(direct)`；medium 无 UTM 时为 `ref`／`referral`／`(none)`。需在能连生产库的容器内运行（`DATABASE_URL`），输出不含个人信息。
+
+## 验证（DebugView）
+
+1. 本地或正式站浏览器 URL 带 `?utm_source=test&utm_medium=qa&utm_campaign=debug`，同意统计；GA Admin → DebugView（或安装 Tag Assistant）可看到 `page_view` 的 `page_location` 含 utm。客户端事件需开启调试：Tag Assistant 连接，或临时在控制台 `gtag('set','debug_mode',true)`。
+2. 用新 Google 账号注册：出现 `sign_up`；库中 `user_attribution` 一行 `utm_source=test`。
+3. 生成视频：出现一次 `generate_video`，参数无 prompt。
+4. 点击购买：`begin_checkout`。设置 `GA_API_SECRET`、`GA_MP_DEBUG=true` 后完成一次 live 支付，回到订单页：DebugView 出现 `purchase`，`analytics_purchase_events.status=sent`；刷新订单页不重复。
+5. 拒绝统计：`kr_ft` cookie 被删除，GA 请求为零，`analytics_ga_clients` 无该用户。
+6. 标准报告中 `purchase` 需 24–48 小时；可在 Reports → Monetization 和 Traffic acquisition 按 session source/medium 查看。

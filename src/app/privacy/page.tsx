@@ -7,7 +7,7 @@ export default function Privacy() {
       <main id="main" className="shell prose">
         <span className="eyebrow">PRIVACY & DATA HANDLING</span>
         <h1>Your <em>data.</em></h1>
-        <p className="lead">This page describes the preview and preparation for paid access, updated October 26, 2026.</p>
+        <p className="lead">This page describes the preview and preparation for paid access, updated October 28, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For
@@ -125,11 +125,28 @@ export default function Privacy() {
         <p>
           We do not send your prompts, uploaded images, email address, account
           identifier, or payment details to Analytics. Page addresses exclude
-          query strings and fragments, and referral addresses are limited to
-          their origin. Automatic form, search, outbound link, and video tracking
+          query strings and fragments, except campaign tags (utm_ parameters)
+          from the link you arrived on, and referral addresses are limited to
+          their origin. With your consent we also send event counts for
+          sign-up, video generation (model, mode, length, credits; never the
+          prompt), checkout start and completed purchases (order number, amount,
+          currency and product). Purchases are reported from our server and
+          linked to the Analytics browser ID only if you allowed analytics in
+          that browser; we delete that link if you withdraw consent. Automatic form, search, outbound link, and video tracking
           are disabled. Advertising personalization and Google signals are not
           enabled by our tag. See <a href="https://policies.google.com/privacy">Google’s Privacy Policy</a>.
           Hosting and model providers may retain operational logs.
+        </p>
+        <h2>How you found us</h2>
+        <p>
+          Unless you have rejected analytics, we keep a small first-party cookie
+          (kr_ft, up to 90 days) with how you first arrived: campaign tags,
+          a referral code, the referring site&apos;s domain, the first page, and
+          whether an ad click tag was present (not its value). It contains no
+          identifier and is not sent to Google or other third parties. When you
+          create an account, we store this with your account in our own database
+          to count sign-ups, usage and purchases by marketing channel in
+          aggregate. Rejecting analytics deletes the cookie and stops this.
         </p>
       </main>
       <SiteFooter />
