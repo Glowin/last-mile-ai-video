@@ -3,36 +3,27 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { IDENTITY_CHANGED_EVENT } from "@/lib/api";
+import { analyticsConsentKey } from "@/lib/analytics-context";
+import { revokeBrowserAnalytics } from "@/lib/analytics-consent";
 import { gaPageLocation } from "@/lib/attribution";
 import { captureFirstTouch, clearFirstTouch } from "@/lib/analytics-client";
 
-const preferenceKey = "kakareel-analytics-consent";
+const preferenceKey = analyticsConsentKey;
 type Consent = "granted" | "denied" | null;
 type AnalyticsWindow = Window & {
   dataLayer?: unknown[];
   gtag?: (...args: unknown[]) => void;
   __krAnalyticsReady?: boolean;
+  __krAnalyticsMeasurementId?: string;
 };
-
-// Lets the server send this browser's own purchase to GA (Measurement Protocol)
-// only while analytics consent is granted. Ignored for guests; failures are silent.
-function registerClient(measurementId: string) {
-  const w = window as AnalyticsWindow;
-  w.gtag?.("get", measurementId, "client_id", (clientId: unknown) => {
-    if (typeof clientId !== "string" || !clientId) return;
-    void fetch("/api/analytics/ga-client", {
-      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId }),
-    }).catch(() => {});
-  });
-}
 
 export function Analytics({ measurementId }: { measurementId: string }) {
   const pathname = usePathname();
   const [consent, setConsent] = useState<Consent>(null);
   const [ready, setReady] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const initialized = useRef(false);
   const lastPage = useRef("");
 
@@ -46,8 +37,17 @@ export function Analytics({ measurementId }: { measurementId: string }) {
     if (saved !== "denied") captureFirstTouch();
     setReady(true);
     const open = () => setSettings(true);
+    const changed = (event: StorageEvent) => {
+      if (event.key === preferenceKey && event.newValue === "denied") void choose("denied");
+    };
     window.addEventListener("analytics-settings", open);
-    return () => window.removeEventListener("analytics-settings", open);
+    window.addEventListener("storage", changed);
+    // Retry a previously interrupted withdrawal, including after logout.
+    if (saved === "denied") void choose("denied");
+    return () => {
+      window.removeEventListener("analytics-settings", open);
+      window.removeEventListener("storage", changed);
+    };
   }, []);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function Analytics({ measurementId }: { measurementId: string }) {
       document.head.appendChild(script);
       initialized.current = true;
       w.__krAnalyticsReady = true;
-      registerClient(measurementId);
+      w.__krAnalyticsMeasurementId = measurementId;
     }
     if (lastPage.current !== location) {
       w.gtag!("set", { page_location: location, page_referrer: lastPage.current || (document.referrer ? new URL(document.referrer).origin : "") });
@@ -88,24 +88,23 @@ export function Analytics({ measurementId }: { measurementId: string }) {
     }
   }, [consent, measurementId, pathname]);
 
-  useEffect(() => {
-    if (consent !== "granted") return;
-    const changed = () => registerClient(measurementId);
-    window.addEventListener(IDENTITY_CHANGED_EVENT, changed);
-    return () => window.removeEventListener(IDENTITY_CHANGED_EVENT, changed);
-  }, [consent, measurementId]);
-
-  function choose(value: Exclude<Consent, null>) {
+  async function choose(value: Exclude<Consent, null>) {
     try { localStorage.setItem(preferenceKey, value); } catch { /* Optional storage. */ }
     setConsent(value);
     setSettings(false);
+    setSaveError("");
+    if (value === "granted" && initialized.current) {
+      // A failed withdrawal keeps this document open; allowing again must
+      // restore the in-memory tag too, even when storage is unavailable.
+      (window as unknown as Record<string, unknown>)[`ga-disable-${measurementId}`] = false;
+      (window as AnalyticsWindow).__krAnalyticsReady = true;
+      (window as AnalyticsWindow).gtag?.("consent", "update", { analytics_storage: "granted" });
+    }
     if (value === "denied") {
       clearFirstTouch();
-      // Forget any stored GA client ID for a signed-in account (no-op for guests).
-      void fetch("/api/analytics/ga-client", { method: "DELETE", credentials: "same-origin", keepalive: true }).catch(() => {});
+      (window as AnalyticsWindow).__krAnalyticsReady = false;
     }
     if (value === "denied" && initialized.current) {
-      (window as AnalyticsWindow).__krAnalyticsReady = false;
       // Disable immediately, then unload the tag. Remove only GA cookies.
       (window as unknown as Record<string, unknown>)[`ga-disable-${measurementId}`] = true;
       for (const cookie of document.cookie.split(";")) {
@@ -115,17 +114,27 @@ export function Analytics({ measurementId }: { measurementId: string }) {
           for (const domain of domains) document.cookie = `${name}=; Max-Age=0; path=/;${domain ? ` domain=${domain};` : ""}`;
         }
       }
-      window.location.reload();
+    }
+    if (value === "denied") {
+      setSaving(true);
+      try {
+        await revokeBrowserAnalytics();
+        if (initialized.current) window.location.reload();
+      } catch {
+        setSaveError("Analytics is off in this page, but we could not confirm withdrawal on the server. Please retry Reject analytics.");
+      } finally { setSaving(false); }
     }
   }
 
-  if (!ready || (consent !== null && !settings)) return null;
+  if (!ready || (consent !== null && !settings && !saveError && !saving)) return null;
   return (
     <section aria-label="Analytics preferences" className="analytics-banner">
       <p>Allow analytics cookies to help us understand visits and improve KakaReel? We use Google Analytics. <Link href="/privacy">Privacy details</Link></p>
+      {saveError && <p role="alert">{saveError}</p>}
+      {saving && <p role="status">Saving your preference…</p>}
       <div>
-        <button className="button secondary small" onClick={() => choose("denied")}>Reject analytics</button>
-        <button className="button small" onClick={() => choose("granted")}>Allow analytics</button>
+        <button className="button secondary small" disabled={saving} onClick={() => choose("denied")}>Reject analytics</button>
+        <button className="button small" disabled={saving} onClick={() => choose("granted")}>Allow analytics</button>
       </div>
     </section>
   );

@@ -1,7 +1,10 @@
+import { Hono } from "hono";
+import { getCookie } from "hono/cookie";
+import { purchaseSessionParams } from "../src/lib/analytics-context";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildFirstTouch, parseFirstTouch, serializeFirstTouch, gaPageLocation, shouldReplaceFirstTouch,
-  cleanParam, FIRST_TOUCH_MAX_AGE_SECONDS } from "../src/lib/attribution";
+  cleanParam, parseDecodedFirstTouch, FIRST_TOUCH_MAX_AGE_SECONDS } from "../src/lib/attribution";
 import { generationEventParams } from "../src/lib/analytics-client";
 import { measurementProtocolConfig, mpBody, sendMeasurementProtocol } from "../src/server/analytics/measurement-protocol";
 import { purchaseEvent, dispatchPaidPurchases } from "../src/server/analytics/purchases";
@@ -105,4 +108,23 @@ test("report CLI arguments are validated", () => {
   assert.equal(reportInput.safeParse({ from: "2026-10-28", to: "2026-10-01" }).success, false);
   assert.equal(reportInput.safeParse({ from: "2026-10-01", to: "2026-10-28", tz: "Mars/Base" }).success, false);
   assert.equal(reportInput.safeParse({ from: "2026-10-01", to: "2026-10-28", group: "email" }).success, false);
+});
+
+test("first touch decodes exactly once through the real Hono cookie path", async () => {
+  const app = new Hono();
+  app.get("/", c => c.json(parseDecodedFirstTouch(getCookie(c, "kr_ft"), NOW)));
+  for (const campaign of ["20% off", "a%2fb", "春季 20%", "%ZZ"]) {
+    const touch = buildFirstTouch(`https://example.test/?utm_source=mail&utm_campaign=${encodeURIComponent(campaign)}`, "", NOW)!;
+    const response = await app.request("http://localhost/", { headers: { cookie: `kr_ft=${serializeFirstTouch(touch)}` } });
+    assert.deepEqual(await response.json(), touch);
+    assert.deepEqual(parseFirstTouch(serializeFirstTouch(touch), NOW), touch);
+  }
+});
+
+test("purchase session attribution requires the original session and a valid time window", () => {
+  const context = { clientId: "111.222", sessionId: String(NOW / 1000), capturedAt: new Date(NOW + 60_000) };
+  assert.deepEqual(purchaseSessionParams(context, NOW + 120_000, NOW + 180_000), { session_id: NOW / 1000 });
+  assert.deepEqual(purchaseSessionParams(context, NOW + 120_000, NOW + 24 * 3_600_000), {});
+  assert.deepEqual(purchaseSessionParams(context, NOW + 32 * 60_000, NOW + 33 * 60_000), {});
+  assert.deepEqual(purchaseSessionParams(context, NOW - 1, NOW + 180_000), {});
 });

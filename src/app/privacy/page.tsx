@@ -131,8 +131,13 @@ export default function Privacy() {
           sign-up, video generation (model, mode, length, credits; never the
           prompt), checkout start and completed purchases (order number, amount,
           currency and product). Purchases are reported from our server and
-          linked to the Analytics browser ID only if you allowed analytics in
-          that browser; we delete that link if you withdraw consent. Automatic form, search, outbound link, and video tracking
+          linked to the Analytics browser and session IDs captured at checkout
+          only if you allowed analytics in that browser. An HttpOnly cookie
+          (kr_analytics_consent, up to 90 days) lets you withdraw that browser’s
+          permission even after signing out. Once withdrawal is confirmed, we
+          remove its purchase analytics links; a failed request shows a retry
+          message. A different device’s permission does not apply to your order.
+          Automatic form, search, outbound link, and video tracking
           are disabled. Advertising personalization and Google signals are not
           enabled by our tag. See <a href="https://policies.google.com/privacy">Google’s Privacy Policy</a>.
           Hosting and model providers may retain operational logs.

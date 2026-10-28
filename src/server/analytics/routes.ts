@@ -1,28 +1,31 @@
+import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { z } from "zod";
 import { database } from "../db";
-import { identity } from "../account";
-import { analyticsGaClients } from "./schema";
+import { cookieOptions } from "../account";
+import { analyticsBrowserConsents } from "./schema";
 import { eq } from "drizzle-orm";
-import { GA_CLIENT_ID } from "./measurement-protocol";
+import { ANALYTICS_CONSENT_COOKIE } from "./checkout";
 
-// Stores the signed-in user's GA browser ID only after the browser granted analytics
-// consent, so a later server-side purchase event joins the same GA user. Guests: no-op.
+// This HttpOnly browser capability is independent of account access/refresh
+// tokens. Revocation therefore also works after logout or access-token expiry.
+// Origin validation is enforced by the parent app for both mutations.
 export const analyticsRoutes = new Hono();
-const input = z.object({ clientId: z.string().max(64).regex(GA_CLIENT_ID) }).strict();
-analyticsRoutes.post("/ga-client", async (c) => {
-  const parsed = input.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: "Invalid analytics client." }, 400);
-  if (!process.env.DATABASE_URL) return c.body(null, 204);
-  const who = await identity(c).catch(() => null);
-  if (!who?.user) return c.body(null, 204);
-  await database().insert(analyticsGaClients).values({ userId: who.user.id, gaClientId: parsed.data.clientId })
-    .onConflictDoUpdate({ target: analyticsGaClients.userId, set: { gaClientId: parsed.data.clientId, updatedAt: new Date() } });
-  return c.body(null, 204);
+const options = () => ({ ...cookieOptions("/api"), maxAge: 90 * 86400 });
+analyticsRoutes.post("/consent", async (c) => {
+  if (!process.env.DATABASE_URL) return c.json({ error: "Analytics unavailable." }, 503);
+  const prior = z.uuid().safeParse(getCookie(c, ANALYTICS_CONSENT_COOKIE));
+  const id = prior.success ? prior.data : randomUUID();
+  await database().insert(analyticsBrowserConsents).values({ id }).onConflictDoUpdate({ target: analyticsBrowserConsents.id, set: { createdAt: new Date() } });
+  setCookie(c, ANALYTICS_CONSENT_COOKIE, id, options());
+  return c.json({ ok: true });
 });
-analyticsRoutes.delete("/ga-client", async (c) => {
-  if (!process.env.DATABASE_URL) return c.body(null, 204);
-  const who = await identity(c).catch(() => null);
-  if (who?.user) await database().delete(analyticsGaClients).where(eq(analyticsGaClients.userId, who.user.id));
-  return c.body(null, 204);
+analyticsRoutes.delete("/consent", async (c) => {
+  if (!process.env.DATABASE_URL) return c.json({ error: "Analytics unavailable." }, 503);
+  const prior = z.uuid().safeParse(getCookie(c, ANALYTICS_CONSENT_COOKIE));
+  if (prior.success) await database().delete(analyticsBrowserConsents).where(eq(analyticsBrowserConsents.id, prior.data));
+  // Cascade erases this browser's unsent order IDs, not another browser's consent.
+  deleteCookie(c, ANALYTICS_CONSENT_COOKIE, cookieOptions("/api"));
+  return c.json({ ok: true });
 });

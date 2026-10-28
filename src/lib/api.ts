@@ -1,3 +1,4 @@
+import { collectCheckoutAnalytics } from "./analytics-consent";
 import type { BillingCatalogResponse, BillingProviderId, BillingOrdersResponse, BillingCheckoutResponse, BillingSummaryResponse, BillingPilotResponse } from "./billing";
 import { STARTER_CREDIT_OFFER } from "./credit-offer";
 import { adoptPendingRequest, adoptLegacyPendingRequest, pendingRequestId } from "./pending-request";
@@ -210,9 +211,11 @@ export async function prepareStarterCheckout(owner: string, pilot = false): Prom
       localStorage.setItem(key, requestId);
     }
     assertIdentity(expected);
+    const analytics = await collectCheckoutAnalytics();
+    assertIdentity(expected);
     const result: BillingCheckoutResponse = await api("/billing/checkout", {
       method: "POST", headers,
-      body: JSON.stringify({ productId: STARTER_CREDIT_OFFER.id, provider, requestId }),
+      body: JSON.stringify({ productId: STARTER_CREDIT_OFFER.id, provider, requestId, ...(analytics ? { analytics } : {}) }),
     });
     assertIdentity(expected);
     localStorage.setItem(`${key}:order`, result.order.id);

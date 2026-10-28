@@ -7,7 +7,8 @@ import { eq, sql } from "drizzle-orm";
 import { database, closeDatabase } from "../src/server/db";
 import { users, jobs } from "../src/server/schema";
 import { billingOrders } from "../src/server/billing/schema";
-import { userAttribution, analyticsGaClients, analyticsPurchaseEvents } from "../src/server/analytics/schema";
+import { userAttribution, analyticsBrowserConsents, analyticsOrderContexts, analyticsPurchaseEvents } from "../src/server/analytics/schema";
+import { bindOrderAnalytics, ANALYTICS_CONSENT_COOKIE } from "../src/server/analytics/checkout";
 import { dispatchPaidPurchases } from "../src/server/analytics/purchases";
 import { createApp } from "../src/server/app";
 import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
@@ -81,6 +82,15 @@ async function paidOrder(userId: string, environment: "live" | "test" = "live", 
   return id;
 }
 
+async function attachContext(orderId: string, consentId: string) {
+  await database().transaction(tx => bindOrderAnalytics(tx, orderId, {
+    consentId, clientId: "1111.2222", sessionId: String(Math.floor(Date.now() / 1000) - 60),
+  }));
+  // Fixture orders are already paid; make their synthetic checkout precede payment.
+  await database().update(analyticsOrderContexts).set({ capturedAt: new Date(Date.now() - 1000) })
+    .where(eq(analyticsOrderContexts.orderId, orderId));
+}
+
 test("sign-up stores first touch once; GA client ID follows consent", opts, async () => {
   const b = new Browser(), sub = `qa-attr-${randomUUID()}`;
   b.cookies.set("kr_ft", serializeFirstTouch(buildFirstTouch("https://kakareel.com/pricing?utm_source=QA-News&utm_medium=email&utm_campaign=oct&gclid=SECRET", "")!));
@@ -103,26 +113,38 @@ test("sign-up stores first touch once; GA client ID follows consent", opts, asyn
   const [direct] = await database().select().from(userAttribution).where(eq(userAttribution.userId, third.userId));
   assert.equal(direct.utmSource, null); assert.equal(direct.landingPath, "/");
 
-  assert.equal((await b.request("/analytics/ga-client", "POST", { clientId: "bad value" })).status, 400);
-  assert.equal((await b.request("/analytics/ga-client", "POST", { clientId: "1234567.7654321" })).status, 204);
-  const [ga] = await database().select().from(analyticsGaClients).where(eq(analyticsGaClients.userId, first.userId));
-  assert.equal(ga.gaClientId, "1234567.7654321");
-  assert.equal((await b.request("/analytics/ga-client", "DELETE")).status, 204);
-  assert.equal((await database().select().from(analyticsGaClients).where(eq(analyticsGaClients.userId, first.userId))).length, 0);
-  // Guests are a no-op.
-  assert.equal((await new Browser().request("/analytics/ga-client", "POST", { clientId: "1.2" })).status, 204);
+  // Revocation is a browser capability, independent of account access expiry.
+  assert.equal((await b.request("/analytics/consent", "POST")).status, 200);
+  const consentId = b.cookies.get(ANALYTICS_CONSENT_COOKIE)!;
+  assert.ok(consentId);
+  const trackedOrder = await paidOrder(first.userId);
+  await attachContext(trackedOrder, consentId);
+  b.cookies.set("kr_access", "expired-access-token");
+  assert.equal((await b.request("/analytics/consent", "DELETE")).status, 200);
+  assert.equal((await database().select().from(analyticsBrowserConsents).where(eq(analyticsBrowserConsents.id, consentId))).length, 0);
+  assert.equal((await database().select().from(analyticsOrderContexts).where(eq(analyticsOrderContexts.orderId, trackedOrder))).length, 0);
+  assert.equal(b.cookies.has(ANALYTICS_CONSENT_COOKIE), false);
+  assert.equal((await new Browser().request("/analytics/consent", "DELETE")).status, 200);
 });
 
 test("purchase is sent exactly once per paid live order, only with a consented GA client", opts, async () => {
   const b = new Browser();
   const { userId } = await b.signIn(`qa-buy-${randomUUID()}`);
   const { userId: noConsent } = await new Browser().signIn(`qa-buy-${randomUUID()}`);
-  await database().insert(analyticsGaClients).values({ userId, gaClientId: "1111.2222" });
+  const consentId = randomUUID();
+  await database().insert(analyticsBrowserConsents).values({ id: consentId });
   const order = await paidOrder(userId);
+  await attachContext(order, consentId);
   const testOrder = await paidOrder(userId, "test");
   const pending = await paidOrder(userId, "live", { status: "pending", paidAt: null });
   const reviewed = await paidOrder(userId, "live", { reviewReason: "qa" });
   const silent = await paidOrder(noConsent);
+  const otherBrowser = await paidOrder(userId); // Same account, no checkout consent.
+  const revoked = await paidOrder(userId);
+  const revokedId = randomUUID();
+  await database().insert(analyticsBrowserConsents).values({ id: revokedId });
+  await attachContext(revoked, revokedId);
+  await database().delete(analyticsBrowserConsents).where(eq(analyticsBrowserConsents.id, revokedId));
   const bodies: string[] = [];
   const fetchImpl = (async (_u: URL, init: RequestInit) => { bodies.push(String(init.body)); return new Response(null, { status: 204 }); }) as typeof fetch;
   const runs = await Promise.all([dispatchPaidPurchases({ config, fetchImpl, limit: 1000 }), dispatchPaidPurchases({ config, fetchImpl, limit: 1000 })]);
@@ -133,7 +155,8 @@ test("purchase is sent exactly once per paid live order, only with a consented G
   assert.equal(sent.client_id, "1111.2222");
   assert.equal(sent.events[0].params.transaction_id, order);
   assert.equal(sent.events[0].params.value, 19);
-  for (const other of [testOrder, pending, reviewed, silent]) assert.ok(!bodies.some((x) => x.includes(other)));
+  assert.ok(sent.events[0].params.session_id > 0);
+  for (const other of [testOrder, pending, reviewed, silent, otherBrowser, revoked]) assert.ok(!bodies.some((x) => x.includes(other)));
   const states = Object.fromEntries((await database().select().from(analyticsPurchaseEvents)).map((r) => [r.orderId, r.status]));
   assert.equal(states[order], "sent");
   assert.equal(states[silent], "skipped_no_consent");
@@ -141,6 +164,7 @@ test("purchase is sent exactly once per paid live order, only with a consented G
 
   // A GA outage is retried on the next trigger, and still only one success is recorded.
   const retry = await paidOrder(userId);
+  await attachContext(retry, consentId);
   let fail = true;
   const flaky = (async (_u: URL, init: RequestInit) => { if (String(init.body).includes(retry) && fail) { fail = false; return new Response(null, { status: 500 }); } bodies.push(String(init.body)); return new Response(null, { status: 204 }); }) as typeof fetch;
   await dispatchPaidPurchases({ config, fetchImpl: flaky, limit: 1000 });

@@ -1,7 +1,8 @@
+import { purchaseSessionParams } from "../../lib/analytics-context";
 import { eq, sql } from "drizzle-orm";
 import { database } from "../db";
 import { billingOrders, type OrderRow } from "../billing/schema";
-import { analyticsGaClients, analyticsPurchaseEvents } from "./schema";
+import { analyticsPurchaseEvents } from "./schema";
 import { measurementProtocolConfig, sendMeasurementProtocol, type Fetch, type MpConfig, type MpEvent } from "./measurement-protocol";
 
 // Read-only with respect to billing: this module only reads billing_orders and
@@ -27,7 +28,7 @@ let running: Promise<DispatchResult> | null = null;
 /**
  * Send one GA4 purchase per paid live order, after the payment webhook/reconciliation
  * marked it paid. A claim row per order (unique on order_id) prevents duplicates across
- * requests and replicas. Orders whose buyer has no consented GA client ID are skipped.
+ * requests and replicas. Orders without their own consented checkout context are skipped.
  */
 export function dispatchPaidPurchases(options: { limit?: number; config?: MpConfig | null; fetchImpl?: Fetch } = {}): Promise<DispatchResult> {
   const config = options.config === undefined ? measurementProtocolConfig() : options.config;
@@ -62,14 +63,25 @@ async function run(config: MpConfig, limit: number, fetchImpl?: Fetch): Promise<
       .where(eq(analyticsPurchaseEvents.orderId, orderId));
     try {
       const [order] = await db.select().from(billingOrders).where(eq(billingOrders.id, orderId));
-      const [client] = order ? await db.select().from(analyticsGaClients).where(eq(analyticsGaClients.userId, order.userId)) : [];
-      if (!order || !client) { await mark("skipped_no_consent"); skipped++; continue; }
-      const paidAt = order.paidAt?.getTime();
-      const ok = await sendMeasurementProtocol(config, client.gaClientId, [purchaseEvent(order)], {
-        fetchImpl,
-        // GA accepts back-dated events up to 72 hours; older ones are sent as "now".
-        timestampMicros: paidAt && Date.now() - paidAt < SEVENTY_TWO_HOURS ? paidAt * 1000 : undefined,
+      const ok = await db.transaction(async (tx) => {
+        // Revocation waits for an in-flight send (bounded by the 5s transport
+        // timeout). Once DELETE acknowledges, no later send can use this grant.
+        const [context] = await tx.execute<{ client_id: string; session_id: string; captured_at: Date }>(sql`
+          SELECT a.ga_client_id AS client_id, a.ga_session_id AS session_id, a.captured_at
+          FROM analytics_order_contexts a JOIN analytics_browser_consents c ON c.id = a.consent_id
+          WHERE a.order_id = ${orderId} AND c.created_at > now() - interval '90 days' FOR SHARE OF c`);
+        if (!order || !context) return null;
+        const paidAt = order.paidAt?.getTime();
+        const event = purchaseEvent(order);
+        if (paidAt) Object.assign(event.params, purchaseSessionParams({ clientId: context.client_id,
+          sessionId: context.session_id, capturedAt: new Date(context.captured_at) }, paidAt));
+        return sendMeasurementProtocol(config, context.client_id, [event], {
+          fetchImpl,
+          // Older payments retain purchase totals, without claiming session attribution.
+          timestampMicros: paidAt && Date.now() - paidAt < SEVENTY_TWO_HOURS ? paidAt * 1000 : undefined,
+        });
       });
+      if (ok === null) { await mark("skipped_no_consent"); skipped++; continue; }
       await mark(ok ? "sent" : "failed");
       if (ok) sent++; else failed++;
     } catch {

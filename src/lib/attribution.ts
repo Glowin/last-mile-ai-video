@@ -94,8 +94,14 @@ export function serializeFirstTouch(t: FirstTouch): string {
 /** Strictly re-validate a cookie value. Unknown keys are dropped; invalid input returns null. */
 export function parseFirstTouch(raw: string | null | undefined, now = Date.now()): FirstTouch | null {
   if (!raw || raw.length > 2048) return null;
+  try { return parseDecodedFirstTouch(decodeURIComponent(raw), now); } catch { return null; }
+}
+
+/** Hono getCookie already URI-decodes its value. Never decode campaign text twice. */
+export function parseDecodedFirstTouch(raw: string | null | undefined, now = Date.now()): FirstTouch | null {
+  if (!raw || raw.length > 2048) return null;
   let data: unknown;
-  try { data = JSON.parse(decodeURIComponent(raw)); } catch { return null; }
+  try { data = JSON.parse(raw); } catch { return null; }
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const d = data as Record<string, unknown>;
   if (d.v !== ATTRIBUTION_VERSION) return null;

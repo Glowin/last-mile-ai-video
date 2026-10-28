@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { checkoutAnalytics } from "../analytics/checkout";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { identity, hasAccountCookies, type Account } from "../account";
@@ -6,7 +7,7 @@ import { billingProviderIds } from "../../lib/billing";
 import { BillingError, BillingService, type BillingOptions } from "./service";
 
 const checkoutInput = z.object({ productId: z.string().min(1).max(100),
-  provider: z.enum(billingProviderIds), requestId: z.uuid() }).strict();
+  provider: z.enum(billingProviderIds), requestId: z.uuid(), analytics: z.unknown().optional() }).strict();
 const webhookPaths = new Set(billingProviderIds.map((id) => `/api/billing/webhooks/${id}`));
 // Parent Origin middleware must use this exact method AND path predicate, not a prefix.
 export function isBillingWebhookRequest(method: string, path: string) {
@@ -56,7 +57,8 @@ export function createBillingModule(options?: BillingOptions) {
   routes.post("/checkout", bodyLimit({ maxSize: 4096, onError: (c) => c.json({ error: "Checkout request is too large.", code: "BODY_TOO_LARGE" }, 413) }), async (c) => {
     const input = checkoutInput.safeParse(await c.req.json().catch(() => null));
     if (!input.success) throw new BillingError(400, "INVALID_CHECKOUT", "Choose a product and provider with a valid request ID; no pricing or account fields are accepted.");
-    return c.json(await service.checkout(c.get("billingUser"), input.data));
+    const { analytics, ...purchase } = input.data;
+    return c.json(await service.checkout(c.get("billingUser"), purchase, checkoutAnalytics(c, analytics)));
   });
   const webhookRoutes = new Hono();
   webhookRoutes.onError((error, c) => { const r = handleError(error); return c.json(r.body, r.status); });

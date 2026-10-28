@@ -1,4 +1,4 @@
-import { parseFirstTouch } from "../../lib/attribution";
+import { parseDecodedFirstTouch } from "../../lib/attribution";
 import type { Transaction } from "../account";
 import { userAttribution } from "./schema";
 
@@ -8,7 +8,7 @@ import { userAttribution } from "./schema";
  * so the report can tell pre-release users (no row) from untagged new users.
  */
 export async function recordFirstTouch(tx: Transaction, userId: string, raw: string | undefined, now = Date.now()) {
-  const t = parseFirstTouch(raw, now);
+  const t = parseDecodedFirstTouch(raw, now);
   await tx.insert(userAttribution).values({
     userId,
     utmSource: t?.utm_source ?? null, utmMedium: t?.utm_medium ?? null, utmCampaign: t?.utm_campaign ?? null,

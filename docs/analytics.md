@@ -48,7 +48,7 @@ status: "页面统计已部署；2026-10-28 分支 feat/analytics-attribution �
 
 - 未选择／拒绝并刷新：标签不加载、GA 网络请求为零；允许后才发请求。撤回后核 cookie 与标签均清除，区分当前浏览器选择与全站状态。
 - 首次页面、Next.js 客户端切页、普通链接整页跳转、返回上一页分别核事件数和标题；只变 hash 不应新增页面浏览。2026-10-23 已验的子集见上方记录，未列项不算已验。
-- 带合成 query／hash 的 URL 验字段过滤；后续增加 UTM 或业务事件时，显式选字段，不发送整段 URL、表单或账户对象。本轮未实现 UTM 归因、业务转化和跨标签撤回广播。
+- 带合成 query／hash 的 URL 验字段过滤；后续增加 UTM 或业务事件时，显式选字段，不发送整段 URL、表单或账户对象。2026-10-23 当时未实现 UTM 归因、业务转化和跨标签撤回广播；2026-10-28 实现见下文。
 - 用真实浏览器请求与 GA Realtime 两层核验：collect 204 只说明端点接收，仍须在目标资源看到匹配的页面、事件与数量。首页／数据流的“未收到数据”提示不能覆盖实时报告已收到的证据。
 - 原生截图已在会话中目视检查，但本轮未将截图归档为长期文件；长期证据目前为本文、代码提交及库外结构化验收记录，不宣称已有截图原件。
 
@@ -75,7 +75,7 @@ status: "页面统计已部署；2026-10-28 分支 feat/analytics-attribution �
 - 浏览器在首次落地时写一方 cookie `kr_ft`（90 天，SameSite=Lax，非 HttpOnly，不含任何标识）。字段：`utm_source/medium/campaign/content/term`、`ref`（或 `via`）、来源站点主机名、落地路径（无 query／hash），以及是否带广告点击参数（只记类型如 `gclid`，不存值）。值一律小写、截断 100 字符，含 `@` 的值丢弃。规则为“首次非直接来源”：先直接访问、后带 UTM 访问时升级一次；已有来源后不再覆盖。
 - 同意模型：选择“拒绝统计”的浏览器不写，拒绝时立即删除；未选择或同意时写。理由：内容只有活动标签，不识别个人，不发送第三方，仅在本站创建账户时用于聚合渠道统计；隐私页“How you found us”已披露。若需要更严格（仅同意后写），在 `analytics.tsx` 把 `saved !== "denied"` 改为 `=== "granted"` 即可，代价是未选择的注册用户记为 `(direct)`。
 - 首次 Google 注册（`users` 新建）时，服务端在同一事务（savepoint，失败不阻塞注册）里重新校验 cookie 并写入 `user_attribution`；cookie 缺失或损坏仍写一行 `(direct)`。老用户无行，报表记 `(unattributed)`。
-- 订单收入通过 `billing_orders.user_id → user_attribution` 关联，**未改计费表结构或 `src/server/billing/` 代码**。
+- 订单收入通过 `billing_orders.user_id → user_attribution` 关联。计费表结构不变；结账路由和服务增加可选统计上下文，新建订单事务内以 savepoint 保存，失败不阻塞支付，重试不覆盖。
 
 ## GA4 事件（均需统计同意）
 
@@ -88,10 +88,13 @@ status: "页面统计已部署；2026-10-28 分支 feat/analytics-attribution �
 | `purchase` | **服务端** Measurement Protocol，订单被 Pancake webhook／对账标记 `paid` 后 | `transaction_id`=订单 ID、`value`=税前小计、`tax`、`currency`、`items` |
 
 `purchase` 细节：
-- 同意统计后，前端用 `gtag('get', …, 'client_id')` 取 GA 浏览器 ID，登录用户 POST `/api/analytics/ga-client` 存入 `analytics_ga_clients`；拒绝时 DELETE 删除。无此 ID 的订单记 `skipped_no_consent`，不发送。
+- 同意统计的浏览器在结账前用 `gtag('get', …)` 读取 `client_id` 和 `session_id`，POST `/api/analytics/consent` 建立独立的 HttpOnly 浏览器凭据（`kr_analytics_consent`，`/api`，SameSite=Lax，90 天），随结账请求提交白名单 ID。标签被阻止、超时或无同意时仍可付款，但不保存统计上下文。
+- 新订单仅保存该次浏览器的上下文到 `analytics_order_contexts`；同一账号其他设备、未带 GA 上下文的订单以及旧订单重试均不能借用／覆盖。`analytics_ga_clients` 旧账号级关联由新增迁移 `0012-analytics-checkout-consent.sql` 清空，发送端不再读取。
+- 撤回先停止本页 GA，再 DELETE `/api/analytics/consent`，服务端删除此浏览器凭据并级联删除订单关联。独立于账户登录令牌，即使登录过期或已退出也可撤回。收到成功回执才刷新；失败显示重试入口，拒绝状态重载后也重试。跨标签广播拒绝，Web Locks 串行化凭据创建／撤回，延迟 GA 回调须再次核同意。发送中持有凭据行共享锁（网络超时 5 秒），撤回成功后不会再用该凭据发送新事件。
+- 没有订单级上下文或对应授权已撤回／过期的订单记 `skipped_no_consent`，不发送。
 - 去重：`analytics_purchase_events` 以订单 ID 为主键，带租约认领；只发 `live`、`status=paid`、无 `review_reason` 的订单；GA 非 2xx 记 `failed`，下次触发重试，最多 5 次。迁移时已有的已付／已退款订单（含 10-27 验收单）回填为 `skipped_backfill`，永不补发。
 - 触发：webhook 响应后、用户轮询 `GET /api/billing/orders/:id` 响应后（`app.ts` 中间件，异步不阻塞响应），以及 CLI `dispatch-purchases`。仅靠对账 worker 转为 paid 且用户未回到订单页的订单，要等下一次 webhook／轮询或手动 CLI。
-- 发送 `non_personalized_ads: true`，`ad_user_data`／`ad_personalization` 为 DENIED；72 小时内的订单带 `timestamp_micros`=付款时间。
+- 发送 `non_personalized_ads: true`，`ad_user_data`／`ad_personalization` 为 DENIED；72 小时内的订单带 `timestamp_micros`=付款时间。购买附带原始 `session_id` 的前提是发送在该会话开始 24 小时内，付款在结账后 30 分钟内（现有 GA 默认不活跃超时）；超窗仍记购买，但不声称原会话归因。若 GA 会话超时配置改变，需同步这里的判据。[Google 会话归因要求](https://developers.google.com/analytics/devguides/collection/protocol/ga4/use-cases#session_attribution)。
 - 退款不会自动发 `refund` 事件（未做，避免改计费流程）。
 
 ## 环境变量（只在 Dokploy 设置，不入库）
@@ -115,5 +118,10 @@ pnpm analytics:report dispatch-purchases
 2. 用新 Google 账号注册：出现 `sign_up`；库中 `user_attribution` 一行 `utm_source=test`。
 3. 生成视频：出现一次 `generate_video`，参数无 prompt。
 4. 点击购买：`begin_checkout`。设置 `GA_API_SECRET`、`GA_MP_DEBUG=true` 后完成一次 live 支付，回到订单页：DebugView 出现 `purchase`，`analytics_purchase_events.status=sent`；刷新订单页不重复。
-5. 拒绝统计：`kr_ft` cookie 被删除，GA 请求为零，`analytics_ga_clients` 无该用户。
+5. 拒绝统计：`kr_ft`／GA cookie 被删除，GA 请求为零；DELETE 成功后 `kr_analytics_consent` cookie 与此浏览器的订单上下文清除。等待登录令牌过期后重复，仍应成功；同一账号另一设备拒绝后付款不得产生 purchase。
 6. 标准报告中 `purchase` 需 24–48 小时；可在 Reports → Monetization 和 Traffic acquisition 按 session source/medium 查看。
+
+## PR #4 审查修复（2026-10-28）
+
+- Cookie 解码分层：浏览器读取原始 cookie 仅 URI 解码一次；服务端 Hono `getCookie` 已解码，使用 `parseDecodedFirstTouch` 直接解析 JSON，含 `%`、编码片段与中文的活动名原样保留。
+- 数据库验收覆盖浏览器凭据撤回、跨设备订单隔离、订单重试保持初始上下文和实际 purchase session_id；客户端用例覆盖延迟 gtag 回调、撤回失败／重试；本次执行结果以 PR 说明为准。
