@@ -2,7 +2,7 @@
 title: "Unattended MVP generation: policy, rollout and rollback"
 date: 2026-10-28
 source: "Owner's explicit 2026-10-28 decision; current implementation; official Prompt Sift contract"
-status: "Reviewed and locally validated; production deployment pending"
+status: "cd3d93c deployed and MVP policy enabled; live text allow verified; fresh video acceptance pending"
 ---
 
 # Scope and truthfulness
@@ -75,5 +75,15 @@ Live paid generation requires a fresh cost/credit authorization. Do not reuse th
 - Existing credit/cost/manual-moderation PostgreSQL suites: **52/52** passed, no skips. Full offline suite: **252 passed, 0 failed, 122 database-dependent cases skipped**; relevant database suites were run separately above. Counts overlap and are not a unique aggregate total.
 - Full TypeScript check and production build passed. Real rendered Help page was visually inspected. Synthetic Compose configuration confirms manual/off defaults and scoped worker credentials; public payment/charging gates remain unchanged. The host-only status CLI was exercised against the disposable database.
 - No production video request or charge was created during these checks. Live scanner and production deployment results remain to be recorded. An attempted pre-deployment SDK probe in the older web container stopped at module loading, before any request; the deployed worker is the intended acceptance entry point.
+
+Production acceptance on 2026-10-28:
+
+- Code `cd3d93c635d65c756553cf4ba1355a27de5eda06` was pushed to main and its existing Dokploy deployment completed. Web is healthy; generation and billing workers are running.
+- All 11 migrations are recorded. `0011` checksum is `c0128cb69b3bc3c54c93290e247d449b664e380702ac2d9fddcb9714b6c4a775`; running worker orchestration source hash matches the reviewed checkout. Policy rows were zero after migration: no historical jobs were backfilled.
+- A harmless real text scan through the **deployed adapter and existing merchant authentication** returned HTTP 200, `allow`, `allowed`, `scored`. This verifies real authentication/endpoint/schema integration; it is not evidence of moderation accuracy or image/output coverage.
+- Exactly five policy settings were appended to existing Dokploy configuration; readback confirmed all original nonempty lines unchanged. After a separate configuration deployment, the running worker reports `mvp-text-only-v1`, automation enabled, 300-second deadline, 3 total attempts and 10-second scan timeout.
+- Historical snapshot remained two failed previews, four successful previews, one successfully consumed paid job, and two unknown previews. The owner's wallet remained 127 available / 0 reserved; the generation budget remained disabled, revision 6. No public sales or charging release was enabled.
+- Public catalog readback still reports live environment with `checkoutEnabled=false`; live Help and Studio disclose text sharing and unreviewed media. The local visual server was stopped and both task-owned PostgreSQL containers/anonymous volumes were removed. The clean local main checkout was fast-forwarded to the deployed code.
+- Fresh live preview acceptance is separately authorized for at most CNY 4.56, without purchased-credit debit or automatic retry. At this checkpoint no new video was submitted; quota access and bounded budget setup remain pending. Paid auto-capture evidence above is isolated PostgreSQL evidence, not a second real paid transaction.
 
 No task/account identifiers, signed file URLs, prompts, keys, production host identifiers or private operational paths belong in this document.

@@ -1,8 +1,8 @@
 ---
 title: "本地开发与 Hostinger Dokploy 部署"
-date: 2026-10-26
+date: 2026-10-28
 source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档；用户 2026-10-26 最新决定"
-status: "35691b0 已部署；Web healthy、两个worker running，十项迁移已核；新生成及正式收费关闭"
+status: "cd3d93c 已部署并启用新任务 MVP 策略；11项迁移及真实文字allow已核；生成预算与公众收费保持关闭，单次新验收另行授权"
 ---
 
 # 运行结构
