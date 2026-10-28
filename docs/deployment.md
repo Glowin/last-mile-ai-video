@@ -1,11 +1,13 @@
 ---
 title: "本地开发与 Hostinger Dokploy 部署"
 date: 2026-10-28
-source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档；用户 2026-10-26 最新决定"
-status: "cd3d93c 已部署并启用新任务 MVP 策略；11项迁移及真实文字allow已核；生成预算与公众收费保持关闭，单次新验收另行授权"
+source: "项目实现与 tests/ 环境检查；主会话 2026-10-23 验收；Dokploy Docker Compose 文档；用户 2026-10-26 最新决定；2026-10-28 PR #4 合并部署验收"
+status: "ea7ee21 已部署，13项迁移校验通过；统计购买上报未启用；本轮业务配置未变，生成与开售状态见各专项正本"
 ---
 
 # 运行结构
+
+2026-10-28 PR #4 已合并部署为 `ea7ee21`，生产 13 项迁移、运行容器与授权撤回行为已核；验收及购买统计配置缺口见[统计部署记录](analytics.md#pr4-production-20261028)。本轮未更改生成／计费配置。
 
 2026-10-28 无人值守策略的迁移、凭证边界、生产验收与回滚入口见[无人值守生成](unattended-generation.md)。以下带日期的部署结果是历史记录；新策略不追溯修改旧任务，也不自动开放生成预算或公开收费。
 
@@ -24,6 +26,7 @@ Next.js＋TypeScript，Hono API 位于 Next.js Node 路由，PostgreSQL＋Drizzl
 | DATABASE_URL | 项目专用 PostgreSQL 连接串 |
 | VIBETOKEN_API_KEY | 项目专用上游密钥；缺少时仅浏览工作台 |
 | GA_MEASUREMENT_ID | GA4 运行时测量标识；留空禁用，配置与验收见 [访问统计](analytics.md) |
+| GA_API_SECRET / GA_MP_DEBUG | 仅 web 服务的购买上报密钥／调试开关；密钥为空时不发送，设置与验收见 [访问统计](analytics.md) |
 | GOOGLE_CLIENT_ID | Google Web 客户端公开标识，运行时提供；缺少时禁用 Google 登录 |
 | SESSION_SECRET | 至少 32 字符的随机签名密钥 |
 | DEMO_ACCESS_CODE | 至少 12 字符的预览口令 |

@@ -1,15 +1,15 @@
 ---
 title: "GA4 访问统计"
-date: 2026-10-23
-source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；本地与正式站浏览器验收"
-status: "页面统计已部署；2026-10-28 分支 feat/analytics-attribution 增加渠道归因与转化事件，待合并"
+date: 2026-10-28
+source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；2026-10-28 PR #4 审查、合并与生产验收"
+status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线；GA_API_SECRET 未配置，服务端购买上报未启用，GA 端转化验收待完成"
 ---
 
 # 采集范围
 
 独立 GA4 资源与 Web 数据流已创建。实际标识仅保存在项目库外配置与 Dokploy 运行环境，代码通过 `GA_MEASUREMENT_ID` 读取；不需要构建参数。变量为空时不显示选择条、不加载统计。
 
-首次访问展示可拒绝的统计选择条；同意后才加载 Google tag。页脚 Cookie settings 可重新选择，撤回会禁用标签、清除本域 GA cookie 并刷新。选择保存在浏览器 localStorage；无法保存时仅在当前页面有效。
+首次访问展示可拒绝的统计选择条；同意后才加载 Google tag。页脚 Cookie settings 可重新选择，撤回会立即禁用标签并清除本域 GA cookie，待服务端确认撤回后刷新；请求失败显示重试。选择保存在浏览器 localStorage；无法保存时仅在当前页面有效。
 
 手动发送 `page_view`，页面 URL 不含 hash，query 仅保留 `utm_*` 白名单（见下文 2026-10-28）；首次来源仅保留 origin。GA 自带会话、首次访问和参与度事件可能随标签发送。不传账户标识、邮箱、提示词、图片或支付卡信息。
 
@@ -53,6 +53,8 @@ status: "页面统计已部署；2026-10-28 分支 feat/analytics-attribution �
 - 原生截图已在会话中目视检查，但本轮未将截图归档为长期文件；长期证据目前为本文、代码提交及库外结构化验收记录，不宣称已有截图原件。
 
 # 修订
+
+- 2026-10-28：按江昪“沉淀”，将 PR #4 的合并部署、四项修复及验收边界回写正本；明确购买上报未启用及后续配置／验收步骤。
 
 - 2026-10-23：按江昪“沉淀”，补齐 GA 向导恢复、增强型衡量二次确认、Dokploy 编辑状态与配置输出边界；明确未验项目、未接的 UTM／业务事件和截图归档缺口。产品事实保留本文件与 launch.md 的单向指针，不新增 Core 竞争正本。
 
@@ -124,4 +126,21 @@ pnpm analytics:report dispatch-purchases
 ## PR #4 审查修复（2026-10-28）
 
 - Cookie 解码分层：浏览器读取原始 cookie 仅 URI 解码一次；服务端 Hono `getCookie` 已解码，使用 `parseDecodedFirstTouch` 直接解析 JSON，含 `%`、编码片段与中文的活动名原样保留。
-- 数据库验收覆盖浏览器凭据撤回、跨设备订单隔离、订单重试保持初始上下文和实际 purchase session_id；客户端用例覆盖延迟 gtag 回调、撤回失败／重试；本次执行结果以 PR 说明为准。
+- 数据库验收覆盖浏览器凭据撤回、跨设备订单隔离、订单重试保持初始上下文和实际 purchase session_id；客户端用例覆盖延迟 gtag 回调、撤回失败／重试；最终执行结果见下方部署记录及 PR 说明。
+
+<a id="pr4-production-20261028"></a>
+## PR #4 合并部署与接续（2026-10-28）
+
+江昪授权修复审查问题、更新 PR，随后要求合并部署。[PR #4](https://github.com/Glowin/last-mile-ai-video/pull/4) 已合并为 `ea7ee21a0f9d2edfa61586f5cdf297d960995959`，生产已验。以下为本轮实测记录，不代表后续配置永远不变。
+
+- 合并最新 main 后，隔离 PostgreSQL／应用容器共跑 457 项：356 通过、0 失败、101 按前置条件跳过；类型检查与 Linux 生产构建通过。测试容器无外网、无宿主端口或生产凭证挂载，结束已清理；不称为全部用例通过。
+- 发布前新建数据库备份并验证归档清单可读，未做恢复演练。发布后 web／db 健康，生成与账单 worker 运行；13 项迁移及其校验和匹配。两项统计迁移与 `0011-generation-automation.sql` 共存，按完整文件名排序；不重编号或改写已应用迁移。
+- 除生产源码 HEAD 外，核对运行 worker 的统计／结账关键文件哈希、web 镜像迁移文件及数据库校验和；业务配置指纹、已有用户／订单／任务数量与部署前一致。记录只保留断言，不公开真实配置或备份位置。
+- `/api/health`、`/create`、`/privacy` 返回 200，隐私页含新的撤回说明。无账户登录的合成浏览器凭据 POST 200，Cookie 为 Secure／HttpOnly／SameSite=Lax；跨站 DELETE 403，同源 DELETE 200，Cookie 和数据库凭据均已删除。该探针未创建订单、生成视频或向 GA 发送事件。
+- 生产 `GA_MEASUREMENT_ID` 已配置，`GA_API_SECRET` 未配置，`GA_MP_DEBUG` 未开启。因此购买发送路径保持关闭；代码部署与合成接口验收不等于 GA DebugView／真实支付验收。
+
+**接续：** 由接手 Agent 先重核 KakaReel Web 数据流与 Dokploy 当前变量；启用购买统计时，按上方环境变量入口设置项目专用 `GA_API_SECRET`，实际值只保存库外／平台。随后按 DebugView 清单分别验注册、生成、结账、购买及撤回；真实生成／付款须有对应预算授权，不沿用本轮代码部署授权。验收后关闭调试并回填本节。退款事件与对账 worker 单独完成付款时的触发缺口仍见上方实现边界，本轮未补齐。
+
+**四项修复的复用判据：** 撤回能力不能随短期账户令牌一起过期；发送许可必须来自该订单下单浏览器，而非同账号其他设备；保存 client ID 不足以证明原会话归因，须显式验证 session ID 与时间窗；Cookie 解码入口要区分浏览器原始值与框架已解码值。对应回归分别在 `tests/analytics-consent.test.ts`、`tests/analytics.integration.test.ts`、`tests/analytics.test.ts`，后续改动沿这些边界验证。
+
+**本轮走不通的路：** 本机 Python urllib 两次读取分块响应出现 `IncompleteRead`；改用 curl 获取完整页面并完成授权／撤回验收。只记录客户端链路差异，根因未查明，不据此推断服务故障或 Python 客户端普遍不可用。服务器源码目录已更新也不能单独证明运行镜像更新，须结合上述容器与行为证据。
