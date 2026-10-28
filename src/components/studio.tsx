@@ -38,6 +38,7 @@ import {
   DamagedPendingRequest, resetDamagedPendingRequest,
 } from "@/lib/pending-request";
 import { GoogleSignIn } from "./google-sign-in";
+import { trackGeneration } from "@/lib/analytics-client";
 import { AgeDeclarationFields } from "./age-declaration-fields";
 import { emptyAgeDeclaration } from "@/lib/age-declaration";
 import type { BillingSummaryResponse } from "@/lib/billing";
@@ -493,6 +494,7 @@ export function Studio() {
       });
       if (epoch !== identityEpoch.current) return;
       update(d.job);
+      trackGeneration(d.job);
       setSubmitting(false);
       setSelected(d.job.id);
       setTab("preview");

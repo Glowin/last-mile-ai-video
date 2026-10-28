@@ -3,13 +3,30 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { IDENTITY_CHANGED_EVENT } from "@/lib/api";
+import { gaPageLocation } from "@/lib/attribution";
+import { captureFirstTouch, clearFirstTouch } from "@/lib/analytics-client";
 
 const preferenceKey = "kakareel-analytics-consent";
 type Consent = "granted" | "denied" | null;
 type AnalyticsWindow = Window & {
   dataLayer?: unknown[];
   gtag?: (...args: unknown[]) => void;
+  __krAnalyticsReady?: boolean;
 };
+
+// Lets the server send this browser's own purchase to GA (Measurement Protocol)
+// only while analytics consent is granted. Ignored for guests; failures are silent.
+function registerClient(measurementId: string) {
+  const w = window as AnalyticsWindow;
+  w.gtag?.("get", measurementId, "client_id", (clientId: unknown) => {
+    if (typeof clientId !== "string" || !clientId) return;
+    void fetch("/api/analytics/ga-client", {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId }),
+    }).catch(() => {});
+  });
+}
 
 export function Analytics({ measurementId }: { measurementId: string }) {
   const pathname = usePathname();
@@ -20,10 +37,13 @@ export function Analytics({ measurementId }: { measurementId: string }) {
   const lastPage = useRef("");
 
   useEffect(() => {
+    let saved: string | null = null;
     try {
-      const saved = localStorage.getItem(preferenceKey);
+      saved = localStorage.getItem(preferenceKey);
       if (saved === "granted" || saved === "denied") setConsent(saved);
     } catch { /* Storage blocked: keep the choice in memory. */ }
+    // First-party campaign note for our own sign-up attribution (see docs/analytics.md).
+    if (saved !== "denied") captureFirstTouch();
     setReady(true);
     const open = () => setSettings(true);
     window.addEventListener("analytics-settings", open);
@@ -34,8 +54,10 @@ export function Analytics({ measurementId }: { measurementId: string }) {
     if (consent !== "granted" || !pathname) return;
     const w = window as AnalyticsWindow;
     // No automatic URL, form, search, or history collection. Enhanced
-    // measurement must also be disabled on the GA web stream.
-    const location = window.location.origin + pathname;
+    // measurement must also be disabled on the GA web stream. Only utm_*
+    // campaign parameters are kept in page_location; all other query keys
+    // (tokens, codes, prompts) and the fragment are dropped.
+    const location = gaPageLocation(window.location.origin + pathname + window.location.search);
     if (!initialized.current) {
       w.dataLayer = w.dataLayer || [];
       w.gtag = function () { w.dataLayer!.push(arguments); };
@@ -56,6 +78,8 @@ export function Analytics({ measurementId }: { measurementId: string }) {
       script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
       document.head.appendChild(script);
       initialized.current = true;
+      w.__krAnalyticsReady = true;
+      registerClient(measurementId);
     }
     if (lastPage.current !== location) {
       w.gtag!("set", { page_location: location, page_referrer: lastPage.current || (document.referrer ? new URL(document.referrer).origin : "") });
@@ -64,11 +88,24 @@ export function Analytics({ measurementId }: { measurementId: string }) {
     }
   }, [consent, measurementId, pathname]);
 
+  useEffect(() => {
+    if (consent !== "granted") return;
+    const changed = () => registerClient(measurementId);
+    window.addEventListener(IDENTITY_CHANGED_EVENT, changed);
+    return () => window.removeEventListener(IDENTITY_CHANGED_EVENT, changed);
+  }, [consent, measurementId]);
+
   function choose(value: Exclude<Consent, null>) {
     try { localStorage.setItem(preferenceKey, value); } catch { /* Optional storage. */ }
     setConsent(value);
     setSettings(false);
+    if (value === "denied") {
+      clearFirstTouch();
+      // Forget any stored GA client ID for a signed-in account (no-op for guests).
+      void fetch("/api/analytics/ga-client", { method: "DELETE", credentials: "same-origin", keepalive: true }).catch(() => {});
+    }
     if (value === "denied" && initialized.current) {
+      (window as AnalyticsWindow).__krAnalyticsReady = false;
       // Disable immediately, then unload the tag. Remove only GA cookies.
       (window as unknown as Record<string, unknown>)[`ga-disable-${measurementId}`] = true;
       for (const cookie of document.cookie.split(";")) {
