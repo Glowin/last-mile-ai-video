@@ -24,6 +24,8 @@ try {
       if(command==='run'&&!stopped) await new Promise(r=>setTimeout(r,5_000));
     } while(command==='run'&&!stopped);
   } else throw new Error('Commands: once | run | review | poll JOB_UUID | release JOB_UUID OPERATOR REASON');
-} catch(error) {
-  console.error(error instanceof Error?error.message:'Credit worker failed');process.exitCode=1;
+} catch {
+  // Driver/SDK messages can embed SQL parameters, prompts or credentials.
+  // Inspect the bounded safety/cost audit through host-only tools instead.
+  console.error('credit_worker_failed');process.exitCode=1;
 } finally {await closeDatabase();}

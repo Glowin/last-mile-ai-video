@@ -22,6 +22,8 @@ import { generationPilotAllows, assertPilotCreation, recordPilotCreation } from 
 import { processJob, pollJob, liveVideoProvider, type VideoProvider } from "./jobs/runner";
 import { families } from "../lib/models";
 import { publicModeration } from "./moderation/service";
+import { createAutomation, publicSafety } from "./moderation/automation";
+import { reviewPolicy, MVP_POLICY } from "./moderation/policy";
 import { GenerationCostError, lockGenerationCostBudget, reserveGenerationCost } from "./costs";
 
 export function createApp(options: { charging?: ChargingPolicy; videoProvider?: VideoProvider } = {}) {
@@ -113,6 +115,7 @@ app.use("/jobs", requireIdentity);
 app.use("/jobs/*", requireIdentity);
 
 async function publicJob(j: typeof jobs.$inferSelect) {
+  const safety = await publicSafety(j.id);
   return {
     id: j.id,
     family: j.family,
@@ -125,7 +128,8 @@ async function publicJob(j: typeof jobs.$inferSelect) {
     createdAt: j.createdAt.toISOString(),
     billingMode: j.billingMode, credits: j.credits, creditState: j.creditState,
     reviewRequired: j.reviewRequired,
-    moderation: await publicModeration(j.id),
+    moderation: safety ? null : await publicModeration(j.id),
+    safety,
     deliveryVerifiedAt: j.deliveryVerifiedAt?.toISOString() ?? null,
     downloadNotice: j.status === "success" ? "Download your video promptly. Provider links may expire; permanent storage is not included." : null,
   };
@@ -181,7 +185,7 @@ app.post("/jobs", async c => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(7421911)`);
     const [prior]=await tx.select().from(jobs).where(eq(jobs.id,x.requestId)).limit(1);
     if(prior) return prior.owner===who.owner && prior.fingerprint===fingerprint && prior.billingMode===billingMode
-      ? {job:prior,fresh:false} : {error:"This request ID is already in use.",status:409 as const};
+      ? {job:prior,fresh:false,automated:false} : {error:"This request ID is already in use.",status:409 as const};
     const pilot = paid && !charging.enabled ? await assertPilotCreation(tx, who.user!.id, x, charging) : null;
     if(!paid) {
       const count=await tx.execute(sql`SELECT count(*)::int AS n FROM video_jobs WHERE billing_mode='preview' AND created_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
@@ -193,19 +197,23 @@ app.post("/jobs", async c => {
         resolution:x.resolution,audio:x.audio,ratio:x.ratio},
     });
     const [row]=await tx.insert(jobs).values({id:x.requestId,owner:who.owner,family:x.family,mode:x.mode,prompt:x.prompt,duration:x.duration,resolution:x.resolution,fingerprint,payload,status:"submitting",billingMode,creditEnvironment:paid?charging.environment:null}).returning();
+    const policy = reviewPolicy();
+    await createAutomation(tx, row, policy);
     if(paid) {
       const credits=await useQuote(tx,who.user!.id,x,quoteId,charging);
       await reserveCredits(tx,{jobId:row.id,userId:who.user!.id,environment:charging.environment,credits});
       const [charged]=await tx.update(jobs).set({credits,creditState:"reserved"}).where(eq(jobs.id,row.id)).returning();
       if(pilot) await recordPilotCreation(tx, charged, pilot);
-      return {job:charged,fresh:true};
+      return {job:charged,fresh:true,automated:policy.version === MVP_POLICY};
     }
-    return {job:row,fresh:true};
+    return {job:row,fresh:true,automated:policy.version === MVP_POLICY};
   });
   if("error" in reserved) return c.json({error:reserved.error},reserved.status);
-  const row=reserved.fresh?await processJob(reserved.job.id,videoProvider):reserved.job;
+  // MVP accepts the durable queue entry immediately. Only the worker scans and
+  // submits it; response latency never includes moderation/model network calls.
+  const row=reserved.fresh && !reserved.automated?await processJob(reserved.job.id,videoProvider):reserved.job;
   const result=row??reserved.job;
-  if(result.reviewRequired && !result.submissionStartedAt && result.status==='unknown') return c.json({
+  if(result.reviewRequired && !result.submissionStartedAt && result.status==='unknown' && result.creditState==='released') return c.json({
     job:await publicJob(result), code:"GENERATION_NOT_STARTED",
     error:"This generation could not start. Reserved credits have been released. Please try a new request later or contact support.",
   },503);

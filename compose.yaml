@@ -10,8 +10,19 @@ x-app-environment: &app-environment
   GENERATION_LIVE_PILOT_USER_ID: ${GENERATION_LIVE_PILOT_USER_ID:-}
   GENERATION_LIVE_PILOT_REQUEST_ID: ${GENERATION_LIVE_PILOT_REQUEST_ID:-}
   GENERATION_LIVE_PILOT_EXPIRES_AT: ${GENERATION_LIVE_PILOT_EXPIRES_AT:-}
+  GENERATION_REVIEW_POLICY: ${GENERATION_REVIEW_POLICY:-manual-v1}
+  GENERATION_MVP_AUTOMATION_ENABLED: ${GENERATION_MVP_AUTOMATION_ENABLED:-false}
+  GENERATION_REVIEW_MAX_WAIT_SECONDS: ${GENERATION_REVIEW_MAX_WAIT_SECONDS:-300}
+  GENERATION_REVIEW_MAX_ATTEMPTS: ${GENERATION_REVIEW_MAX_ATTEMPTS:-3}
+  GENERATION_REVIEW_TIMEOUT_MS: ${GENERATION_REVIEW_TIMEOUT_MS:-10000}
 
-# Server-only payment configuration; never merge into the generation worker.
+# Only these existing merchant credentials are needed for server-side Prompt Sift.
+# No store/product, checkout flags, or payment reconciliation access is inherited.
+x-prompt-sift-environment: &prompt-sift-environment
+  PANCAKE_LIVE_MERCHANT_ID: ${PANCAKE_LIVE_MERCHANT_ID:-}
+  PANCAKE_LIVE_PRIVATE_KEY: ${PANCAKE_LIVE_PRIVATE_KEY:-}
+
+# Server-only payment configuration; never merge this block into the generation worker.
 x-billing-environment: &billing-environment
   BILLING_TEST_ENABLED: "false"
   BILLING_LIVE_ENABLED: ${BILLING_LIVE_ENABLED:-false}
@@ -43,7 +54,8 @@ services:
       context: .
       target: worker
     restart: unless-stopped
-    environment: *app-environment
+    environment:
+      <<: [*app-environment, *prompt-sift-environment]
     depends_on:
       db:
         condition: service_healthy

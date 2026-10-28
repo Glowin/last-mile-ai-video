@@ -7,7 +7,7 @@ export default function Terms() {
       <main id="main" className="shell prose">
         <span className="eyebrow">TERMS OF SERVICE</span>
         <h1>Terms & <em>credit offer.</em></h1>
-        <p className="lead">Updated October 26, 2026. The paid offer below is published in preparation for launch. Packs are not yet on sale.</p>
+        <p className="lead">Updated October 28, 2026. The paid offer below is published in preparation for launch. Packs are not yet on sale.</p>
         <p>
           KakaReel is an independent, open-source AI video studio under
           development. Preview access is by invitation. It is not an official
@@ -82,24 +82,44 @@ export default function Terms() {
           preview does not grant rights to third-party material or promise that
           every output can be used commercially.
         </p>
-        <h2>Content review</h2>
+        <h2>Safety checks and content review</h2>
         <p>
           Our <a href="/acceptable-use">acceptable-use policy</a> applies to
-          prompts, uploads and outputs. A request or video may wait for human
-          review. Credits remain reserved before delivery; a rejected or expired
-          pre-delivery review releases the reservation after an operator records
-          the decision. A review deadline does not release credits automatically. Review decisions and
-          unresolved model outcomes are separate. Contact
+          all prompts, uploads and outputs. When the unattended MVP is enabled
+          for a new task, its prompt is sent to Waffo Pancake for an automated
+          text check before video generation. A pending confirmation has a fixed
+          time limit and may expire without an allowed result; it is not waiting for an
+          operator to approve the task. A blocked, expired, errored or canceled
+          safety check does not start video generation and releases any reserved
+          credits. You may need to try again later with a new compliant task.
+        </p>
+        <p>
+          Reference images and generated videos are not individually human-reviewed
+          or automatically moderated in this MVP. Passing the Waffo Pancake text
+          check does not approve an image or video. Technical delivery verification
+          checks whether a result can be delivered, not whether its content is safe,
+          lawful or suitable. You remain responsible for complying with all content
+          restrictions and checking your results before use.
+        </p>
+        <p>
+          Existing tasks keep their recorded process. A legacy task awaiting human
+          input or output review still requires that review; we do not relabel it
+          as having passed the new text check. For those legacy tasks, an operator-recorded
+          rejection or expiry of a pre-delivery review releases the reservation;
+          a review deadline alone does not. Unresolved model outcomes are separate
+          and may keep credits reserved. Reports and incident investigations may
+          still involve manual review or withheld results. Contact
           {" "}<a href="/support">support</a> to report content or appeal a decision.
         </p>
         <h2>Violations and access restrictions</h2>
         <p>
           If a request violates our acceptable-use policy, we may warn you,
           hold or reject the request, or withhold its result. Serious or repeated
-          violations, fraud, attempts to bypass review, or a legal requirement
-          may lead us to decline further generation requests during human review. These decisions are
-          made through human review; contact support to ask for the reason or
-          request reconsideration. Our <a href="/acceptable-use#enforcement">enforcement policy</a> explains
+          violations, fraud, attempts to bypass safety checks or review, or a legal
+          requirement may lead us to decline further generation requests. Automated
+          text checks can block a new MVP request; reports and incident decisions
+          are handled manually. Contact support to ask for the reason or request
+          reconsideration. Our <a href="/acceptable-use#enforcement">enforcement policy</a> explains
           the available actions and <a href="/acceptable-use#response-times">response targets</a>.
         </p>
         <p>
@@ -121,8 +141,9 @@ export default function Terms() {
           resemble other outputs, or involve third-party rights. Review a video
           and the rights needed for your intended use before publishing it;
           generation alone does not guarantee that commercial use is permitted.
-          Human content review does not certify accuracy, ownership, or fitness
-          for your purpose. Outputs are not medical, legal, financial, or other
+          Neither an automated text check, technical delivery verification nor
+          any manual incident review certifies content safety, accuracy, ownership,
+          or fitness for your purpose. Outputs are not medical, legal, financial, or other
           professional advice; consult a qualified professional before relying
           on them for those decisions.
         </p>

@@ -43,7 +43,7 @@ import { emptyAgeDeclaration } from "@/lib/age-declaration";
 import { generationPilotInputAllowed, type BillingSummaryResponse } from "@/lib/billing";
 import { normalizeImageUpload, ImageUploadError, type NormalizedImageUpload } from "@/lib/image-upload";
 import { videoCredits } from "@/lib/video-credit-rates";
-import { focusStudioProgress, StudioRequests, studioJobState, studioJobDescription, studioHistoryHint, studioHistoryView, type StudioHistoryState, type StudioJob } from "@/lib/studio-generation";
+import { focusStudioProgress, StudioRequests, studioJobState, studioJobDescription, studioJobSafetyDisclosure, studioHistoryHint, studioHistoryView, type StudioHistoryState, type StudioJob } from "@/lib/studio-generation";
 const creditStateLabel = {
   none: "No purchased credits used",
   reserved: "Credits reserved · outcome pending",
@@ -361,7 +361,7 @@ export function Studio() {
     const interval = setInterval(async () => {
       if (running || document.hidden || failures >= 3) return;
       const pending = jobsRef.current
-        .filter((j) => ["pending", "submitting", "unknown"].includes(j.status))
+        .filter((j) => studioJobState(j).unresolved)
         .slice(0, 3);
       if (!pending.length) return;
       running = true;
@@ -900,7 +900,7 @@ export function Studio() {
                 <p className="micro centered">
                   {billingMode === "preview" ? "Uses the limited preview allowance. No purchased credits spent." : "Submitting reserves the quoted credits. Check pending tasks before starting another generation."}
                 </p>
-                  <p className="micro">Prompts, uploaded images and finished videos may be reviewed by KakaReel's founder before generation or delivery. <a href="/acceptable-use">Content rules</a> · <a href="/support">Get help</a></p>
+                <p className="micro">When the unattended MVP is enabled for a new task, your prompt is sent to Waffo Pancake for an automated text check. Reference images and generated videos are not individually human-reviewed or automatically moderated in this MVP. Passing the text check does not approve the images or video; delivery checks are technical, not content safety checks. Legacy tasks keep their recorded review process. <a href="/acceptable-use">Content rules</a> · <a href="/privacy">Data handling</a> · <a href="/support">Get help</a></p>
               </form>
               {checked && !user && (
                 <div id="google-sign-in">
@@ -1006,7 +1006,7 @@ export function Studio() {
                           setTab("preview");
                         }}
                       >
-                        <span className={`status-dot status-${j.status}`} />
+                        <span className={`status-dot status-${studioJobState(j).phase === "failed" ? "failed" : studioJobState(j).phase === "success" ? "success" : "pending"}`} />
                         <div>
                           <b>{j.prompt}</b>
                           <span>
@@ -1070,7 +1070,7 @@ export function Studio() {
                       </div>
                     )}
                   </div>
-                  {mediaFailure === mediaKey && focused.resultUrl && <div className="media-feedback" role="alert">
+                  {studioJobState(focused).phase === "success" && mediaFailure === mediaKey && focused.resultUrl && <div className="media-feedback" role="alert">
                     <p>This video could not be loaded. The generation is still complete. Reload the video or open its original link; neither action creates a new generation. The link may have expired.</p>
                     <div>
                       <button type="button" className="button secondary small" onClick={() => { setMediaFailure(undefined); setMediaRetry((value) => value + 1); }}>Reload video</button>
@@ -1102,7 +1102,8 @@ export function Studio() {
                       {focused.billingMode === "paid" ? `Paid generation · ${focused.credits ?? "—"} credits` : "Preview generation"}
                       {focused.creditState && <> · {creditStateLabel[focused.creditState]}</>}
                     </p>}
-                    {focused.reviewRequired && <p className="micro" role="status">Review may take time. <a href="/support">Contact support or appeal a decision</a>.</p>}
+                    {focused.safety && <p className="micro">{studioJobSafetyDisclosure(focused)} <a href="/acceptable-use">Content rules</a> · <a href="/support">Report content or get help</a>.</p>}
+                    {!focused.safety && focused.reviewRequired && <p className="micro" role="status">Legacy review may take time. <a href="/support">Contact support or appeal a decision</a>.</p>}
                     <p className="micro">Task ID: <code>{focused.id}</code></p>
                     <small>
                       Save completed videos promptly. Provider links may expire; permanent storage is not included.
