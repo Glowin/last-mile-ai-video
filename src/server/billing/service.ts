@@ -9,6 +9,7 @@ import { STARTER_CREDIT_OFFER } from "../../lib/credit-offer";
 import { safePancakeDiagnosticCode } from "./pancake";
 import { billingOptionsFromEnvironment, productionBillingRelease, type BillingReleaseApproval } from "./config";
 import type { Account } from "../account";
+import { bindOrderAnalytics, type OrderAnalytics } from "../analytics/checkout";
 import { billingProviderIds, type BillingCatalogResponse, type BillingCheckoutRequest,
   type BillingCheckoutResponse, type BillingEnvironment, type BillingOrder, type BillingProviderId, type BillingRefundResponse, type BillingPilotResponse } from "../../lib/billing";
 import { defaultCatalog, priced, type CreditPack } from "./catalog";
@@ -184,7 +185,7 @@ export class BillingService {
     if (!row) throw new BillingError(404, "ORDER_NOT_FOUND", "Order not found.");
     return { order: publicOrder(row) };
   }
-  async checkout(user: Account, input: BillingCheckoutRequest): Promise<BillingCheckoutResponse> {
+  async checkout(user: Account, input: BillingCheckoutRequest, analytics: OrderAnalytics | null = null): Promise<BillingCheckoutResponse> {
     // All availability checks happen before database access or reserving an order.
     const adapter = this.provider(input.provider);
     const pilotCheckout = !this.salesAllowed() && this.pilotAllowed(user.id, input);
@@ -233,6 +234,9 @@ export class BillingService {
         amountMinor: pack.amountMinor!, subtotalMinor: pack.amountMinor!, currency: pack.currency!, credits: pack.credits!,
         leaseToken, leaseUntil: new Date(Date.now() + 60_000),
       }).returning();
+      // Analytics is optional; a failed snapshot must not roll back a purchase.
+      await tx.transaction((sp) => bindOrderAnalytics(sp, created.id, analytics))
+        .catch(() => console.warn("ANALYTICS_CHECKOUT_SKIPPED"));
       return created;
     });
     try {

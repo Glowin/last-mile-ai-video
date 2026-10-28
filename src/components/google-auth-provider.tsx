@@ -6,6 +6,7 @@ import { api, IDENTITY_CHANGED_EVENT, IDENTITY_CHANGED_KEY, SESSION_ENDED, type 
 import { loadGoogleIdentity } from "@/lib/google-identity";
 import { GoogleSignInController } from "@/lib/google-signin-controller";
 import { GoogleSignIn } from "./google-sign-in";
+import { trackEvent } from "@/lib/analytics-client";
 
 const Context = createContext<GoogleSignInController | null>(null);
 const CLOSED_KEY = "kr_google_signin_closed";
@@ -23,7 +24,11 @@ export function GoogleAuthProvider({ children }: { children: React.ReactNode }) 
     session: () => api("/session"),
     config: () => api("/config"),
     challenge: () => api("/auth/challenge", { method: "POST" }),
-    authenticate: (credential, ageDeclaration) => api("/auth/google", { method: "POST", body: JSON.stringify({ credential, ageDeclaration }) }),
+    authenticate: async (credential, ageDeclaration) => {
+      const result = await api("/auth/google", { method: "POST", body: JSON.stringify({ credential, ageDeclaration }) });
+      if (result?.newUser === true) trackEvent("sign_up", { method: "google" }, "sign_up");
+      return result;
+    },
     sdk: loadGoogleIdentity,
     dismissed: () => { try { return sessionStorage.getItem(CLOSED_KEY) === "1"; } catch { return false; } },
     rememberDismissal: (closed) => { try { sessionStorage.setItem(CLOSED_KEY, closed ? "1" : "0"); } catch { /* Optional storage. */ } },

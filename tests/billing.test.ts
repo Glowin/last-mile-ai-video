@@ -6,7 +6,8 @@ import { readFile, readdir } from "node:fs/promises";
 import postgres from "postgres";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import { analyticsBrowserConsents, analyticsOrderContexts } from "../src/server/analytics/schema";
 import { app as realApp } from "../src/server/app";
 import { database, closeDatabase } from "../src/server/db";
 import { users, authSessions } from "../src/server/schema";
@@ -128,7 +129,7 @@ function request(app: TestApp, who: Actor | undefined, path: string, method = "G
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
 }
 const input = (requestId = randomUUID()) => ({ productId: "test-pack", provider: "pancake", requestId });
-async function checkout(app: TestApp, who: Actor, body = input()) {
+async function checkout(app: TestApp, who: Actor, body: ReturnType<typeof input> & { analytics?: { clientId: string; sessionId: string } } = input()) {
   const response = await request(app, who, "/billing/checkout", "POST", body);
   assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
   return (await response.json()).order as { id: string; amountMinor: number; currency: string; credits: number; status: string };
@@ -212,6 +213,30 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     assert.equal((await realApp.request("http://localhost/api/billing/webhooks/pancake", { method: "DELETE" })).status, 403);
     assert.equal((await realApp.request("http://localhost/api/billing/checkout", { method: "POST", headers: { origin: "https://attacker.invalid" }, body: "{}" })).status, 403);
   });
+  await t.test("checkout snapshots its browser context once; denied devices and replays cannot borrow consent", async () => {
+    const { app } = enabled(), who = await actor();
+    const consentId = randomUUID();
+    await database().insert(analyticsBrowserConsents).values({ id: consentId });
+    const consenting = { ...who, cookie: `${who.cookie}; kr_analytics_consent=${consentId}` };
+    const body = { ...input(), analytics: { clientId: "111.222", sessionId: String(Math.floor(Date.now() / 1000)) } };
+    const order = await checkout(app, consenting, body);
+    const [context] = await database().select().from(analyticsOrderContexts).where(eq(analyticsOrderContexts.orderId, order.id));
+    assert.equal(context.gaClientId, "111.222");
+    assert.equal(context.gaSessionId, body.analytics.sessionId);
+    assert.equal(context.consentId, consentId);
+    // Same user, another browser: no consent cookie, even if it supplies GA fields.
+    const other = await checkout(app, who, { ...body, requestId: randomUUID() });
+    assert.equal((await database().select().from(analyticsOrderContexts).where(eq(analyticsOrderContexts.orderId, other.id))).length, 0);
+    // A retry cannot replace the initial snapshot.
+    await checkout(app, consenting, { ...body, analytics: { ...body.analytics, clientId: "333.444" } });
+    const [kept] = await database().select().from(analyticsOrderContexts).where(eq(analyticsOrderContexts.orderId, order.id));
+    assert.equal(kept.gaClientId, "111.222");
+    // Browser cookie alone is insufficient when current consent/GA context is absent.
+    const denied = await checkout(app, consenting, input());
+    assert.equal((await database().select().from(analyticsOrderContexts).where(eq(analyticsOrderContexts.orderId, denied.id))).length, 0);
+    await database().delete(analyticsBrowserConsents).where(eq(analyticsBrowserConsents.id, consentId));
+    assert.equal((await database().select().from(analyticsOrderContexts).where(eq(analyticsOrderContexts.orderId, order.id))).length, 0);
+  });
   await t.test("default catalog and every provider are disabled; no fake URL, order or credit", async () => {
     const app = harness(), who = await actor();
     const r = await request(app, undefined, "/billing/catalog");
@@ -228,7 +253,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
     }
     assert.deepEqual((await (await request(app, who, "/billing/orders")).json()).orders, []);
     const summary = await (await request(app, who, "/billing")).json();
-    assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
+    assert.deepEqual(summary, { balanceCredits: 0, testBalanceCredits: 0, checkoutEnabled: false, generationChargingEnabled: false, generationPilot: null, previewAccess: false, availableCredits: 0, reservedCredits: 0, testAvailableCredits: 0, testReservedCredits: 0, blocked: false, testBlocked: false });
   });
   await t.test("private live pilot authenticates its offer, rejects spoofing, and callback funding remains possible after expiry", async () => {
     const who = await actor(), stranger = await actor(), pilot = pilotFixture(who);

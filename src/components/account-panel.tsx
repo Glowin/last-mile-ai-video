@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, prepareStarterCheckout, starterCheckoutEnvironment, starterCheckoutProvider, billingMoney, IDENTITY_CHANGED_KEY, SESSION_ENDED, IDENTITY_CHANGED_EVENT } from "@/lib/api";
 import { GoogleSignIn } from "./google-sign-in";
+import { trackBeginCheckout } from "@/lib/analytics-client";
 import type { BillingCatalogResponse, BillingSummaryResponse, BillingOrder, BillingOrdersResponse, BillingRefundStatus, BillingPilotResponse } from "@/lib/billing";
 import styles from "./pricing.module.css";
 
@@ -187,6 +188,7 @@ export function AccountPanel() {
     setBillingError("");
     try {
       if (action === "checkout") {
+        trackBeginCheckout();
         const result = await prepareStarterCheckout(owner, !!pilot?.catalog);
         if (version !== epoch.current || displayedMarker.current !== identityMarker()) return;
         window.location.assign(result.checkoutUrl);
