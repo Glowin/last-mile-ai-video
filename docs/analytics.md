@@ -2,7 +2,7 @@
 title: "GA4 访问统计"
 date: 2026-10-28
 source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；2026-10-28 PR #4 审查、合并与生产验收"
-status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线；GA_API_SECRET 未配置，服务端购买上报未启用，GA 端转化验收待完成"
+status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线；GA_API_SECRET 已在生产 web 生效，Search Console 已关联；GA 端真实转化验收待完成"
 ---
 
 # 采集范围
@@ -137,10 +137,21 @@ pnpm analytics:report dispatch-purchases
 - 发布前新建数据库备份并验证归档清单可读，未做恢复演练。发布后 web／db 健康，生成与账单 worker 运行；13 项迁移及其校验和匹配。两项统计迁移与 `0011-generation-automation.sql` 共存，按完整文件名排序；不重编号或改写已应用迁移。
 - 除生产源码 HEAD 外，核对运行 worker 的统计／结账关键文件哈希、web 镜像迁移文件及数据库校验和；业务配置指纹、已有用户／订单／任务数量与部署前一致。记录只保留断言，不公开真实配置或备份位置。
 - `/api/health`、`/create`、`/privacy` 返回 200，隐私页含新的撤回说明。无账户登录的合成浏览器凭据 POST 200，Cookie 为 Secure／HttpOnly／SameSite=Lax；跨站 DELETE 403，同源 DELETE 200，Cookie 和数据库凭据均已删除。该探针未创建订单、生成视频或向 GA 发送事件。
-- 生产 `GA_MEASUREMENT_ID` 已配置，`GA_API_SECRET` 未配置，`GA_MP_DEBUG` 未开启。因此购买发送路径保持关闭；代码部署与合成接口验收不等于 GA DebugView／真实支付验收。
+- 此次 PR 合并部署时，生产 `GA_MEASUREMENT_ID` 已配置，`GA_API_SECRET` 未配置，购买发送路径关闭；该历史状态已被下方23:21配置验收更新。代码部署与合成接口验收不等于 GA DebugView／真实支付验收。
 
-**接续：** 由接手 Agent 先重核 KakaReel Web 数据流与 Dokploy 当前变量；启用购买统计时，按上方环境变量入口设置项目专用 `GA_API_SECRET`，实际值只保存库外／平台。随后按 DebugView 清单分别验注册、生成、结账、购买及撤回；真实生成／付款须有对应预算授权，不沿用本轮代码部署授权。验收后关闭调试并回填本节。退款事件与对账 worker 单独完成付款时的触发缺口仍见上方实现边界，本轮未补齐。
+**接续：** 当前配置及剩余真实事件验收见下方最新记录。退款事件与对账 worker 单独完成付款时的触发缺口仍见上方实现边界，本轮未补齐。
 
 **四项修复的复用判据：** 撤回能力不能随短期账户令牌一起过期；发送许可必须来自该订单下单浏览器，而非同账号其他设备；保存 client ID 不足以证明原会话归因，须显式验证 session ID 与时间窗；Cookie 解码入口要区分浏览器原始值与框架已解码值。对应回归分别在 `tests/analytics-consent.test.ts`、`tests/analytics.integration.test.ts`、`tests/analytics.test.ts`，后续改动沿这些边界验证。
 
 **本轮走不通的路：** 本机 Python urllib 两次读取分块响应出现 `IncompleteRead`；改用 curl 获取完整页面并完成授权／撤回验收。只记录客户端链路差异，根因未查明，不据此推断服务故障或 Python 客户端普遍不可用。服务器源码目录已更新也不能单独证明运行镜像更新，须结合上述容器与行为证据。
+
+
+<a id="ga-production-config-20261028"></a>
+## GA 管理与生产密钥配置（2026-10-28 23:21，北京时间）
+
+用户授权继续完成配置后，已接受 GA 数据收集声明，创建本站专用 Measurement Protocol 密钥，保存到 Dokploy 的 `GA_API_SECRET`。保存后刷新平台回读匹配，其他变量保持不变；平台重新部署记录为 done。生产 web 实际环境与密钥一致且 healthy，两个 worker 均没有该密钥、继续运行；服务器源码仍为 `ec78499`，服务器经公网 HTTPS 健康检查返回 `status=ok`。本机一次公网连接超时，不能由此推断生产服务失败。实际值与部署标识仅保存在库外和平台。
+
+- GA Admin API 回读：关键事件为 purchase、sign_up、begin_checkout；5个事件维度为 model、generation_mode、resolution、billing_mode、method；指标 duration_seconds 为秒、credits 为普通数值；事件和用户保留期均14个月。generate_video 未标记为关键事件。
+- Search Console 域资源与本站 Web 流关联已在界面显示 `LINK CREATED`，关联列表含正确的本站域名及流。本次未扩大服务账号的 Search Console 权限。
+- `GA_MP_DEBUG` 保持关闭。Tag Assistant 连接未成功，DebugView 尚无匹配事件；新测试账号登录遇到Google人机验证，用户尝试后报告登录失败，尚未确认注册成功。注册、生成、结账、购买四项真实事件均未宣布通过，未伪造事件或复用历史订单。
+- **下一步：** 完成指定新账号登录与真实事件验收；用户已单独批准指定账号的单笔付款与单次生成预算，完成后关闭试点；具体账号、预算上限和授权范围仅在私有接续记录登记。登录成功后按现有受限试点设置进行，不能公开开售或增加测试次数。付款前短时开启 `GA_MP_DEBUG=true`，结束清空并验运行态。GA 收到事件与业务表状态均需匹配；配置生效不等于购买转化已经验收。
