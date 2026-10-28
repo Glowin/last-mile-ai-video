@@ -18,6 +18,7 @@ import { generationSchema, providerPayload } from "./input";
 import { CreditError, lockWallet, reserveCredits } from "./credits/wallet";
 import { createQuote, generationFingerprint, useQuote } from "./credits/quotes";
 import { productionChargingPolicy, type ChargingPolicy } from "./credits/config";
+import { generationPilotAllows, assertPilotCreation, recordPilotCreation } from "./credits/pilot";
 import { processJob, pollJob, liveVideoProvider, type VideoProvider } from "./jobs/runner";
 import { families } from "../lib/models";
 import { publicModeration } from "./moderation/service";
@@ -160,13 +161,14 @@ app.post("/jobs", async c => {
   if(!["preview","paid"].includes(billingMode)) return c.json({error:"Invalid billing mode."},400);
   const who=c.get("identity"), paid=billingMode==="paid";
   if(paid && !who.user) return c.json({error:"Sign in with Google to use credits."},401);
-  if(paid && !charging.enabled) return c.json({error:"Paid generation is not open yet.",code:"GENERATION_CHARGING_DISABLED"},503);
   if(paid && (typeof quoteId!=="string" || !uuidPattern.test(quoteId))) return c.json({error:"Request a fresh quote before generating."},400);
   if(!paid && !who.canGenerate) return c.json({error:"Redeem a preview code before generating videos."},403);
   if(videoProvider.kind!=="fake" && (paid ? !process.env.VIBETOKEN_API_KEY || !process.env.DATABASE_URL : !configured())) return c.json({error:"Generation is not configured yet."},503);
   const parsed=generationSchema.safeParse(input);
   if(!parsed.success) return c.json({error:parsed.error.issues[0]?.message??"Check the generation settings."},400);
   const x=parsed.data,payload=providerPayload(x);
+  if(paid && !charging.enabled && !generationPilotAllows(who.user!.id,x,charging))
+    return c.json({error:"Paid generation is not available for this request.",code:"GENERATION_CHARGING_DISABLED"},503);
   // Preserve preview fingerprints from before the wallet migration.
   const fingerprint=paid?generationFingerprint(x):createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   const rawLimit=Number(process.env.GENERATION_DAILY_LIMIT??10);
@@ -180,6 +182,7 @@ app.post("/jobs", async c => {
     const [prior]=await tx.select().from(jobs).where(eq(jobs.id,x.requestId)).limit(1);
     if(prior) return prior.owner===who.owner && prior.fingerprint===fingerprint && prior.billingMode===billingMode
       ? {job:prior,fresh:false} : {error:"This request ID is already in use.",status:409 as const};
+    const pilot = paid && !charging.enabled ? await assertPilotCreation(tx, who.user!.id, x, charging) : null;
     if(!paid) {
       const count=await tx.execute(sql`SELECT count(*)::int AS n FROM video_jobs WHERE billing_mode='preview' AND created_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
       if(Number(count[0]?.n)>=limit) return {error:"Today's preview generation limit has been reached. Please come back tomorrow.",status:429 as const};
@@ -194,6 +197,7 @@ app.post("/jobs", async c => {
       const credits=await useQuote(tx,who.user!.id,x,quoteId,charging);
       await reserveCredits(tx,{jobId:row.id,userId:who.user!.id,environment:charging.environment,credits});
       const [charged]=await tx.update(jobs).set({credits,creditState:"reserved"}).where(eq(jobs.id,row.id)).returning();
+      if(pilot) await recordPilotCreation(tx, charged, pilot);
       return {job:charged,fresh:true};
     }
     return {job:row,fresh:true};

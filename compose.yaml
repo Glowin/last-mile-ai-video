@@ -7,6 +7,9 @@ x-app-environment: &app-environment
   DEMO_ACCESS_CODE: ${DEMO_ACCESS_CODE:-}
   APP_URL: ${APP_URL:?Set the public origin}
   GENERATION_DAILY_LIMIT: ${GENERATION_DAILY_LIMIT:-10}
+  GENERATION_LIVE_PILOT_USER_ID: ${GENERATION_LIVE_PILOT_USER_ID:-}
+  GENERATION_LIVE_PILOT_REQUEST_ID: ${GENERATION_LIVE_PILOT_REQUEST_ID:-}
+  GENERATION_LIVE_PILOT_EXPIRES_AT: ${GENERATION_LIVE_PILOT_EXPIRES_AT:-}
 
 # Server-only payment configuration; never merge into the generation worker.
 x-billing-environment: &billing-environment

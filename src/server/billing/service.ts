@@ -4,6 +4,7 @@ import { z } from "zod";
 import { database } from "../db";
 import { lockWallet, grantPurchase, applyFullRefund, freezeRefund, unfreezeRefund, walletSummary, blockWalletForReview, resolveWalletReview } from "../credits/wallet";
 import { GENERATION_CHARGING_ENABLED } from "../credits/config";
+import { generationPilotOffer } from "../credits/pilot";
 import { STARTER_CREDIT_OFFER } from "../../lib/credit-offer";
 import { safePancakeDiagnosticCode } from "./pancake";
 import { billingOptionsFromEnvironment, productionBillingRelease, type BillingReleaseApproval } from "./config";
@@ -161,9 +162,11 @@ export class BillingService {
   async summary(userId: string, previewAccess: boolean) {
     await this.assertIsolation();
     const wallet = await walletSummary(userId);
+    const generationPilot = this.generationChargingEnabled ? null : await generationPilotOffer(userId);
     return { ...wallet, balanceCredits: wallet.availableCredits + wallet.reservedCredits,
       testBalanceCredits: wallet.testAvailableCredits + wallet.testReservedCredits,
-      checkoutEnabled: this.catalog().checkoutEnabled, generationChargingEnabled: this.generationChargingEnabled, previewAccess };
+      checkoutEnabled: this.catalog().checkoutEnabled, generationChargingEnabled: this.generationChargingEnabled || generationPilot?.available === true,
+      generationPilot, previewAccess };
   }
 
   async list(userId: string) {

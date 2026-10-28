@@ -40,7 +40,8 @@ import {
 import { GoogleSignIn } from "./google-sign-in";
 import { AgeDeclarationFields } from "./age-declaration-fields";
 import { emptyAgeDeclaration } from "@/lib/age-declaration";
-import type { BillingSummaryResponse } from "@/lib/billing";
+import { generationPilotInputAllowed, type BillingSummaryResponse } from "@/lib/billing";
+import { normalizeImageUpload, ImageUploadError, type NormalizedImageUpload } from "@/lib/image-upload";
 import { videoCredits } from "@/lib/video-credit-rates";
 import { focusStudioProgress, StudioRequests, studioJobState, studioJobDescription, studioHistoryHint, studioHistoryView, type StudioHistoryState, type StudioJob } from "@/lib/studio-generation";
 const creditStateLabel = {
@@ -54,7 +55,29 @@ const quoteReason: Record<string, string> = {
   WALLET_BLOCKED: "Credit spending is blocked for this account. Review your orders.",
   INSUFFICIENT_CREDITS: "You do not have enough available credits for this generation.",
   UNVERIFIED_VIDEO_PRICE: "Paid pricing has not been verified for these settings.",
+  GENERATION_PILOT_JOB_LIMIT: "Your single paid trial has already been used. Check the original task in My videos.",
 };
+/** Only the latest selection may update the UI, including its error/busy state. */
+export class StudioImageUpload {
+  private version = 0;
+  get revision() { return this.version; }
+  pending = false;
+  constructor(private normalize = normalizeImageUpload) {}
+  cancel() { this.version++; this.pending = false; }
+  async prepare(file: Blob, done: (image: NormalizedImageUpload) => void, failed: (message: string) => void, busy: (value: boolean) => void) {
+    const version = ++this.version;
+    this.pending = true;
+    busy(true);
+    try {
+      const image = await this.normalize(file);
+      if (version === this.version) done(image);
+    } catch (error) {
+      if (version === this.version) failed(error instanceof ImageUploadError ? error.message : "This image could not be prepared. Choose another JPEG or PNG.");
+    } finally {
+      if (version === this.version) { this.pending = false; busy(false); }
+    }
+  }
+}
 export function Studio() {
   const params = useSearchParams();
   const initial = getFamily(params.get("model") ?? "") ?? families[0];
@@ -76,6 +99,13 @@ export function Studio() {
   const [audio, setAudio] = useState(false),
     [image, setImage] = useState<string>(),
     [imageName, setImageName] = useState("");
+  const imageUpload = useRef(new StudioImageUpload());
+  const [preparingImage, setPreparingImage] = useState(false);
+  const [imageDetails, setImageDetails] = useState<NormalizedImageUpload | null>(null);
+  useEffect(() => {
+    const upload = imageUpload.current;
+    return () => upload.cancel();
+  }, []);
   const [authenticated, setAuthenticated] = useState(false),
     [ready, setReady] = useState(false),
     [checked, setChecked] = useState(false),
@@ -134,8 +164,9 @@ export function Studio() {
   const estimatedCredits = videoCredits(generationPayload);
   const currentQuote = quote?.payloadKey === payloadKey ? quote : null;
   const paidEnabled = !!user && billing?.generationChargingEnabled === true && billing.blocked === false;
+  const pilotInputAllowed = !billing?.generationPilot || generationPilotInputAllowed(billing.generationPilot, generationPayload, now);
   const insufficientCredits = billing !== null && (currentQuote?.credits ?? estimatedCredits ?? 0) > billing.availableCredits;
-  const paidReady = ageConfirmed && !!user && estimatedCredits !== null && paidGenerationAllowed(billing, currentQuote, now);
+  const paidReady = ageConfirmed && !!user && pilotInputAllowed && !preparingImage && estimatedCredits !== null && paidGenerationAllowed(billing, currentQuote, now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -160,6 +191,7 @@ export function Studio() {
     setJobs(next);
   }
   function clearIdentity() {
+    clearImage();
     identityEpoch.current++;
     sessionOwner.current = null;
     setAuthenticated(false);
@@ -356,6 +388,7 @@ export function Studio() {
     };
   }, [authenticated, pollError, user?.id]);
   function changeModel(slug: FamilySlug) {
+    if (slug === "minimax") setAudio(false);
     const model = getFamily(slug)!;
     setFamily(slug);
     setDuration(model.defaultDuration);
@@ -370,23 +403,24 @@ export function Studio() {
     setRatio(next === "image" ? "adaptive" : "16:9");
     if (next === "image" && resolution === "480p") setResolution("720p");
   }
+  function clearImage() {
+    imageUpload.current.cancel();
+    setPreparingImage(false);
+    setImage(undefined);
+    setImageName("");
+    setImageDetails(null);
+    setQuote(null);
+  }
   async function upload(file?: File) {
-    if (!file) return;
+    if (!file || busy || generationFlight.current) return;
+    clearImage();
     setError("");
-    if (
-      !["image/png", "image/jpeg"].includes(file.type) ||
-      file.size > 3 * 1024 * 1024
-    ) {
-      setError("Choose a JPEG or PNG image up to 3 MB.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImage(String(reader.result));
+    await imageUpload.current.prepare(file, (normalized) => {
+      // Preview, quote fingerprint and provider payload share these exact bytes.
+      setImage(normalized.dataUrl);
       setImageName(file.name);
-    };
-    reader.onerror = () => setError("This image could not be read.");
-    reader.readAsDataURL(file);
+      setImageDetails(normalized);
+    }, setError, setPreparingImage);
   }
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -421,7 +455,7 @@ export function Studio() {
   }
   async function requestQuote() {
     const owner = sessionOwner.current;
-    if (!owner || !user || quoteFlight.current || busy || !prompt.trim() || (mode === "image" && !image)) return;
+    if (!owner || !user || quoteFlight.current || busy || imageUpload.current.pending || !pilotInputAllowed || !prompt.trim() || (mode === "image" && !image)) return;
     const existing = submittedRequests.current.job(payloadKey, "paid", jobsRef.current);
     if (existing && studioJobState(existing).unresolved) return;
     quoteFlight.current = true;
@@ -430,18 +464,19 @@ export function Studio() {
     setError("");
     const epoch = identityEpoch.current;
     const requestedPayload = payloadKey;
+    const imageRevision = imageUpload.current.revision;
     try {
       // A terminal task found in server history acknowledges the original
       // request even if its submission response was lost.
       if (existing) clearPendingRequest(owner, existing.id);
       const savedId = existing ? undefined : submittedRequests.current.id(payloadKey, "paid");
-      const requestId = savedId ?? await generationRequestId(owner, generationPayload, "paid");
-      if (epoch !== identityEpoch.current || requestedPayload !== currentPayloadKey.current) return;
+      const requestId = billing?.generationPilot?.requestId ?? savedId ?? await generationRequestId(owner, generationPayload, "paid");
+      if (epoch !== identityEpoch.current || requestedPayload !== currentPayloadKey.current || imageRevision !== imageUpload.current.revision) return;
       const result: GenerationQuote = await api("/jobs/quote", {
         method: "POST", headers: { "X-KakaReel-Owner": owner },
         body: JSON.stringify({ ...generationPayload, requestId }),
       });
-      if (epoch !== identityEpoch.current || requestedPayload !== currentPayloadKey.current) return;
+      if (epoch !== identityEpoch.current || requestedPayload !== currentPayloadKey.current || imageRevision !== imageUpload.current.revision) return;
       setNow(Date.now());
       setQuote({ ...result, payloadKey: requestedPayload, requestId });
       await refreshBilling();
@@ -457,7 +492,7 @@ export function Studio() {
   async function generate(e: React.FormEvent) {
     e.preventDefault();
     const owner = sessionOwner.current;
-    if (busy || generationFlight.current || !owner) return;
+    if (busy || imageUpload.current.pending || generationFlight.current || !owner) return;
     const existing = submittedRequests.current.job(payloadKey, billingMode, jobsRef.current);
     if (existing && studioJobState(existing).unresolved) return;
     if (billingMode === "paid" && (!paidReady || !usableGenerationQuote(currentQuote))) {
@@ -478,7 +513,7 @@ export function Studio() {
       // must reuse its ID, including after editing away from these inputs.
       if (existing) clearPendingRequest(owner, existing.id);
       const savedId = existing ? undefined : submittedRequests.current.id(payloadKey, billingMode);
-      const requestId = savedId ?? (billingMode === "paid" ? currentQuote!.requestId
+      const requestId = (billingMode === "paid" && billing?.generationPilot ? currentQuote!.requestId : savedId) ?? (billingMode === "paid" ? currentQuote!.requestId
         : await generationRequestId(owner, generationPayload, "preview"));
       if (epoch !== identityEpoch.current) return;
       // History may already contain the saved request after a refresh/reload.
@@ -660,6 +695,10 @@ export function Studio() {
                 </select>
                 <p className="micro">{billingMode === "preview" ? "Preview uses the invitation allowance, not your purchased credits." : "Paid mode uses your purchased credits. Review the quote, then submit explicitly."}</p>
                 {!paidEnabled && <p className="micro">Paid generation is not yet available for this account. <a href="/pricing#access-options">View the published offer</a>.</p>}
+                {billing?.generationPilot && <p className="micro" role="status">
+                  Private paid trial · One MiniMax image-to-video · 6 seconds · 2K · 23 credits.
+                  {billing.generationPilot.available ? <> Submit before <time dateTime={billing.generationPilot.expiresAt}>{new Date(billing.generationPilot.expiresAt).toLocaleString()}</time>. Select MiniMax, Image to video and 6 seconds; audio uses model defaults.</> : <> Your trial task is already recorded. Check My videos to follow it.</>}
+                </p>}
                 {billing && <p className="micro">{billing.availableCredits} available credits · {billing.reservedCredits} reserved{billing.blocked ? " · Spending blocked" : ""}</p>}
                 {billingError && <p className="micro" role="status">Credit balance unavailable. <button type="button" className="text-link" onClick={() => void refreshBilling()}>Check again</button></p>}
 
@@ -689,16 +728,22 @@ export function Studio() {
                         <>
                           <Upload size={23} />
                           <b>Choose your starting image</b>
-                          <span>JPEG or PNG · Up to 3 MB</span>
+                          <span>JPEG or PNG · Up to 3 MiB · Prepared locally before upload</span>
                         </>
                       )}
                       <input
                         id="source-image"
                         type="file"
                         accept="image/jpeg,image/png"
-                        onChange={(e) => upload(e.target.files?.[0])}
+                        disabled={busy}
+                        onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; void upload(file); }}
                       />
                     </label>
+                    {preparingImage && <p className="micro" role="status">Preparing your image… You can choose a different file.</p>}
+                    {imageDetails && <p className="micro" role="status">
+                      {imageDetails.optimized ? "Optimized locally" : "Ready to upload"} · {imageDetails.width}×{imageDetails.height} · {Math.ceil(imageDetails.bytes / 1024)} KiB
+                      {imageDetails.optimized && <> (from {Math.ceil(imageDetails.originalBytes / 1024)} KiB; transparency flattened onto white)</>}. Preview shows the exact image that will be submitted.
+                    </p>}
                     {image && (
                       <div className="image-name">
                         <span>{imageName}</span>
@@ -706,10 +751,8 @@ export function Studio() {
                           type="button"
                           className="icon-button"
                           aria-label="Remove image"
-                          onClick={() => {
-                            setImage(undefined);
-                            setImageName("");
-                          }}
+                          disabled={busy}
+                          onClick={clearImage}
                         >
                           <X size={16} />
                         </button>
@@ -801,12 +844,12 @@ export function Studio() {
                 )}
                 {billingMode === "paid" && <div className="access-panel" aria-live="polite">
                   <b>Review credit cost</b>
-                  <p>{estimatedCredits === null ? "Paid pricing is not verified for these settings. Image-to-video paid generation is unavailable." : `Published rate: ${estimatedCredits} credits. Request a quote for your exact inputs.`}</p>
+                  <p>{estimatedCredits === null ? "Paid pricing is not verified for these settings." : `Published rate: ${estimatedCredits} credits. Request a quote for your exact inputs.`}</p>
                   {currentQuote && <p>{currentQuote.available
                     ? `${currentQuote.credits} credits · ${usableGenerationQuote(currentQuote, now) ? `Quote expires at ${new Date(currentQuote.expiresAt).toLocaleTimeString("en-US")}` : "Quote expired. Request a new quote."}`
                     : quoteReason[currentQuote.reason ?? ""] || "A paid quote is not available for these settings."}</p>}
                   {insufficientCredits && <p role="alert">Insufficient available credits. This generation needs {currentQuote?.credits ?? estimatedCredits} credits; you have {billing?.availableCredits}. A Starter Pack contains 150 credits. <Link href="/account">View your balance and packs</Link>.</p>}
-                  <button type="button" className="button secondary small" disabled={!paidEnabled || busy || quoting || duplicatePending || estimatedCredits === null || !prompt.trim() || (mode === "image" && !image)} onClick={() => void requestQuote()}>{quoting ? "Checking quote…" : "Get current quote"}</button>
+                  <button type="button" className="button secondary small" disabled={!paidEnabled || !pilotInputAllowed || preparingImage || busy || quoting || duplicatePending || estimatedCredits === null || !prompt.trim() || (mode === "image" && !image)} onClick={() => void requestQuote()}>{quoting ? "Checking quote…" : "Get current quote"}</button>
                   <p className="micro">Quotes last five minutes. Credits are reserved during generation. Unknown outcomes remain pending; no automatic retry. Download completed videos promptly: storage is not permanent.</p>
                 </div>}
                 {error && (
@@ -832,6 +875,7 @@ export function Studio() {
                   aria-busy={buttonSpinning}
                   disabled={
                     busy ||
+                    preparingImage ||
                     duplicatePending ||
                     (billingMode === "paid" ? !paidReady : !canGenerate) ||
                     !ready ||

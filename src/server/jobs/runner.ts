@@ -4,10 +4,12 @@ import { database } from "../db";
 import { jobs } from "../schema";
 import { ProviderError, providerRequest, type ProviderTask } from "../provider";
 import { lockWallet, settleCredits } from "../credits/wallet";
+import { assertPilotSubmission, pilotPostAllowed } from "../credits/pilot";
+import type { GenerationPilot } from "../credits/config";
 import { verifyVideoDelivery, verifyVideoContent, type VerifiedVideoContent } from "./delivery";
 import { ensureInputReview, stageOutputReview, moderationApplies, hasModerationHold } from "../moderation/service";
 import { GenerationCostError, getGenerationCost, lockGenerationCostBudget,
-  markGenerationSubmission, releaseUnsubmittedGenerationCost, recordGenerationOutcome } from "../costs";
+  markGenerationSubmission, releaseUnsubmittedGenerationCost, cancelUnsentPilotCost, recordGenerationOutcome } from "../costs";
 export type VideoProvider = {
   kind: "live" | "fake";
   request: (path:string, options?:RequestInit)=>Promise<ProviderTask>;
@@ -32,6 +34,7 @@ export async function claimJob(id:string, provider:VideoProvider, force=false, a
     const reviewOutput=provider.kind==='live' && await moderationApplies(tx,j);
     const unstarted=!j.submissionStartedAt && !j.upstreamId;
     let submit=unstarted && j.status==='submitting' && !!j.payload;
+    let pilotAuthorization: GenerationPilot | undefined;
     // A prior local rejection remains a hold even under force/recovery.
     if(!j.submissionStartedAt && j.reviewRequired) return null;
     // A read/recover endpoint cannot turn an unstarted row into a new provider request.
@@ -43,6 +46,7 @@ export async function claimJob(id:string, provider:VideoProvider, force=false, a
     }
     if(unstarted && provider.kind==='live') {
       try {
+        if(j.billingMode==='paid') pilotAuthorization=await assertPilotSubmission(tx,j);
         // No historical backfill here: a legacy unstarted job without a snapshot
         // is locally held and released, never grandfathered into a paid POST.
         if(!submit && (await getGenerationCost(tx,j.id))?.state!=='submitted') throw new GenerationCostError('COST_JOB_INPUT_MISSING');
@@ -68,7 +72,7 @@ export async function claimJob(id:string, provider:VideoProvider, force=false, a
       }
     }
     const [claimed]=await tx.update(jobs).set({leaseToken:randomUUID(),leaseUntil:new Date(Date.now()+leaseMs),...((submit || provider.kind==='live'&&unstarted)?{submissionStartedAt:new Date()}:{}),nextPollAt:new Date(Date.now()+leaseMs)}).where(eq(jobs.id,id)).returning();
-    return {job:claimed,submit,reviewOutput};
+    return {job:claimed,submit,reviewOutput,pilotAuthorization};
   });
 }
 export async function finishClaim(j:JobRow, outcome:{task?:ProviderTask;verified?:boolean;contentSha256?:string;definitiveFailure?:boolean}, provider:VideoProvider=liveVideoProvider) {
@@ -115,13 +119,37 @@ export async function finishClaim(j:JobRow, outcome:{task?:ProviderTask;verified
     return updated;
   });
 }
+/** Only the still-owning first claimant can prove transport was never invoked.
+ * This is deliberately private and outside processJob's transport error handler. */
+async function cancelUnsentPilotClaim(j:JobRow) {
+  return database().transaction(async tx=>{
+    await lockGenerationCostBudget(tx);
+    await lockWallet(tx,j.owner,'live');
+    const [current]=await tx.select().from(jobs).where(eq(jobs.id,j.id)).for('update');
+    if(!current || !j.leaseToken || current.leaseToken!==j.leaseToken) return current;
+    await cancelUnsentPilotCost(tx,{jobId:j.id,leaseToken:j.leaseToken});
+    await settleCredits(tx,j.id,'released');
+    const [canceled]=await tx.update(jobs).set({status:'failed',creditState:'released',reviewRequired:false,
+      submissionStartedAt:null,payload:null,resultUrl:null,deliveryVerifiedAt:null,
+      leaseToken:null,leaseUntil:null,updatedAt:new Date(),
+    }).where(eq(jobs.id,j.id)).returning();
+    await tx.execute(sql`INSERT INTO credit_audit(id,job_id,action,actor,reason)
+      VALUES(${randomUUID()}::uuid,${j.id}::uuid,'pilot-unsent-cancellation','worker',
+        'Authorization expired or revoked after claim; original claimant did not invoke transport; trial slot remains consumed')`);
+    return canceled;
+  });
+}
 export async function processJob(id:string,provider:VideoProvider=liveVideoProvider,force=false,allowSubmission=true) {
   const claim=await claimJob(id,provider,force,allowSubmission);
   if(!claim) return database().query.jobs.findFirst({where:eq(jobs.id,id)});
-  const {job:j,submit,reviewOutput}=claim;
+  const {job:j,submit,reviewOutput,pilotAuthorization}=claim;
+  // Prepare potentially large JSON BEFORE the final check. A refusal here is
+  // known-unsent, unlike every error after invoking the transport below.
+  const submission=submit?{method:'POST',headers:{'Idempotency-Key':j.id},body:JSON.stringify(j.payload)}:undefined;
+  if(submit && pilotAuthorization && !pilotPostAllowed(pilotAuthorization,j)) return cancelUnsentPilotClaim(j);
   try {
     const task=submit
-      ? await provider.request('',{method:'POST',headers:{'Idempotency-Key':j.id},body:JSON.stringify(j.payload)})
+      ? await provider.request('',submission)
       : await provider.request(j.upstreamId?`/${encodeURIComponent(j.upstreamId)}`:`?client_request_id=${encodeURIComponent(j.id)}`);
     if(j.upstreamId && task.id!==j.upstreamId) throw new ProviderError(502);
     const content=task.status==='success' && !!task.data?.[0] && reviewOutput
