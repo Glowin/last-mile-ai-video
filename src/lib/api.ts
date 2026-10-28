@@ -97,7 +97,7 @@ export async function api(path: string, options: RequestInit = {}) {
   // across tabs with refresh/sign-in/out, without announcing an identity change.
   // Browsers without Web Locks retain the existing within-tab queue only.
   const needsSessionLock = changesIdentity ||
-    (["/auth/challenge", "/auth/age", "/session"].includes(path) && options.method === "POST");
+    (["/auth/challenge", "/session"].includes(path) && options.method === "POST");
   const request = async () => {
     assertIdentity(expected);
     let r = await send(path, options);

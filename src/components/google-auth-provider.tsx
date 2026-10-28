@@ -24,8 +24,8 @@ export function GoogleAuthProvider({ children }: { children: React.ReactNode }) 
     session: () => api("/session"),
     config: () => api("/config"),
     challenge: () => api("/auth/challenge", { method: "POST" }),
-    authenticate: async (credential, ageDeclaration) => {
-      const result = await api("/auth/google", { method: "POST", body: JSON.stringify({ credential, ageDeclaration }) });
+    authenticate: async (credential) => {
+      const result = await api("/auth/google", { method: "POST", body: JSON.stringify({ credential }) });
       if (result?.newUser === true) trackEvent("sign_up", { method: "google" }, "sign_up");
       return result;
     },

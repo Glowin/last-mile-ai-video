@@ -1,8 +1,7 @@
 import type { GoogleIdentity } from "./google-identity";
-import type { AgeDeclaration } from "./age-declaration";
 
 export type SignInState = {
-  phase: "checking" | "loading" | "ready" | "pending" | "age-required" | "signed-in" | "disabled" | "error";
+  phase: "checking" | "loading" | "ready" | "pending" | "signed-in" | "disabled" | "error";
   visible: boolean;
   message: string;
 };
@@ -10,7 +9,7 @@ type Dependencies = {
   session: () => Promise<{ user?: { id: string } | null }>;
   config: () => Promise<{ googleClientId?: string }>;
   challenge: () => Promise<{ nonce: string; expiresInMs?: number }>;
-  authenticate: (credential: string, ageDeclaration?: AgeDeclaration) => Promise<unknown>;
+  authenticate: (credential: string) => Promise<unknown>;
   sdk: () => Promise<GoogleIdentity>;
   dismissed: () => boolean;
   rememberDismissal: (dismissed: boolean) => void;
@@ -32,10 +31,6 @@ export class GoogleSignInController {
   private closed = false;
   private manualOpen = false;
   private expiry?: ReturnType<typeof setTimeout>;
-  // Credential never enters React state, a URL or browser storage.
-  private ageCredential?: string;
-  private nonceDeadline = 0;
-  private ageDeadline = 0;
   constructor(private deps: Dependencies) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -66,13 +61,11 @@ export class GoogleSignInController {
     this.started = false;
     this.manualOpen = false;
     this.cancel();
-    this.ageCredential = undefined;
     this.update({ phase: "checking", visible: false });
   }
   private prepare() {
     const epoch = ++this.epoch;
     this.cancel();
-    this.ageCredential = undefined;
     this.update({ phase: "checking", visible: this.manualOpen, message: "" });
     // Serialize attempts, including abandoned challenge requests: an older
     // response must never overwrite a newer challenge cookie.
@@ -99,7 +92,6 @@ export class GoogleSignInController {
       if (!Number.isFinite(expiresAfter) || expiresAfter <= 0)
         throw new Error("Google sign-in is about to expire. Wait a few seconds, then retry.");
       const google = this.google;
-      this.nonceDeadline = Date.now() + expiresAfter;
       google.initialize({ client_id: googleClientId, nonce, auto_select: false,
         callback: ({ credential }) => {
           if (this.state.phase === "ready") void this.complete(epoch, credential);
@@ -124,47 +116,21 @@ export class GoogleSignInController {
     });
     return this.flight;
   }
-  private async complete(epoch: number, credential?: string, ageDeclaration?: AgeDeclaration) {
-    if (epoch !== this.epoch || !["ready", "age-required"].includes(this.state.phase)) return;
+  private async complete(epoch: number, credential?: string) {
+    if (epoch !== this.epoch || this.state.phase !== "ready") return;
     this.cancel();
     this.update({ phase: "pending" });
     try {
       if (!credential) throw new Error("Google did not return a credential. Please retry.");
-      await this.deps.authenticate(credential, ageDeclaration);
+      await this.deps.authenticate(credential);
       if (epoch !== this.epoch) return;
       this.manualOpen = false;
-      this.ageCredential = undefined;
       this.update({ phase: "signed-in", visible: false });
     } catch (error) {
       if (epoch !== this.epoch) return;
-      const code = (error as { code?: string } | null)?.code;
-      if (credential && (code === "AGE_REQUIRED" || code === "AGE_INVALID")) {
-        if (!this.ageCredential) this.ageDeadline = Math.min(this.nonceDeadline, Date.now() + 2 * 60_000);
-        this.ageCredential = credential;
-        const remaining = this.ageDeadline - Date.now();
-        if (remaining <= 0) { this.expireAge(); return; }
-        this.manualOpen = true;
-        // This is the next step after a user-approved credential, never a
-        // competing automatic login card. The native prompt is already canceled.
-        this.update({ phase: "age-required", visible: true, message: code === "AGE_INVALID" && error instanceof Error ? error.message : "" });
-        this.expiry = this.deps.schedule(() => { if (epoch === this.epoch) this.expireAge(); }, remaining);
-        return;
-      }
-      this.ageCredential = undefined;
       this.update({ phase: "error", visible: true, message: error instanceof Error ? error.message : "Sign-in failed. Please retry." });
     }
   }
-  private expireAge() {
-    ++this.epoch;
-    this.cancel();
-    this.ageCredential = undefined;
-    this.update({ phase: "error", message: "Age confirmation expired. Start Google sign-in again." });
-  }
-  confirmAge = (ageDeclaration: AgeDeclaration) => {
-    if (this.state.phase !== "age-required" || !this.ageCredential) return;
-    if (Date.now() >= this.ageDeadline) { this.expireAge(); return; }
-    return this.complete(this.epoch, this.ageCredential, ageDeclaration);
-  };
   identityChanged(reason: "sign-in" | "sign-out" | "external") {
     // api() broadcasts before its promise resolves. Do not invalidate our own
     // successful credential callback; page subscribers still refresh normally.
@@ -183,12 +149,6 @@ export class GoogleSignInController {
     this.closed = true;
     this.deps.rememberDismissal(true);
     this.cancelPrompt(); // Keep inline buttons and nonce expiry usable.
-    if (this.state.phase === "age-required" || this.ageCredential) {
-      ++this.epoch;
-      this.cancel();
-      this.ageCredential = undefined;
-      this.update({ phase: "error", message: "Age confirmation canceled. Start Google sign-in again." });
-    }
     this.update({ visible: false });
   };
   sessionEnded() {
@@ -198,7 +158,6 @@ export class GoogleSignInController {
     this.closed = true;
     this.deps.rememberDismissal(true);
     this.cancel();
-    this.ageCredential = undefined;
     this.update({ phase: "error", visible: false, message: "Your session has ended. Retry to sign in again." });
   }
 

@@ -50,6 +50,7 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   name: text("name"),
   invitedAt: timestamp("invited_at", { withTimezone: true }),
+  // Retired 2026-10-29: preserve historical records; no runtime age checks or writes.
   ageConfirmedAt: timestamp("age_confirmed_at", { withTimezone: true }),
   agePolicyVersion: text("age_policy_version"),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -94,6 +95,7 @@ export const authNonces = pgTable(
   },
   (t) => [index("auth_nonces_expiry_idx").on(t.expiresAt)],
 );
+// Historical table retained for migration compatibility; unused by the application.
 export const guestAgeDeclarations = pgTable("guest_age_declarations", {
   guestId: uuid("guest_id").primaryKey(),
   ageConfirmedAt: timestamp("age_confirmed_at", { withTimezone: true }).notNull(),

@@ -333,6 +333,22 @@ p {
   margin-bottom: 32px;
 }
 
+.home-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px 48px;
+}
+.home-guide-grid article {
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+.home-guide-grid h3 { margin-bottom: 16px; }
+.home-guide-grid p { color: var(--muted); margin-bottom: 14px; max-width: 65ch; }
+.home-guide-grid a { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 650px) {
+  .home-guide-grid { grid-template-columns: 1fr; gap: 24px; }
+}
+
 .actions {
   display: flex;
   align-items: center;
@@ -1768,58 +1784,6 @@ p {
 
 .access-row .button {
   flex: none;
-}
-
-/* Age Confirmation Gate */
-.age-fieldset {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--bg-subtle);
-  padding: 14px 16px;
-  margin: 14px 0;
-  min-width: 0;
-}
-
-.age-legend {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--moss-strong);
-  padding: 0 6px;
-}
-
-.age-help {
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--muted);
-  margin: 6px 0 12px;
-}
-
-.age-field-label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-secondary);
-  margin-bottom: 6px;
-}
-
-.age-checkbox {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin-top: 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-secondary);
-}
-
-.age-checkbox input[type="checkbox"] {
-  width: auto;
-  flex-shrink: 0;
-  margin-top: 2px;
-  accent-color: var(--moss);
 }
 
 /* Account Page Helpers */

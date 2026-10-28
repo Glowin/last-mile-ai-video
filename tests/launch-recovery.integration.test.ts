@@ -1,4 +1,4 @@
-import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
+const AGE_POLICY_VERSION = "18-plus-2026-10-26"; // Historical migration fixture only.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

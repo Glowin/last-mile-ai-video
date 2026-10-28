@@ -1,4 +1,4 @@
-import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
+const AGE_POLICY_VERSION = "18-plus-2026-10-26"; // Historical migration fixture only.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -143,7 +143,7 @@ test("account profile and session isolation against real PostgreSQL", { skip: !t
     assert.equal(response.headers.get("cache-control"), "no-store");
     const body = await response.json();
     assert.deepEqual(Object.keys(body).sort(), ["canGenerate", "sessions", "user"]);
-    assert.deepEqual(body.user, { id: alice.id, name: alice.name, email: alice.email, ageConfirmed: true, createdAt: alice.createdAt.toISOString() });
+    assert.deepEqual(body.user, { id: alice.id, name: alice.name, email: alice.email, createdAt: alice.createdAt.toISOString() });
     assert.equal(body.canGenerate, false);
     assert.deepEqual(body.sessions.map((s: { id: string }) => s.id).sort(), [current.sessionId, other.sessionId].sort());
     for (const session of body.sessions) {

@@ -3,8 +3,7 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { database } from "./db";
-import { authNonces, users, guestClaims, guestAgeDeclarations, jobs } from "./schema";
-import { AGE_POLICY_VERSION, validateAgeDeclaration } from "../lib/age-declaration";
+import { authNonces, users, guestClaims, jobs } from "./schema";
 import { configured, issueSession, secureEqual, sessionOwner } from "./auth";
 import { recordFirstTouch } from "./analytics/attribution";
 import { FIRST_TOUCH_COOKIE } from "../lib/attribution";
@@ -46,7 +45,6 @@ authRoutes.get("/session", async (c) => {
     owner: who?.owner ?? null,
     user: who?.user ? publicUser(who.user) : null,
     canGenerate: who?.canGenerate ?? false,
-    ageConfirmed: who?.ageConfirmed ?? false,
     ready: configured(),
     mode: "invite-preview",
   });
@@ -142,17 +140,10 @@ authRoutes.post("/auth/google", async (c) => {
   }
   const guest = sessionOwner(getCookie(c, "lm_session"));
   const result = await database().transaction(async (tx) => {
-    // Serialize first registration and age confirmation for the same Google subject.
+    // Serialize first registration for the same Google subject. Keep the lock
+    // namespace stable across rolling deployments.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${"age:" + profile.sub}, 0))`);
     const [existing] = await tx.select().from(users).where(eq(users.googleSub, profile.sub));
-    const needsAge = !existing?.ageConfirmedAt;
-    const ageError = needsAge || input.ageDeclaration !== undefined
-      ? validateAgeDeclaration(input.ageDeclaration) : null;
-    if (ageError) {
-      if (ageError.code === "AGE_INELIGIBLE")
-        await tx.delete(authNonces).where(eq(authNonces.nonceHash, tokenHash(nonce)));
-      return { ageError };
-    }
     const [consumed] = await tx
       .delete(authNonces)
       .where(
@@ -171,14 +162,10 @@ authRoutes.post("/auth/google", async (c) => {
         googleSub: profile.sub,
         email: profile.email,
         name: profile.name,
-        ageConfirmedAt: new Date(),
-        agePolicyVersion: AGE_POLICY_VERSION,
       })
       .onConflictDoUpdate({
         target: users.googleSub,
-        set: { email: profile.email, name: profile.name,
-          ...(needsAge ? { ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION } : {}),
-        },
+        set: { email: profile.email, name: profile.name },
       })
       .returning();
     const newUser = !existing;
@@ -208,11 +195,6 @@ authRoutes.post("/auth/google", async (c) => {
       { error: "This sign-in was already used. Start again." },
       401,
     );
-  if (result.ageError) {
-    const { status, ...body } = result.ageError;
-    if (body.code === "AGE_INELIGIBLE") deleteCookie(c, "kr_nonce", cookieOptions("/api/auth"));
-    return c.json({ ...body, policyVersion: AGE_POLICY_VERSION }, status);
-  }
   await setLogin(c, result);
   deleteCookie(c, "lm_session", cookieOptions());
   deleteCookie(c, "kr_nonce", cookieOptions("/api/auth"));
@@ -229,38 +211,6 @@ authRoutes.post("/auth/refresh", async (c) => {
   }
   await setLogin(c, login);
   return c.json({ ok: true });
-});
-// Existing sessions remain usable for reading history/account and refreshing.
-// An explicit declaration upgrades age eligibility without issuing a new login.
-authRoutes.post("/auth/age", async (c) => {
-  const who = await identity(c);
-  if (!who) return c.json({ error: "Sign in again to confirm your age.",
-    ...(hasAccountCookies(c) ? { code: "SESSION_EXPIRED" } : {}),
-  }, 401);
-  if (c.req.header("X-KakaReel-Owner") !== who.owner)
-    return c.json({ error: "Your account changed. Refresh before confirming your age." }, 409);
-  const input = await c.req.json().catch(() => null);
-  const ageError = validateAgeDeclaration(input?.ageDeclaration);
-  if (ageError) {
-    const { status, ...body } = ageError;
-    return c.json({ ...body, policyVersion: AGE_POLICY_VERSION }, status);
-  }
-  const saved = await database().transaction(async (tx) => {
-    if (who.user) {
-      await tx.update(users).set({
-        ageConfirmedAt: sql`coalesce(${users.ageConfirmedAt}, now())`,
-        agePolicyVersion: sql`coalesce(${users.agePolicyVersion}, ${AGE_POLICY_VERSION})`,
-      }).where(eq(users.id, who.user.id));
-    } else {
-      if (!(await lockGuest(tx, who.owner))) return false;
-      await tx.insert(guestAgeDeclarations).values({ guestId: who.owner,
-        ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION,
-      }).onConflictDoNothing();
-    }
-    return true;
-  });
-  if (!saved) return c.json({ error: "Your preview session has ended. Sign in again." }, 401);
-  return c.json({ ok: true, ageConfirmed: true });
 });
 authRoutes.post("/session", async (c) => {
   if (!configured())
@@ -291,33 +241,14 @@ authRoutes.post("/session", async (c) => {
   )
     return c.json({ error: "That preview code did not work." }, 401);
   if (who?.user) {
-    const ageError = !who.user.ageConfirmedAt || input.ageDeclaration !== undefined
-      ? validateAgeDeclaration(input.ageDeclaration) : null;
-    if (ageError) {
-      const { status, ...body } = ageError;
-      return c.json({ ...body, policyVersion: AGE_POLICY_VERSION }, status);
-    }
     await database()
       .update(users)
-      .set({ invitedAt: who.user.invitedAt ?? new Date(),
-        ...(!who.user.ageConfirmedAt ? { ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION } : {}),
-      })
+      .set({ invitedAt: who.user.invitedAt ?? new Date() })
       .where(eq(users.id, who.user.id));
   } else {
     const old = getCookie(c, "lm_session");
     const existing = await guestIdentity(old);
-    const [declared] = existing ? await database().select().from(guestAgeDeclarations)
-      .where(eq(guestAgeDeclarations.guestId, existing.owner)) : [];
-    const ageError = !declared || input.ageDeclaration !== undefined
-      ? validateAgeDeclaration(input.ageDeclaration) : null;
-    if (ageError) {
-      const { status, ...body } = ageError;
-      return c.json({ ...body, policyVersion: AGE_POLICY_VERSION }, status);
-    }
     const raw = existing ? old! : issueSession();
-    if (!declared) await database().insert(guestAgeDeclarations).values({
-      guestId: sessionOwner(raw)!, ageConfirmedAt: new Date(), agePolicyVersion: AGE_POLICY_VERSION,
-    }).onConflictDoNothing();
     setCookie(c, "lm_session", raw, {
       ...cookieOptions(),
       maxAge: 30 * 86400,

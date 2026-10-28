@@ -7,7 +7,7 @@ export default function Privacy() {
       <main id="main" className="shell prose">
         <span className="eyebrow">PRIVACY & DATA HANDLING</span>
         <h1>Your <em>data.</em></h1>
-        <p className="lead">This page describes the preview and preparation for paid access, updated October 28, 2026.</p>
+        <p className="lead">This page describes the preview and preparation for paid access, updated October 29, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For
@@ -25,15 +25,7 @@ export default function Privacy() {
           tab’s session storage; it contains no Google credentials. You can
           reopen sign-in from the page header or your account page.
         </p>
-        <h2>Age confirmation</h2>
-        <p>
-          KakaReel is for adults aged 18 or older. We ask for your date of birth
-          and an explicit declaration when age confirmation is required. The
-          server checks your eligibility without saving your full date of birth;
-          it stores the confirmation time and policy version for your account or
-          guest session. This is a self-declaration, not identity or document
-          verification. We do not send this information to Analytics.
-        </p>
+        <p>We do not ask for your date of birth or perform age verification. Confirmation timestamps and policy versions recorded before October 29, 2026 may remain in historical account records; no date of birth was stored.</p>
         <h2>Essential cookies and sessions</h2>
         <p>
           We use essential HttpOnly cookies for guest access, account sessions,

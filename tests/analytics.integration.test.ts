@@ -11,7 +11,7 @@ import { userAttribution, analyticsBrowserConsents, analyticsOrderContexts, anal
 import { bindOrderAnalytics, ANALYTICS_CONSENT_COOKIE } from "../src/server/analytics/checkout";
 import { dispatchPaidPurchases } from "../src/server/analytics/purchases";
 import { createApp } from "../src/server/app";
-import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
+const AGE_POLICY_VERSION = "18-plus-2026-10-26"; // Historical migration fixture only.
 import { buildFirstTouch, serializeFirstTouch } from "../src/lib/attribution";
 import { attributionReport } from "../scripts/attribution-report";
 

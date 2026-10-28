@@ -12,7 +12,15 @@ import {
 } from "lucide-react";
 import { families, resolutions } from "@/lib/models";
 import { SiteHeader, SiteFooter } from "@/components/site-header";
-export const metadata = { alternates: { canonical: "/" } };
+const title = "KakaReel: AI Video Generator for Text and Image to Video";
+const description = "Create AI videos from text or images with KakaReel. Explore Seedance, Kling and MiniMax, compare settings, and turn your next idea into a downloadable clip.";
+export const metadata = {
+  title: { absolute: title },
+  description,
+  alternates: { canonical: "/" },
+  openGraph: { title, description, type: "website", url: "/", siteName: "KakaReel" },
+  twitter: { card: "summary" as const, title, description },
+};
 const starters = [
   {
     title: "A product, in motion",
@@ -37,8 +45,20 @@ const starters = [
   },
 ];
 export default function Home() {
+  const siteUrl = process.env.APP_URL ? new URL("/", process.env.APP_URL).href : null;
+  const structuredData = siteUrl ? {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "WebSite", "@id": `${siteUrl}#website`, name: "KakaReel", url: siteUrl, description, inLanguage: "en" },
+      { "@type": "WebApplication", "@id": `${siteUrl}#app`, name: "KakaReel", url: siteUrl,
+        applicationCategory: "MultimediaApplication", operatingSystem: "Web browser",
+        description, featureList: ["Text to video", "Image to video", "Seedance, Kling and MiniMax model selection"],
+        isPartOf: { "@id": `${siteUrl}#website` } },
+    ],
+  } : null;
   return (
     <>
+      {structuredData && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />}
       <SiteHeader />
       <main id="main">
         <section className="hero shell">
@@ -47,9 +67,9 @@ export default function Home() {
               <i /> AN INDEPENDENT AI VIDEO STUDIO
             </span>
             <h1>
-              Your next idea.
+              KakaReel.
               <br />
-              <em>In motion.</em>
+              <em>AI video studio.</em>
             </h1>
             <p>
               Create AI videos from text and images. Explore Seedance, Kling,
@@ -251,6 +271,37 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+        <section className="section shell home-guide" aria-labelledby="video-guide-title">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">MAKE YOUR FIRST AI VIDEO</span>
+              <h2 id="video-guide-title">A scene, an image,<br /><em>a little direction.</em></h2>
+            </div>
+            <p>KakaReel brings text-to-video and image-to-video tools into one studio. Start with the material you have, then choose the settings that suit the shot.</p>
+          </div>
+          <div className="home-guide-grid">
+            <article>
+              <h3>Turn a text prompt into a video</h3>
+              <p>Describe a single scene: the subject, its surroundings, and the movement you want to see. A product on a table, a walk through a landscape, or a small animated character gives the model a clear starting point. Add the lighting and camera movement when they matter to the idea.</p>
+              <p>For a short clip, keep the action focused. Try “the camera slowly moves closer as sunlight crosses the bottle” before asking for several scene changes. The prompt starters above open directly in the studio, where you can edit every detail before submitting a generation.</p>
+            </article>
+            <article>
+              <h3>Animate an image you already have</h3>
+              <p>Choose image-to-video when the composition is already in a picture. Upload one JPEG or PNG up to 3 MB, then describe what should happen next. You might ask for fabric to move in a breeze, a character to turn its head, or a slow camera move around a still object.</p>
+              <p>Use an image you have permission to upload. Check that the subject is clear and that the starting frame suits your intended shot. The generated result can differ from the source, so review faces, shapes, text, and other important details before sharing it.</p>
+            </article>
+            <article>
+              <h3>Compare models with a consistent idea</h3>
+              <p>Seedance, Kling, and MiniMax offer different combinations of duration, resolution, aspect ratio, and sound. Their model pages explain the available options; the studio updates its controls when you change models. Choose settings for the place where you plan to use the clip, such as a portrait social post or a landscape presentation.</p>
+              <p>Keep the prompt and input image consistent when exploring a different model. Changing one setting at a time makes the results easier to compare. AI generation can vary between runs, and higher resolution alone does not guarantee that a model will follow every instruction.</p>
+            </article>
+            <article>
+              <h3>Review and save the finished clip</h3>
+              <p>Once a generation is accepted, follow its status in the studio. Wait for the existing task to finish before submitting another attempt. On completion, preview the clip and check whether its motion, framing, and details match your intended use. Download a copy promptly because provider links can expire.</p>
+              <p>KakaReel is currently an invite-only preview. Signing in keeps your account accessible, but generation still requires preview access. The <Link href="/pricing#access-options">pricing page</Link> explains the planned Starter Pack and model credit rates. If a task needs help, contact <Link href="/support">support</Link> with the task reference shown in your history.</p>
+            </article>
           </div>
         </section>
         <section className="section shell faq-section">

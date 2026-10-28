@@ -27,13 +27,13 @@ test("successful Google sign-in broadcasts once before resolving, with the updat
     global.fetch = async () => Response.json({ error: "Invalid credential" }, { status: 401 });
     await assert.rejects(api("/auth/google", { method: "POST" }), /Invalid credential/);
     assert.equal(notifications, 1, "failed sign-in cannot broadcast an identity change");
-    global.fetch = async () => Response.json({ error: "Confirm your age", code: "AGE_REQUIRED" }, { status: 428 });
+    global.fetch = async () => Response.json({ error: "Too many attempts", code: "RATE_LIMITED" }, { status: 429 });
     await assert.rejects(api("/auth/google", { method: "POST" }), (error: unknown) => {
-      assert.equal((error as { code: string }).code, "AGE_REQUIRED");
-      assert.equal((error as { status: number }).status, 428);
+      assert.equal((error as { code: string }).code, "RATE_LIMITED");
+      assert.equal((error as { status: number }).status, 429);
       return true;
     });
-    assert.equal(notifications, 1, "age-required is not an authenticated identity");
+    assert.equal(notifications, 1, "a rate-limited request is not an authenticated identity");
   } finally {
     global.fetch = originalFetch;
     names.forEach((name, index) => {

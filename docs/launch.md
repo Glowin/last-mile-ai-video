@@ -15,6 +15,8 @@ Waffo 整改已部署，十项迁移及旧用户／视频保留已验；生产�
 
 # KakaReel
 
+2026-10-29：按所有者最新决定取消全产品年龄验证，并修复首页SEO；本轮行为及验收见[访客反馈修复](visitor-feedback-2026-10-29.md)。此前带日期的年龄门槛记载仅为历史。
+
 江昪于 2026-10-20 确认：面向海外视频生成用户，做 All-in-One 视频生成站；接入 VibeToken，覆盖 Seedance、Kling、MiniMax H3。品牌域名选定 `kakareel.com`，Logo 与吉祥物使用鸮鹦鹉。2026-10-20 已在 Cloudflare 完成注册，注册管理页面确认状态为 Active。现已部署至既有 Hostinger 的 Dokploy，正式地址为 https://kakareel.com 。
 
 《最后一海里计划》是公开直播系列，目标是展示从创意、开发、上线、首位付费用户到 US$100 收入的过程。KakaReel 是这次系列的产品，代码开源。未宣称已有用户或收入。

@@ -13,7 +13,7 @@ const app = createApp({ videoProvider: { kind: "fake", request: providerRequest,
 import { database, closeDatabase } from "../src/server/db";
 import { migrate } from "../scripts/migrate.mjs";
 import { issueSession, sessionOwner } from "../src/server/auth";
-import { AGE_POLICY_VERSION } from "../src/lib/age-declaration";
+const AGE_POLICY_VERSION = "18-plus-2026-10-26"; // Historical migration fixture only.
 const adult = { birthDate: "1990-01-01", confirmed: true, policyVersion: AGE_POLICY_VERSION };
 import { tokenHash } from "../src/server/account";
 
@@ -188,73 +188,72 @@ test(
   "real PostgreSQL Google identity and session security",
   { skip: !integration },
   async (t) => {
-    await t.test("new Google identity cannot create user/session before an adult declaration", async () => {
+    await t.test("Google sign-up completes without age data, attributes direct traffic and keeps invite protection", async () => {
       const b = new Browser(), nonce = await challenge(b);
-      const token = await credential(nonce, "age-new-user");
-      for (const [ageDeclaration, expected] of [[undefined, 428], [{ ...adult, confirmed: false }, 428],
-        [{ ...adult, birthDate: "2000-02-30" }, 400]] as const) {
-        const response = await b.request("/auth/google", "POST", { credential: token, ageDeclaration });
-        assert.equal(response.status, expected);
-        assert.equal(b.cookies.has("kr_access"), false);
-        assert.equal(b.cookies.has("kr_refresh"), false);
-        const rows = await database().execute(sql`SELECT id FROM users WHERE google_sub='age-new-user'`);
-        assert.equal(rows.length, 0);
-      }
-      assert.equal((await b.request("/auth/google", "POST", { credential: token, ageDeclaration: adult })).status, 200);
-      const [row] = await database().execute(sql`SELECT * FROM users WHERE google_sub='age-new-user'`);
-      assert.ok(row.age_confirmed_at);
-      assert.equal(row.age_policy_version, AGE_POLICY_VERSION);
-      assert.ok(!JSON.stringify(row).includes(adult.birthDate));
-      // An already declared account does not need to resend DOB at a later login.
-      const returning = new Browser(), nextNonce = await challenge(returning);
-      assert.equal((await returning.request("/auth/google", "POST", { credential: await credential(nextNonce, "age-new-user") })).status, 200);
-    });
-    await t.test("underage Google sign-in consumes challenge and never creates an account", async () => {
-      const b = new Browser(), nonce = await challenge(b), token = await credential(nonce, "age-child");
-      const response = await b.request("/auth/google", "POST", { credential: token,
-        ageDeclaration: { ...adult, birthDate: new Date().toISOString().slice(0, 10) } });
-      assert.equal(response.status, 403);
-      assert.equal((await response.json()).code, "AGE_INELIGIBLE");
-      assert.equal(b.cookies.has("kr_nonce"), false);
-      assert.equal(b.cookies.has("kr_access"), false);
-      assert.equal((await database().execute(sql`SELECT id FROM users WHERE google_sub='age-child'`)).length, 0);
-      b.cookies.set("kr_nonce", nonce);
-      assert.equal((await b.request("/auth/google", "POST", { credential: token, ageDeclaration: adult })).status, 401);
-    });
-    await t.test("guest preview requires age; existing guest may read history and confirm without logout", async () => {
-      const b = new Browser();
-      for (const [ageDeclaration, expected] of [[undefined, 428], [{ ...adult, confirmed: false }, 428],
-        [{ ...adult, birthDate: "2001-02-29" }, 400],
-        [{ ...adult, birthDate: new Date().toISOString().slice(0, 10) }, 403]] as const) {
-        assert.equal((await b.request("/session", "POST", { code: process.env.DEMO_ACCESS_CODE, ageDeclaration })).status, expected);
-        assert.equal(b.cookies.has("lm_session"), false);
-      }
-      assert.equal((await b.request("/session", "POST", { code: process.env.DEMO_ACCESS_CODE, ageDeclaration: adult })).status, 200);
-      assert.equal((await (await b.request("/session")).json()).ageConfirmed, true);
-      const legacy = new Browser(), raw = issueSession(), owner = sessionOwner(raw)!;
-      legacy.cookies.set("lm_session", raw);
-      assert.equal((await legacy.request("/jobs")).status, 200);
-      assert.equal((await legacy.request("/jobs", "POST", input())).status, 428);
-      assert.equal((await legacy.request("/auth/age", "POST", { ageDeclaration: adult }, process.env.APP_URL!, { "X-KakaReel-Owner": owner })).status, 200);
-      assert.equal(legacy.cookies.get("lm_session"), raw);
-      assert.equal((await (await legacy.request("/session")).json()).canGenerate, true);
-    });
-    await t.test("legacy account retains refresh/history but cannot generate until declaring age", async () => {
-      const b = new Browser(), s = await login(b, "age-legacy"), owner = s.user.id;
-      await database().execute(sql`UPDATE users SET invited_at=now(),age_confirmed_at=NULL,age_policy_version=NULL WHERE id=${owner}::uuid`);
-      assert.equal((await b.request("/auth/refresh", "POST")).status, 200);
-      const old = await (await b.request("/session")).json();
-      assert.equal(old.authenticated, true); assert.equal(old.ageConfirmed, false);
+      const token = await credential(nonce, "signup-without-age");
+      const response = await b.request("/auth/google", "POST", { credential: token });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).newUser, true);
+      assert.ok(b.cookies.has("kr_access"));
+      assert.ok(b.cookies.has("kr_refresh"));
+      const session = await (await b.request("/session")).json();
+      assert.equal(session.authenticated, true);
+      assert.equal(session.canGenerate, false);
+      assert.equal("ageConfirmed" in session, false);
+      assert.equal("ageConfirmed" in session.user, false);
+      const owner = session.user.id;
+      const [row] = await database().execute(sql`SELECT age_confirmed_at,age_policy_version FROM users WHERE id=${owner}::uuid`);
+      assert.equal(row.age_confirmed_at, null);
+      assert.equal(row.age_policy_version, null);
+      const [attribution] = await database().execute(sql`SELECT utm_source,referrer_host FROM user_attribution WHERE user_id=${owner}::uuid`);
+      assert.ok(attribution);
+      assert.equal(attribution.utm_source, null);
+      assert.equal(attribution.referrer_host, null);
       assert.equal((await b.request("/jobs")).status, 200);
-      const callsBefore = providerCalls;
-      for (const mode of ["preview", "paid"]) assert.equal((await b.request("/jobs", "POST", { ...input(), billingMode: mode })).status, 428);
-      assert.equal(providerCalls, callsBefore);
-      assert.equal((await b.request("/auth/age", "POST", { ageDeclaration: adult })).status, 409);
-      const headers = { "X-KakaReel-Owner": owner }, before = b.header();
-      assert.equal((await b.request("/auth/age", "POST", {}, process.env.APP_URL!, headers)).status, 428);
-      assert.equal((await b.request("/auth/age", "POST", { ageDeclaration: adult }, process.env.APP_URL!, headers)).status, 200);
-      assert.equal(b.header(), before, "no logout or session cookie replacement");
+      assert.equal((await b.request("/auth/refresh", "POST")).status, 200);
+      const before = providerCalls;
+      assert.equal((await b.request("/jobs", "POST", input())).status, 403);
+      assert.equal(providerCalls, before);
+      const returning = new Browser(), nextNonce = await challenge(returning);
+      const again = await returning.request("/auth/google", "POST", { credential: await credential(nextNonce, "signup-without-age") });
+      assert.equal(again.status, 200);
+      assert.equal((await again.json()).newUser, false);
+      assert.equal((await (await returning.request("/session")).json()).user.id, owner);
+      assert.equal((await b.request("/session", "POST", { code: process.env.DEMO_ACCESS_CODE })).status, 200);
       assert.equal((await (await b.request("/session")).json()).canGenerate, true);
+      assert.equal((await b.request("/jobs", "POST", input())).status, 201);
+      assert.equal(providerCalls, before + 1, "only the fake provider is called after invitation");
+      const paid = await b.request("/jobs", "POST", { ...input(), billingMode: "paid" });
+      assert.equal(paid.status, 400, "paid generation still requires a valid credit quote");
+      assert.equal(providerCalls, before + 1);
+    });
+    await t.test("preview access needs a correct code but no age declaration, including legacy guests", async () => {
+      const b = new Browser();
+      assert.equal((await b.request("/session", "POST", { code: "wrong" })).status, 401);
+      assert.equal(b.cookies.has("lm_session"), false);
+      assert.equal((await b.request("/session", "POST", { code: process.env.DEMO_ACCESS_CODE })).status, 200);
+      const session = await (await b.request("/session")).json();
+      assert.equal(session.canGenerate, true);
+      assert.equal("ageConfirmed" in session, false);
+      assert.equal((await database().execute(sql`SELECT * FROM guest_age_declarations WHERE guest_id=${session.owner}::uuid`)).length, 0);
+      const legacy = new Browser(), raw = issueSession();
+      legacy.cookies.set("lm_session", raw);
+      assert.equal((await (await legacy.request("/session")).json()).canGenerate, true);
+      assert.equal((await legacy.request("/jobs/quote", "POST", input())).status, 401, "quotes still require a Google account");
+      assert.equal((await legacy.request("/jobs", "POST", input())).status, 201);
+    });
+    await t.test("obsolete age payload is ignored and the retired endpoint cannot record declarations", async () => {
+      const b = new Browser(), nonce = await challenge(b);
+      const response = await b.request("/auth/google", "POST", {
+        credential: await credential(nonce, "legacy-age-payload"),
+        ageDeclaration: { birthDate: "2099-01-01", confirmed: false },
+      });
+      assert.equal(response.status, 200);
+      const { userId } = await response.json();
+      assert.equal((await b.request("/auth/age", "POST", { ageDeclaration: adult }, process.env.APP_URL!, { "X-KakaReel-Owner": userId })).status, 404);
+      const [row] = await database().execute(sql`SELECT age_confirmed_at,age_policy_version FROM users WHERE id=${userId}::uuid`);
+      assert.equal(row.age_confirmed_at, null);
+      assert.equal(row.age_policy_version, null);
     });
     await t.test(
       "additive concurrent startup migrations retain legacy jobs and cookies",
