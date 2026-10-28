@@ -6,6 +6,8 @@ import { database } from "./db";
 import { authNonces, users, guestClaims, guestAgeDeclarations, jobs } from "./schema";
 import { AGE_POLICY_VERSION, validateAgeDeclaration } from "../lib/age-declaration";
 import { configured, issueSession, secureEqual, sessionOwner } from "./auth";
+import { recordFirstTouch } from "./analytics/attribution";
+import { FIRST_TOUCH_COOKIE } from "../lib/attribution";
 import {
   authConfigured,
   clearLogin,
@@ -179,6 +181,12 @@ authRoutes.post("/auth/google", async (c) => {
         },
       })
       .returning();
+    const newUser = !existing;
+    if (newUser) {
+      // First-touch channel for the new account; a savepoint keeps sign-up working if this fails.
+      await tx.transaction((sp) => recordFirstTouch(sp, user.id, getCookie(c, FIRST_TOUCH_COOKIE)))
+        .catch(() => console.warn("ANALYTICS_ATTRIBUTION_SKIPPED"));
+    }
     let claimedGuestId: string | null = null;
     if (guest && (await lockGuest(tx, guest))) {
       claimedGuestId = guest;
@@ -193,7 +201,7 @@ authRoutes.post("/auth/google", async (c) => {
         .where(eq(users.id, user.id));
     }
     await revokeLogin(c, tx);
-    return { ...(await createLogin(tx, user.id)), claimedGuestId };
+    return { ...(await createLogin(tx, user.id)), claimedGuestId, newUser };
   });
   if (!result)
     return c.json(
@@ -208,7 +216,7 @@ authRoutes.post("/auth/google", async (c) => {
   await setLogin(c, result);
   deleteCookie(c, "lm_session", cookieOptions());
   deleteCookie(c, "kr_nonce", cookieOptions("/api/auth"));
-  return c.json({ ok: true, userId: result.userId, claimedGuestId: result.claimedGuestId });
+  return c.json({ ok: true, userId: result.userId, claimedGuestId: result.claimedGuestId, newUser: result.newUser });
 });
 authRoutes.post("/auth/refresh", async (c) => {
   const login = await rotate(c);
