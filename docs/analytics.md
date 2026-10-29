@@ -1,8 +1,8 @@
 ---
 title: "GA4 访问统计"
-date: 2026-10-28
-source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；2026-10-28 PR #4 审查、合并与生产验收"
-status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线；GA_API_SECRET 已在生产 web 生效，Search Console 已关联；GA 端真实转化验收待完成"
+date: 2026-10-29
+source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；2026-10-28 PR #4 审查、合并与生产验收；2026-10-29 真人注册与只读归因验收"
+status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线；GA_API_SECRET 已在生产 web 生效，Search Console 已关联；真实注册及数据库UTM已验；生成、结账、购买事件待验"
 ---
 
 # 采集范围
@@ -53,6 +53,8 @@ status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线
 - 原生截图已在会话中目视检查，但本轮未将截图归档为长期文件；长期证据目前为本文、代码提交及库外结构化验收记录，不宣称已有截图原件。
 
 # 修订
+
+- 2026-10-29：同步真实注册／UTM／GA聚合sign_up通过状态，保留其余三事件待验；把UTM完整链接纳入验收步骤，明确旧账号级分析表不再作为现行判据。
 
 - 2026-10-28：按江昪“沉淀”，将 PR #4 的合并部署、四项修复及验收边界回写正本；明确购买上报未启用及后续配置／验收步骤。
 
@@ -116,7 +118,7 @@ pnpm analytics:report dispatch-purchases
 
 ## 验证（DebugView）
 
-1. 本地或正式站浏览器 URL 带 `?utm_source=test&utm_medium=qa&utm_campaign=debug`，同意统计；GA Admin → DebugView（或安装 Tag Assistant）可看到 `page_view` 的 `page_location` 含 utm。客户端事件需开启调试：Tag Assistant 连接，或临时在控制台 `gtag('set','debug_mode',true)`。
+1. 归因验收先固定完整入口 `/account?utm_source=test&utm_medium=qa&utm_campaign=debug`，转发及登录重试均保留参数；UTM不得包含姓名、邮箱或其他个人信息。注册本身不依赖UTM，但省略参数不能验目标活动归因，也不能事后补造来源。首次来源规则见上文。浏览器同意统计后，GA Admin → DebugView（或安装 Tag Assistant）可看到 `page_view` 的 `page_location` 含 utm。客户端事件需开启调试：Tag Assistant 连接，或临时在控制台 `gtag('set','debug_mode',true)`。
 2. 用新 Google 账号注册：出现 `sign_up`；库中 `user_attribution` 一行 `utm_source=test`。
 3. 生成视频：出现一次 `generate_video`，参数无 prompt。
 4. 点击购买：`begin_checkout`。设置 `GA_API_SECRET`、`GA_MP_DEBUG=true` 后完成一次 live 支付，回到订单页：DebugView 出现 `purchase`，`analytics_purchase_events.status=sent`；刷新订单页不重复。
@@ -154,4 +156,21 @@ pnpm analytics:report dispatch-purchases
 - GA Admin API 回读：关键事件为 purchase、sign_up、begin_checkout；5个事件维度为 model、generation_mode、resolution、billing_mode、method；指标 duration_seconds 为秒、credits 为普通数值；事件和用户保留期均14个月。generate_video 未标记为关键事件。
 - Search Console 域资源与本站 Web 流关联已在界面显示 `LINK CREATED`，关联列表含正确的本站域名及流。本次未扩大服务账号的 Search Console 权限。
 - `GA_MP_DEBUG` 保持关闭。Tag Assistant 连接未成功，DebugView 尚无匹配事件；新测试账号登录遇到Google人机验证，用户尝试后报告登录失败，尚未确认注册成功。注册、生成、结账、购买四项真实事件均未宣布通过，未伪造事件或复用历史订单。
-- **下一步：** 完成指定新账号登录与真实事件验收；用户已单独批准指定账号的单笔付款与单次生成预算，完成后关闭试点；具体账号、预算上限和授权范围仅在私有接续记录登记。登录成功后按现有受限试点设置进行，不能公开开售或增加测试次数。付款前短时开启 `GA_MP_DEBUG=true`，结束清空并验运行态。GA 收到事件与业务表状态均需匹配；配置生效不等于购买转化已经验收。
+- **当时的接续（现状见下方2026-10-29）：** 完成指定新账号登录与真实事件验收；用户已单独批准指定账号的单笔付款与单次生成预算，完成后关闭试点；具体账号、预算上限和授权范围仅在私有接续记录登记。登录成功后按现有受限试点设置进行，不能公开开售或增加测试次数。付款前短时开启 `GA_MP_DEBUG=true`，结束清空并验运行态。GA 收到事件与业务表状态均需匹配；配置生效不等于购买转化已经验收。
+
+
+<a id="signup-acceptance-20261029"></a>
+## 真实注册与UTM验收（2026-10-29）
+
+全产品取消年龄验证后的生产版本，由真人新账号完成Google登录；随后通过只读数据库核到新建用户、有效登录会话，以及同次注册保存的来源行。来源为 `wechat / referral / signup-verification`，落地路径为 `/account`。GA Realtime同一验收窗口出现 `sign_up`，独立运营Bot只读复核一致；没有合成或补发事件。具体账户、精确时间及原始取数结果仅存私有接续记录。
+
+| 验收对象 | 本轮结论 |
+| --- | --- |
+| 真实首次注册与有效登录会话 | 通过 |
+| 数据库UTM来源 | 通过 |
+| GA Realtime的sign_up到达 | 通过；仅聚合证据，不按姓名或时间邻近将事件对应个人 |
+| generate_video、begin_checkout、purchase | 仍待真实验收；不能把注册成功当整个转化漏斗完成 |
+
+**后续入口与边界：** 不需要再次创建账号来证明本次sign_up。付款／生成继续遵守私有记录中的指定账号、单次预算与关闭试点要求；换账号不会继承原预算。GA事件与业务表分别验收，结账时检查订单级统计上下文，结束关闭调试并核生产运行态。
+
+**本轮沉淀：** 发给测试者的链接要服务当前验收目标，来源验证保留明确UTM；直接域名可正常注册，不追补此前来源。`analytics_ga_clients`已退役，其空表不能作为注册故障或购买上报阻塞的判据；购买路径以本文件现行订单上下文说明及 `collectCheckoutAnalytics`、`bindOrderAnalytics`、`dispatchPaidPurchases` 为准。

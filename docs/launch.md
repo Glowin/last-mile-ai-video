@@ -1,13 +1,14 @@
 ---
 title: "KakaReel MVP 与上线状态"
-date: 2026-10-28
+date: 2026-10-29
 source: "2026-10-23 沙盒验收；2026-10-26 Dokploy及生产迁移／公开页面验收、Pancake复审刷新回执；2026-10-28 PR #4 合并部署验收"
-status: "2026-10-28 PR #4 已合并部署为 ea7ee21；渠道归因与转化代码上线，购买统计已配置、真实转化待验收；开售与生成状态分别看专项正本"
+status: "2026-10-28 PR #4 已合并部署为 ea7ee21；渠道归因与转化代码上线，购买统计已配置；真实注册及UTM已验，生成／结账／购买事件待验；开售与生成状态分别看专项正本"
 ---
 
-## 2026-10-28 统计上线与接续
+<a id="2026-10-28-统计上线与接续"></a>
+## 2026-10-29 统计上线与接续
 
-[PR #4](https://github.com/Glowin/last-mile-ai-video/pull/4) 的四项审查问题已修复，合并版本 `ea7ee21` 已上线。运行容器、13 项迁移及匿名授权／撤回行为验收通过；2026-10-28 23:21已完成 `GA_API_SECRET` 生产运行态验收及Search Console关联，真实转化仍待验收。测试结果、复用判据和剩余GA验收统一见[最新统计配置](analytics.md#ga-production-config-20261028)。本轮不改变业务配置，也未发起真实付款或生成；开售看[执行清单](launch-readiness.md)，生成策略看[无人值守生成](unattended-generation.md)。下方带日期记录保留为历史基线。
+[PR #4](https://github.com/Glowin/last-mile-ai-video/pull/4) 的四项审查问题已修复，合并版本 `ea7ee21` 已上线。运行容器、13 项迁移及匿名授权／撤回行为验收通过；2026-10-28 23:21已完成 `GA_API_SECRET` 生产运行态验收及Search Console关联；2026-10-29真实注册、数据库UTM及GA sign_up已验，生成／结账／购买事件仍待验收。测试结果、复用判据和剩余GA验收统一见[注册与归因接续](analytics.md#signup-acceptance-20261029)。本轮不改变业务配置，也未发起真实付款或生成；开售看[执行清单](launch-readiness.md)，生成策略看[无人值守生成](unattended-generation.md)。下方带日期记录保留为历史基线。
 
 ## 2026-10-26 现状（历史）
 
