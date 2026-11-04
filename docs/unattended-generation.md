@@ -2,12 +2,12 @@
 title: "Unattended MVP generation: policy, rollout and rollback"
 date: 2026-11-04
 source: "Owner's explicit 2026-10-28 decision; current implementation; official Prompt Sift contract"
-status: "2026-11-04 retry: real unattended preview delivery verified, direct-link playback and downloaded hash match; embedded playback final check and real paid auto-capture remain pending"
+status: "2026-11-04 retry: real unattended preview delivery verified, direct-link playback and downloaded hash match; embedded playback through the end and refreshed history verified; real paid auto-capture remains pending"
 ---
 
 ## 2026-11-04 live acceptance
 
-After the owner reported the upstream fix and requested another attempt, exactly one new preview completed one text allow, model generation, full-file verification and automatic delivery without human moderation. The 6.584-second video played through its direct link in Chrome; the downloaded 1,669,319-byte file matches the stored delivery SHA-256. Supplier logs verify CNY4.56 for the successful retry and CNY0 for the earlier failed task; both actual costs are recorded. New-generation budget is disabled again, revision10, preserving cumulative exposure. Purchased credits remain127 available and0 reserved. This proves preview delivery; real paid auto-capture is still unverified. Embedded-player final acceptance was interrupted by browser takeover. See [current evidence and next steps](launch-readiness.md#unattended-retry-success-20261104). The prior model-unavailable failure remains a historical fact.
+After the owner reported the upstream fix and requested another attempt, exactly one new preview completed one text allow, model generation, full-file verification and automatic delivery without human moderation. The 6.584-second video played through its direct link in Chrome; the downloaded 1,669,319-byte file matches the stored delivery SHA-256. Supplier logs verify CNY4.56 for the successful retry and CNY0 for the earlier failed task; both actual costs are recorded. New-generation budget is disabled again, revision10, preserving cumulative exposure. Purchased credits remain127 available and0 reserved. This proves preview delivery; real paid auto-capture is still unverified. Embedded-player acceptance was initially interrupted by browser takeover. After the owner returned browser control, the same task played to6.584 seconds in Studio; refreshed history retained the same video and unchanged credit balance. Embedded playback is now verified without a code change. See [current evidence and next steps](launch-readiness.md#unattended-retry-success-20261104). The prior model-unavailable failure remains a historical fact.
 
 # Scope and truthfulness
 
