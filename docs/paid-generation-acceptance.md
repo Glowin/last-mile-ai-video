@@ -1,9 +1,17 @@
 ---
 title: "Single unattended paid generation acceptance"
 date: 2026-11-04
-source: "Owner-authorized single acceptance; implementation and isolated PostgreSQL tests"
-status: "Implementation prepared; production acceptance pending"
+source: "Owner-authorized single acceptance; implementation, isolated PostgreSQL tests and 2026-11-04 production readback"
+status: "2026-11-04 single real paid automatic delivery and 23-credit capture passed; grant revoked and new-generation budget closed; full download hash and CNY4.56 actual supplier cost verified"
 ---
+
+# 2026-11-04 production result
+
+Code `d3d644d` was deployed and the running worker source hash matched the reviewed version. The owner submitted in Studio at 19:48:29 Asia/Shanghai; one real text allow led to full-file verification and automatic delivery at 19:52:49 without human moderation. Production readback confirms one 23-credit consumed allocation, available/reserved 127/0 → 104/23 → 104/0 and cumulative consumption 23 → 46. Studio displayed Ready and Credits used/delivery confirmed, with embedded playback to 6.584 seconds. The complete Chrome download is 11,358,749 bytes, H.264/AAC, 2560×1440 and 6.584 seconds; its SHA-256 matches production output_content_sha256.
+
+The budget is now disabled at revision 12, cap=exposure=2736 fen; the grant is revoked and cannot be reissued. Already-submitted recovery continued on the original task. The exact original supplier task matches the 2026-11-04 19:48 successful entry at CNY4.5600. The cost CLI recorded actual_minor=456 and independent database readback confirms it; cumulative exposure was not replenished. Public sales and global charging remain closed. See [current acceptance and remaining work](launch-readiness.md#unattended-paid-success-20261104).
+
+The new 12-case PostgreSQL suite, independently rerun by the main session, passed with no skips. It covers concurrency, fixed-input quotes, owner/scope isolation, final-send expiry/revocation, atomic issuance, unknown recovery, and real test-ledger release before late success. Legacy pilot 13, automation 26 and cost-budget 20 database cases, 48 targeted offline cases, typecheck and production build also passed; these isolated cases are not extra production transactions.
 
 # Fixed boundary
 
@@ -30,4 +38,4 @@ Before issuance, verify the deployed code and default-off state, the owner's cur
 
 Observe reservation127 available/0 reserved→104/23 and verified automatic delivery→104/0, cumulative consumed23→46, using independently read current wallet values as the actual baseline. Verify one provider POST, no fabricated human review, complete output hash, playback and refreshed history. Record actual supplier cost from independent supplier evidence; do not infer it from job success. Close new-generation budget and revoke any remaining permission after the accepted request. Unknown submissions retain original identity and supplier exposure and only query; explicit failure releases held customer credits once. Late success after an existing release never charges again.
 
-Production issuance, generation, wallet settlement and supplier spend have not been performed by the implementation tests. The isolated tests use synthetic providers and forbid external fetch.
+The isolated implementation tests use synthetic providers and forbid external fetch. Production issuance, generation and wallet settlement were separately verified on 2026-11-04 as recorded above; actual supplier cost and the complete download hash were subsequently verified as recorded above.
