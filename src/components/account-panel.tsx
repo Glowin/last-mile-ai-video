@@ -304,10 +304,10 @@ export function AccountPanel() {
               <dd>{profile.canGenerate ? "Enabled" : "Preview code required"}</dd>
             </dl>
             <p className="micro">{profile.canGenerate
-              ? "Generation remains subject to preview availability and limits."
-              : "Redeem a preview code in the studio to enable generation."}</p>
+              ? "Preview generation remains subject to its separate availability and limits. Purchased credits can be used for available paid settings."
+              : "Paid generation uses purchased credits and does not require an invitation. A preview code only enables the separate preview allowance."}</p>
             <div className="account-actions">
-              <Link className="button secondary small" href="/create">Open studio</Link>
+              <Link className="button secondary small" href="/create?model=minimax&mode=image">Open studio</Link>
               <button className="button secondary small" disabled={busy} onClick={() => void signOut(false)}>Sign out of this session</button>
             </div>
           </section>

@@ -1,3 +1,5 @@
+import { Hono } from 'hono';
+import { createBillingModule } from '../src/server/billing/routes';
 import { before, beforeEach, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
@@ -52,7 +54,7 @@ async function actor():Promise<Actor>{
 }
 function request(path:string,method='GET',body?:unknown,who=owner,headers:Record<string,string>={}){
  // Separate app instances share only DB/config, not in-memory slot state.
- return createApp({videoProvider:provider}).request(`${origin}/api${path}`,{method,headers:{cookie:who.cookie,origin,'content-type':'application/json','X-KakaReel-Owner':who.id,...headers},...(body?{body:JSON.stringify(body)}:{})});
+ return (path.startsWith('/billing') ? new Hono().basePath('/api').route('/billing',createBillingModule({generationChargingEnabled:false}).routes) : createApp({charging:{enabled:false,environment:'live'},videoProvider:provider})).request(`${origin}/api${path}`,{method,headers:{cookie:who.cookie,origin,'content-type':'application/json','X-KakaReel-Owner':who.id,...headers},...(body?{body:JSON.stringify(body)}:{})});
 }
 async function quote(x=input(),who=owner){const r=await request('/jobs/quote','POST',x,who);assert.equal(r.status,200);return r.json();}
 async function create(x=input()) {const q=await quote(x);assert.equal(q.available,true);assert.equal(q.credits,23);const r=await request('/jobs','POST',{...x,billingMode:'paid',quoteId:q.quoteId});assert.equal(r.status,201,JSON.stringify(await r.clone().json()));return (await r.json()).job;}

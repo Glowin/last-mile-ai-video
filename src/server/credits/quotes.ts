@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { VIDEO_PRICE_VERSION, videoCredits } from "../../lib/video-credit-rates";
+import { VIDEO_PRICE_VERSION, videoCredits, publicPaidGenerationAllowed } from "../../lib/video-credit-rates";
 import { database } from "../db";
-import type { GenerationInput } from "../input";
+import { providerPayload, type GenerationInput } from "../input";
+import { generationCostQuoteAvailable } from "../costs";
 import type { Transaction } from "../account";
 import { balance, CreditError, lockWallet } from "./wallet";
 import type { ChargingPolicy } from "./config";
@@ -14,8 +15,16 @@ export function generationFingerprint(x: GenerationInput) {
 }
 export async function createQuote(userId: string, x: GenerationInput, policy: ChargingPolicy) {
   const credits=videoCredits(x), quoteId=randomUUID(), expiresAt=new Date(Date.now()+300_000);
+  if (policy.enabled && policy.environment === "live" && !publicPaidGenerationAllowed(x))
+    return {quoteId:null,credits,priceVersion:VIDEO_PRICE_VERSION,expiresAt:expiresAt.toISOString(),available:false,reason:"PAID_SPEC_UNAVAILABLE"};
   if(credits===null) return {quoteId:null,credits:null,priceVersion:VIDEO_PRICE_VERSION,expiresAt:expiresAt.toISOString(),available:false,reason:"UNVERIFIED_VIDEO_PRICE"};
   return database().transaction(async tx=>{
+    if (policy.enabled && policy.environment === "live") {
+      const payload=providerPayload(x);
+      if (!await generationCostQuoteAvailable(tx,{jobId:x.requestId,spec:{provider:"vibetoken",model:String(payload.model),
+        mode:x.mode,duration:x.duration,resolution:x.resolution,audio:x.audio,ratio:x.ratio}}))
+        return {quoteId:null,credits,priceVersion:VIDEO_PRICE_VERSION,expiresAt:expiresAt.toISOString(),available:false,reason:"GENERATION_COST_UNAVAILABLE"};
+    }
     await lockWallet(tx,userId,policy.environment);
     const b=await balance(tx,userId,policy.environment);
     const acceptance = !policy.enabled && policy.environment === "live" ? await acceptanceForInput(tx, userId, x) : null;
@@ -29,6 +38,7 @@ export async function createQuote(userId: string, x: GenerationInput, policy: Ch
   });
 }
 export async function useQuote(tx: Transaction, userId:string, x:GenerationInput, quoteId:string, policy:ChargingPolicy) {
+  if (policy.enabled && policy.environment === "live" && !publicPaidGenerationAllowed(x)) throw new CreditError("PAID_SPEC_UNAVAILABLE");
   if (!policy.enabled && !generationPilotAllows(userId, x, policy) && !(policy.environment === "live" && await acceptanceForInput(tx, userId, x, true))) throw new CreditError("GENERATION_CHARGING_DISABLED", 503);
   const [q]=await tx.execute(sql`SELECT * FROM video_quotes WHERE id=${quoteId}::uuid AND user_id=${userId}::uuid AND environment=${policy.environment} FOR UPDATE`);
   if(!q || q.fingerprint!==generationFingerprint(x)) throw new CreditError("QUOTE_MISMATCH");

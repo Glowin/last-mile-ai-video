@@ -11,7 +11,7 @@ import type { BillingOptions } from "./service";
 /** Change only in an explicitly approved release after operational acceptance.
  * This is server code, never an environment variable or request option. */
 export type BillingReleaseApproval = Readonly<{ liveSalesApproved: boolean }>;
-export const productionBillingRelease: BillingReleaseApproval = Object.freeze({ liveSalesApproved: false });
+export const productionBillingRelease: BillingReleaseApproval = Object.freeze({ liveSalesApproved: true });
 
 // The dashboard supplies single-line base64 DER SPKI. Convert only that exact
 // encoding; the adapter remains responsible for RSA type and minimum key size.

@@ -7,7 +7,7 @@ export default function Privacy() {
       <main id="main" className="shell prose">
         <span className="eyebrow">PRIVACY & DATA HANDLING</span>
         <h1>Your <em>data.</em></h1>
-        <p className="lead">This page describes the preview and preparation for paid access, updated October 29, 2026.</p>
+        <p className="lead">This page describes paid access and the separate invite-only preview, updated November 4, 2026.</p>
         <h2>What the studio stores</h2>
         <p>
           You can use an invite code as a guest or sign in with Google. For
@@ -98,7 +98,7 @@ export default function Privacy() {
         </p>
         <h2>Orders, credits and payments</h2>
         <p>
-          Packs are not yet on sale. When paid access opens, we will retain order
+          For credit-pack purchases, we retain order
           identifiers, purchased credits, prices, tax and payment amounts, payment
           and refund status, and credit reservations and usage linked to your
           account. These records help reconcile payments and resolve billing

@@ -12,8 +12,8 @@ function environment(): NodeJS.ProcessEnv {
     PANCAKE_TEST_MERCHANT_ID: "MER_2D5F8G3H1K4M6N9P0Q7R8S", PANCAKE_TEST_STORE_ID: "STO_3bVzrkD0FJjFdZNLk8Ualx", PANCAKE_TEST_PRODUCT_ID: "PROD_3kF9mNpQrStUvWxYz1A2bC",
     PANCAKE_TEST_PRIVATE_KEY: keys.privateKey, PANCAKE_TEST_PLATFORM_PUBLIC_KEY: keys.publicKey };
 }
-test("default price is public but no environment variable enables live collection", () => {
-  const service = new BillingService(billingOptionsFromEnvironment({ NODE_ENV: "test", BILLING_LIVE_ENABLED: "true" }));
+test("explicitly closed release fixture publishes price without permitting collection", () => {
+  const service = new BillingService(billingOptionsFromEnvironment({ NODE_ENV: "test", BILLING_LIVE_ENABLED: "true" }, {liveSalesApproved:false}));
   const catalog = service.catalog();
   assert.equal(catalog.checkoutEnabled, false); assert.equal(catalog.environment, null);
   assert.equal(catalog.products.length, 1); assert.equal(catalog.products[0].price?.amountMinor, 1900);
@@ -42,6 +42,7 @@ const originalFetch = globalThis.fetch;
 before(() => { globalThis.fetch = async () => { throw new Error("Network forbidden in billing config tests"); }; });
 after(() => { globalThis.fetch = originalFetch; });
 const approvedFixture = Object.freeze({ liveSalesApproved: true });
+const closedFixture = Object.freeze({ liveSalesApproved: false });
 const liveKeys = generateKeyPairSync("rsa", { modulusLength: 2048,
   publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
 function liveEnvironment(): NodeJS.ProcessEnv {
@@ -108,14 +109,14 @@ test("pilot never opens the public catalog and rejects wrong identity, request, 
   assert.equal(dbCalls, 1, "only the exact live pilot can reach the isolation/DB boundary");
 });
 
-test("complete live configuration and env approval lookalikes cannot override the shipped OFF release", () => {
-  assert.equal(productionBillingRelease.liveSalesApproved, false);
+test("explicit closed fixture rejects env approval lookalikes; shipped release is publicly approved", () => {
+  assert.equal(productionBillingRelease.liveSalesApproved, true);
   assert.equal(Object.isFrozen(productionBillingRelease), true);
   const defaultCatalog = new BillingService(billingOptionsFromEnvironment({ NODE_ENV: "production" })).catalog();
   for (const NODE_ENV of ["production", "test", "development"] as const) {
     const options = billingOptionsFromEnvironment({ ...liveEnvironment(), NODE_ENV,
       BILLING_LIVE_SALES_APPROVED: "true", BILLING_PRODUCTION_APPROVED: "true",
-      GENERATION_CHARGING_ENABLED: "true", NEXT_PUBLIC_BILLING_LIVE_ENABLED: "true" });
+      GENERATION_CHARGING_ENABLED: "true", NEXT_PUBLIC_BILLING_LIVE_ENABLED: "true" }, closedFixture);
     assert.deepEqual(options, {});
     assert.deepEqual(new BillingService(options).catalog(), defaultCatalog);
   }
@@ -128,7 +129,7 @@ test("complete live configuration and env approval lookalikes cannot override th
 });
 
 test("live preparation keeps catalog and checkout closed even with collection requested and internal approval", async (t) => {
-  assert.equal(productionBillingRelease.liveSalesApproved, false);
+  assert.equal(productionBillingRelease.liveSalesApproved, true);
   for (const approval of [productionBillingRelease, approvedFixture]) {
     for (const BILLING_LIVE_ENABLED of ["false", "true"]) {
       const options = billingOptionsFromEnvironment({ ...preparationEnvironment(), BILLING_LIVE_ENABLED }, approval);
@@ -184,7 +185,7 @@ test("internal approved live fixture registers only the live product and passes 
 test("service separately denies live checkout without approval or with runtime sales disabled", async () => {
   const options = billingOptionsFromEnvironment(liveEnvironment(), approvedFixture);
   let isolationCalls = 0;
-  for (const override of [{ releaseApproval: undefined }, { releaseApproval: productionBillingRelease }, { salesEnabled: false }]) {
+  for (const override of [{ releaseApproval: closedFixture }, { salesEnabled: false }]) {
     const service = new BillingService({ ...options, ...override, assertIsolation: async () => { isolationCalls++; } });
     assert.equal(service.catalog().checkoutEnabled, false);
     await assert.rejects(service.checkout(user, checkoutInput), billingCode("SALES_DISABLED"));
@@ -295,6 +296,18 @@ test("configured adapters accept their signed payment scope and reject the oppos
     await assert.rejects(service.webhook("pancake", wrongScope.rawBody, wrongScope.headers), billingCode("INVALID_WEBHOOK"));
     const wrongKey = signed(event, wrongSigner.privateKey);
     await assert.rejects(service.webhook("pancake", wrongKey.rawBody, wrongKey.headers), billingCode("INVALID_WEBHOOK"));
-    assert.equal(verifier.mock.callCount(), 2, "service reaches the real provider, including with the shipped sales gate OFF");
+    assert.equal(verifier.mock.callCount(), 2, "service reaches the real provider, including with preparation-mode sales closed");
   }
+});
+
+test("public live release uses the same fixed USD19/150 product and ordinary checkout path", async()=>{
+ const options=billingOptionsFromEnvironment(liveEnvironment());
+ assert.equal(options.releaseApproval?.liveSalesApproved,true);
+ assert.equal(options.livePilot,undefined);
+ const boundary=new Error('OFFLINE_PUBLIC_CHECKOUT_BOUNDARY');
+ const service=new BillingService({...options,assertIsolation:async()=>{throw boundary;}});
+ const catalog=service.catalog();assert.equal(catalog.checkoutEnabled,true);
+ assert.equal(catalog.providers.find(x=>x.id==='pancake')?.available,true);
+ assert.deepEqual(catalog.products[0].price,{amountMinor:1900,currency:'USD'});assert.equal(catalog.products[0].credits,150);
+ await assert.rejects(service.checkout(user,{...checkoutInput,productId:catalog.products[0].id}),e=>e===boundary);
 });

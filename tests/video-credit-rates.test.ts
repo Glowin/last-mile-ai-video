@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VIDEO_CREDIT_RATES, videoCredits } from '../src/lib/video-credit-rates';
+import { VIDEO_CREDIT_RATES, videoCredits, publicPaidGenerationAllowed } from '../src/lib/video-credit-rates';
 import { generationFingerprint } from '../src/server/credits/quotes';
 import { publicAddress, videoHeader } from '../src/server/jobs/delivery';
 import { GENERATION_CHARGING_ENABLED } from '../src/server/credits/config';
@@ -12,7 +12,7 @@ test('eight text rates stay unchanged and only MiniMax 6s 2K image is added at 2
     assert.equal(videoCredits({...r,mode:'image'}),r.family==='minimax' && r.duration===6 ? 23 : null);
     assert.equal(videoCredits({...r,duration:30}),null);
   }
-  assert.equal(GENERATION_CHARGING_ENABLED,false);
+  assert.equal(GENERATION_CHARGING_ENABLED,true);
 });
 test('fingerprint binds full input and is independent of key ordering',()=>{
   const x={requestId:'00000000-0000-4000-8000-000000000001',family:'seedance' as const,mode:'text' as const,prompt:'A leaf',duration:5,resolution:'720p',ratio:'16:9',audio:false};
@@ -30,4 +30,11 @@ test('delivery requires both video MIME and actual container header; local addre
 test('sandbox charging cannot use real provider or override live release gate',()=>{
   assert.throws(()=>createApp({charging:{enabled:true,environment:'test'}}),/fake/);
   assert.throws(()=>createApp({charging:{enabled:true,environment:'live'}}),/sandbox-only/);
+});
+
+test('public paid release permits only the verified image specification',()=>{
+ const x={family:'minimax',mode:'image',duration:6,resolution:'2K',ratio:'adaptive',audio:false};
+ assert.equal(publicPaidGenerationAllowed(x),true);
+ for(const change of [{family:'kling'},{mode:'text'},{duration:10},{resolution:'768P'},{ratio:'16:9'},{audio:true}])
+  assert.equal(publicPaidGenerationAllowed({...x,...change}),false);
 });

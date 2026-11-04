@@ -7,7 +7,7 @@ export default function Terms() {
       <main id="main" className="shell prose">
         <span className="eyebrow">TERMS OF SERVICE</span>
         <h1>Terms & <em>credit offer.</em></h1>
-        <p className="lead">Updated October 28, 2026. The paid offer below is published in preparation for launch. Packs are not yet on sale.</p>
+        <p className="lead">Updated November 4, 2026. The paid offer below applies to Starter Pack purchases. Current checkout availability is shown on Pricing and in your account.</p>
         <p>
           KakaReel is an independent, open-source AI video studio under
           development. Preview access is by invitation. It is not an official
@@ -26,9 +26,10 @@ export default function Terms() {
         <h2>Access and usage</h2>
         <p>
           Google sign-in creates a KakaReel account but does not grant
-          generation credits. Redeem a valid preview code, or sign in from an
-          existing invited guest session, to enable generation. Guest access
-          remains available without a Google account. Preview generations use a
+          generation credits. Paid generation uses purchased credits and does not
+          require an invitation code. Redeem a valid preview code, or sign in from
+          an existing invited guest session, to enable preview generation. Guest
+          preview access remains available without a Google account. Preview generations use a
           limited project allowance, separate from purchased credits. Paid access must
           be selected explicitly and is subject to availability. Generation availability, speed, and output quality
           depend on the connected model provider. Limits may temporarily prevent

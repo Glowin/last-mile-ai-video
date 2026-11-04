@@ -41,7 +41,7 @@ import { GoogleSignIn } from "./google-sign-in";
 import { trackGeneration } from "@/lib/analytics-client";
 import { generationPilotInputAllowed, type BillingSummaryResponse } from "@/lib/billing";
 import { normalizeImageUpload, ImageUploadError, type NormalizedImageUpload } from "@/lib/image-upload";
-import { videoCredits } from "@/lib/video-credit-rates";
+import { videoCredits, publicPaidGenerationAllowed } from "@/lib/video-credit-rates";
 import { focusStudioProgress, StudioRequests, studioJobState, studioJobDescription, studioJobSafetyDisclosure, studioHistoryHint, studioHistoryView, type StudioHistoryState, type StudioJob } from "@/lib/studio-generation";
 const creditStateLabel = {
   none: "No purchased credits used",
@@ -51,6 +51,8 @@ const creditStateLabel = {
 };
 const quoteReason: Record<string, string> = {
   GENERATION_CHARGING_DISABLED: "Paid generation is not yet available.",
+  PAID_SPEC_UNAVAILABLE: "Paid generation currently supports MiniMax H3 image-to-video, 6 seconds, 2K and Match input image.",
+  GENERATION_COST_UNAVAILABLE: "Generation capacity is temporarily unavailable. No credits have been reserved. Please try again later.",
   WALLET_BLOCKED: "Credit spending is blocked for this account. Review your orders.",
   INSUFFICIENT_CREDITS: "You do not have enough available credits for this generation.",
   UNVERIFIED_VIDEO_PRICE: "Paid pricing has not been verified for these settings.",
@@ -161,7 +163,9 @@ export function Studio() {
   const estimatedCredits = videoCredits(generationPayload);
   const currentQuote = quote?.payloadKey === payloadKey ? quote : null;
   const paidEnabled = !!user && billing?.generationChargingEnabled === true && billing.blocked === false;
-  const pilotInputAllowed = !billing?.generationPilot || generationPilotInputAllowed(billing.generationPilot, generationPayload, now);
+  const pilotInputAllowed = billing?.generationPilot
+    ? generationPilotInputAllowed(billing.generationPilot, generationPayload, now)
+    : publicPaidGenerationAllowed(generationPayload);
   const insufficientCredits = billing !== null && (currentQuote?.credits ?? estimatedCredits ?? 0) > billing.availableCredits;
   const paidReady = !!user && pilotInputAllowed && !preparingImage && estimatedCredits !== null && paidGenerationAllowed(billing, currentQuote, now);
   useEffect(() => {
@@ -284,6 +288,7 @@ export function Studio() {
       const summary: BillingSummaryResponse = await api("/billing", { headers: { "X-KakaReel-Owner": owner } });
       if (epoch !== identityEpoch.current) return;
       setBilling(summary);
+      if (summary.generationChargingEnabled && !summary.previewAccess) setBillingMode("paid");
       setBillingError("");
     } catch (cause) {
       if (epoch !== identityEpoch.current) return;
@@ -668,7 +673,7 @@ export function Studio() {
                   setQuote(null);
                   setError("");
                 }}>
-                  <option value="preview">Preview · invitation allowance</option>
+                  <option value="preview" disabled={!!user && !canGenerate}>Preview · invitation allowance</option>
                   <option value="paid" disabled={!paidEnabled}>Paid · purchased credits{paidEnabled ? "" : " · unavailable"}</option>
                 </select>
                 <p className="micro">{billingMode === "preview" ? "Preview uses the invitation allowance, not your purchased credits." : "Paid mode uses your purchased credits. Review the quote, then submit explicitly."}</p>
@@ -822,6 +827,7 @@ export function Studio() {
                 )}
                 {billingMode === "paid" && <div className="access-panel" aria-live="polite">
                   <b>Review credit cost</b>
+                  {!billing?.generationPilot && <p className="micro">Paid generation currently supports MiniMax H3, Image to video, 6 seconds, 2K and Match input image (23 credits). Other settings are not available for paid generation yet.</p>}
                   <p>{estimatedCredits === null ? "Paid pricing is not verified for these settings." : `Published rate: ${estimatedCredits} credits. Request a quote for your exact inputs.`}</p>
                   {currentQuote && <p>{currentQuote.available
                     ? `${currentQuote.credits} credits · ${usableGenerationQuote(currentQuote, now) ? `Quote expires at ${new Date(currentQuote.expiresAt).toLocaleTimeString("en-US")}` : "Quote expired. Request a new quote."}`
@@ -891,7 +897,7 @@ export function Studio() {
                   <p>
                     {canGenerate
                       ? "Your preview access and video history are saved to this account."
-                      : "Your account is ready. Enter a preview code to unlock generation."}
+                      : paidEnabled ? "Your account is ready. Purchased credits enable paid generation; a preview code is optional." : "Your account is ready. Preview access requires a separate invitation code."}
                   </p>
                 </div>
               )}
@@ -905,7 +911,7 @@ export function Studio() {
                     {checked && !ready
                       ? "Generation is being connected. You can explore the studio while setup is completed."
                       : user
-                        ? "Redeem your code to enable generation for this account."
+                        ? "Redeem your code to enable preview generation for this account."
                         : "Enter it once to unlock generation in this browser."}
                   </p>
                   <label className="sr-only" htmlFor="preview-code">

@@ -112,6 +112,18 @@ export async function assertGenerationBudgetScope(tx: Transaction, id: string, g
   if (grantId && !detail.scope) fail('COST_BUDGET_SCOPE_MISSING');
   return b;
 }
+/** Read-only quote hint under the cost lock. Reservation rechecks all conditions.
+ * Acquire this before any wallet lock; it never grants permission to submit. */
+export async function generationCostQuoteAvailable(tx: Transaction, x: { jobId: string; spec: CostSpec }): Promise<boolean> {
+  try {
+    const b = await assertGenerationBudgetScope(tx, x.jobId);
+    const r = await rate(tx, costSpecKey(x.spec)); activeRate(r);
+    return BigInt(String(b.exposure_minor)) + BigInt(String(r.maximum_minor)) <= BigInt(String(b.cap_minor));
+  } catch (error) {
+    if (error instanceof GenerationCostError) return false;
+    throw error;
+  }
+}
 /** Manual trusted confirmation only; no provider-price scraper and no implicit default prices. */
 export async function confirmGenerationRate(tx: Transaction, x: {
   spec: CostSpec; expectedRateId: string | null; maximumMinor: number;

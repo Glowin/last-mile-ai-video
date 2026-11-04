@@ -84,7 +84,7 @@ function bridgeEvent(provider: BridgeMock, orderId: string, changes: Partial<Pan
 function bridge() {
   const provider = new BridgeMock();
   const options = { salesEnabled: true, providers: { pancake: provider }, catalog: [pack()] };
-  return { provider, app: harness(options), service: new BillingService(options) };
+  return { provider, app: harness(options), service: new BillingService({generationChargingEnabled:false,releaseApproval:{liveSalesApproved:false},...options}) };
 }
 function harness(options: BillingOptions = {}) {
   const app = new Hono().basePath("/api");
@@ -95,7 +95,7 @@ function harness(options: BillingOptions = {}) {
     }
     await next();
   });
-  const module = createBillingModule(options);
+  const module = createBillingModule({generationChargingEnabled:false,releaseApproval:{liveSalesApproved:false},...options});
   // Exact integration order: webhook router before the ordinary billing auth middleware.
   app.route("/billing/webhooks", module.webhookRoutes);
   app.route("/billing", module.routes);
@@ -359,7 +359,7 @@ test("billing foundation on disposable PostgreSQL", { skip: integration ? false 
       providerProducts: { pancake: { live: "live-fixture-product" } } };
     const options: BillingOptions = { environment: "live", salesEnabled: true,
       releaseApproval: { liveSalesApproved: true }, providers: { pancake: provider }, catalog: [livePack] };
-    const who = await actor(), app = harness(options), service = new BillingService(options);
+    const who = await actor(), app = harness(options), service = new BillingService({generationChargingEnabled:false,releaseApproval:{liveSalesApproved:false},...options});
     const closed = harness({ ...options, releaseApproval: { liveSalesApproved: false } });
     assert.equal((await request(closed, who, "/billing/checkout", "POST", input())).status, 503);
     assert.equal(provider.calls, 0);

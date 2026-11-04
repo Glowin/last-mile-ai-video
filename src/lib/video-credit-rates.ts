@@ -14,3 +14,12 @@ export const VIDEO_CREDIT_RATES = [
 export function videoCredits(input: { family: string; mode: string; resolution: string; duration: number }): number | null {
   return VIDEO_CREDIT_RATES.find(r => r.family === input.family && r.mode === input.mode && r.resolution === input.resolution && r.duration === input.duration)?.credits ?? null;
 }
+
+/** Initially released paid specification, verified end to end on 2026-11-04.
+ * Publishing other retail prices does not release their supplier capacity. */
+export const PUBLIC_PAID_GENERATION_SPEC = Object.freeze({
+  family: "minimax", mode: "image", duration: 6, resolution: "2K", ratio: "adaptive", audio: false,
+} as const);
+export function publicPaidGenerationAllowed(input: { family: string; mode: string; duration: number; resolution: string; ratio: string; audio: boolean }): boolean {
+  return Object.entries(PUBLIC_PAID_GENERATION_SPEC).every(([key,value]) => input[key as keyof typeof input] === value);
+}

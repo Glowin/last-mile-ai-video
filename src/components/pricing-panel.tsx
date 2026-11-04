@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, starterCheckoutEnvironment, starterCheckoutProvider } from "@/lib/api";
 import type { BillingCatalogResponse } from "@/lib/billing";
-import { VIDEO_CREDIT_RATES } from "@/lib/video-credit-rates";
+import { VIDEO_CREDIT_RATES, publicPaidGenerationAllowed } from "@/lib/video-credit-rates";
 import { getFamily } from "@/lib/models";
 import { STARTER_CREDIT_OFFER } from "@/lib/credit-offer";
 import Image from "next/image";
@@ -14,19 +14,19 @@ import styles from "./pricing.module.css";
 const questions = [
   {
     question: "Can I make a video today?",
-    answer: "Generation is invite only during the preview. If you have a preview code, redeem it in the studio. You can explore models and prompt starters without one. Signing in with Google does not grant generation access on its own.",
+    answer: "Sign in with Google and use purchased credits for MiniMax H3 image-to-video: 6 seconds, 2K, matching your input image, for 23 credits. Preview generation uses a separate invitation allowance. Other paid settings are not available yet.",
   },
   {
     question: "Can I buy credits now?",
-    answer: "The Starter Pack price is published: US$19 plus applicable taxes for 150 credits. Sales have not opened yet. Signing in does not reserve a pack or create a purchase. Availability is checked before checkout.",
+    answer: "The Starter Pack is US$19 plus applicable taxes for 150 credits. Check current purchase availability below, then continue to your account. Signing in does not create a purchase; availability and the final total are checked before payment.",
   },
   {
     question: "Will I need a subscription?",
-    answer: "No. The Starter Pack is a one-time purchase with no automatic renewal and no expiry. You can buy it again to add another 150 credits to your balance when sales open.",
+    answer: "No. The Starter Pack is a one-time purchase with no automatic renewal and no expiry. You can buy it again to add another 150 credits to your balance when checkout is available.",
   },
   {
     question: "How many videos will a credit pack make?",
-    answer: "It depends on the model, mode, duration and resolution. Review the credit rates below and request an exact quote in the studio. One credit does not mean one video. Some settings need more than the 150 credits in one pack.",
+    answer: "The currently available MiniMax H3 image-to-video setting costs 23 credits per clip. A 150-credit pack covers six such clips, with 12 credits left. Other published settings are not available for paid generation yet. Request an exact quote before generating.",
   },
   {
     question: "Why sign in with Google?",
@@ -34,7 +34,7 @@ const questions = [
   },
   {
     question: "What happens if a generation fails or I need a refund?",
-    answer: "Under the paid offer, a confirmed failed generation consumes no credits. An uncertain status stays pending until resolved; it is not automatically retried or treated as a failure. A wholly unused pack is refundable within 14 days for the full amount paid, including tax, with no KakaReel refund fee. A delivered video that does not suit your taste does not qualify for an automatic refund. These are the paid-offer rules; sales have not opened yet.",
+    answer: "Under the paid offer, a confirmed failed generation consumes no credits. An uncertain status stays pending until resolved; it is not automatically retried or treated as a failure. A wholly unused pack is refundable within 14 days for the full amount paid, including tax, with no KakaReel refund fee. A delivered video that does not suit your taste does not qualify for an automatic refund. Review the offer terms and contact support if a payment or generation needs attention.",
   },
 ];
 
@@ -71,7 +71,7 @@ export function PricingPanel() {
           <h1 id="pricing-title">A little idea.<br /><em>Room to take flight.</em></h1>
           <p className={styles.lead}>
             One simple pack for your next ideas. Published pricing, no subscription.
-            Explore the invite-only preview while paid access is being prepared.
+            Use purchased credits for MiniMax H3 image-to-video, or explore the separate invite-only preview.
           </p>
           <a className={styles.inlineLink} href="#access-options">
             Explore your options <ArrowRight size={17} aria-hidden="true" />
@@ -140,12 +140,12 @@ export function PricingPanel() {
       <section className={styles.rates} aria-labelledby="video-rates">
         <span className={styles.eyebrow}>PLAN YOUR NEXT CLIP</span>
         <h2 id="video-rates">Video credit rates</h2>
-        <p className={styles.small}>Paid-offer rates. Sales have not opened yet. Request a current quote in the studio before generating.</p>
+        <p className={styles.small}>Published rates. Paid access currently supports MiniMax H3 image-to-video, 6 seconds and 2K only. Request a current quote in the studio before generating.</p>
         <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Video credit rates">
           <table>
-            <thead><tr><th scope="col">Model</th><th scope="col">Mode</th><th scope="col">Resolution</th><th scope="col">Length</th><th scope="col">Credits</th></tr></thead>
+            <thead><tr><th scope="col">Model</th><th scope="col">Mode</th><th scope="col">Resolution</th><th scope="col">Length</th><th scope="col">Credits</th><th scope="col">Paid access</th></tr></thead>
             <tbody>{VIDEO_CREDIT_RATES.map((rate) => <tr key={`${rate.family}-${rate.mode}-${rate.resolution}-${rate.duration}`}>
-              <td>{getFamily(rate.family)?.name}</td><td>{rate.mode === "image" ? "Image to video" : "Text to video"}</td><td>{rate.resolution}</td><td>{rate.duration}s</td><td>{rate.credits}</td>
+              <td>{getFamily(rate.family)?.name}</td><td>{rate.mode === "image" ? "Image to video" : "Text to video"}</td><td>{rate.resolution}</td><td>{rate.duration}s</td><td>{rate.credits}</td><td>{publicPaidGenerationAllowed({...rate,ratio:"adaptive",audio:false}) ? "Available" : "Not yet available"}</td>
             </tr>)}</tbody>
           </table>
         </div>
@@ -156,7 +156,7 @@ export function PricingPanel() {
         <div className={styles.explainerHeading}>
           <span className={styles.eyebrow}>UNDERSTANDING CREDITS</span>
           <h2 id="credits-explained">Different clips.<br /><em>Different possibilities.</em></h2>
-          <p>The paid offer is published; sales have not opened yet. Your quote makes the credit cost clear before you generate.</p>
+          <p>Your quote makes the credit cost clear before you generate. Credits are reserved while a task runs and consumed after verified delivery.</p>
         </div>
         <div className={styles.explainerItems}>
           <article>

@@ -84,7 +84,7 @@ export default function Home() {
               </a>
             </div>
             <span className="micro">
-              Invite-only preview · Starter Pack: US$19 + applicable taxes / 150 credits · Not yet on sale
+              Starter Pack: US$19 + applicable taxes / 150 credits · MiniMax H3 image-to-video · Separate invite-only preview
             </span>
           </div>
           <div
@@ -300,7 +300,7 @@ export default function Home() {
             <article>
               <h3>Review and save the finished clip</h3>
               <p>Once a generation is accepted, follow its status in the studio. Wait for the existing task to finish before submitting another attempt. On completion, preview the clip and check whether its motion, framing, and details match your intended use. Download a copy promptly because provider links can expire.</p>
-              <p>KakaReel is currently an invite-only preview. Signing in keeps your account accessible, but generation still requires preview access. The <Link href="/pricing#access-options">pricing page</Link> explains the planned Starter Pack and model credit rates. If a task needs help, contact <Link href="/support">support</Link> with the task reference shown in your history.</p>
+              <p>Sign in and use purchased credits for the available paid settings; a preview code is only needed for the separate preview allowance. The <Link href="/pricing#access-options">pricing page</Link> explains the Starter Pack, currently available settings and model credit rates. If a task needs help, contact <Link href="/support">support</Link> with the task reference shown in your history.</p>
             </article>
           </div>
         </section>
@@ -320,7 +320,7 @@ export default function Home() {
             {[
               [
                 "Can I try it today?",
-                "The studio is an early, invite-only preview. You can explore its models and prompt starters without a code. Generating a video requires a preview code from the project owner.",
+                "You can sign in with Google, purchase credits and generate a MiniMax H3 image-to-video clip without an invitation. The separate limited preview still requires a code.",
               ],
               [
                 "What can I use as an input?",
@@ -328,7 +328,7 @@ export default function Home() {
               ],
               [
                 "What does a generation cost?",
-                "The published Starter Pack is US$19 plus applicable taxes for 150 credits, with no expiry or automatic renewal. It is not yet on sale. Invited preview generations use a separate limited allowance. Credit usage depends on the model and settings; see Pricing for the offer and rates.",
+                "The published Starter Pack is US$19 plus applicable taxes for 150 credits, with no expiry or automatic renewal. Paid generation currently supports MiniMax H3 image-to-video, 6 seconds and 2K at 23 credits. Invited preview generations use a separate limited allowance. Credit usage depends on the model and settings; see Pricing for the offer and rates.",
               ],
               [
                 "How long will it take?",
