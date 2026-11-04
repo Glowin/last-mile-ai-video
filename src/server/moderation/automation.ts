@@ -4,6 +4,8 @@ import type { Transaction } from '../account';
 import { database } from '../db';
 import { jobs } from '../schema';
 import { lockWallet, settleCredits } from '../credits/wallet';
+import { assertPilotSubmission } from '../credits/pilot';
+import { GenerationCostError } from '../costs';
 import { getGenerationCost, lockGenerationCostBudget, releaseUnsubmittedGenerationCost } from '../costs';
 import { hasOpenContentCase, hasModerationHold } from './service';
 import { scanPrompt, type PromptSiftResult } from './prompt-sift';
@@ -86,6 +88,10 @@ export async function authorizeAutomationPost(job: Job, kind: 'live' | 'fake') {
       current.status !== 'submitting' || current.upstreamId || !current.submissionStartedAt || current.reviewRequired) return false;
     const a = await getAutomation(tx, job.id);
     if (!isMvp(a) || !automationPostAllowed(a, current) || await hasModerationHold(tx, job.id)) return false;
+    if (kind === 'live' && current.billingMode === 'paid') {
+      try { await assertPilotSubmission(tx, current); }
+      catch (error) { if (error instanceof GenerationCostError) return false; throw error; }
+    }
     await audit(tx, current, 'automation-send-authorized', 'Final lease/content-case check committed before transport');
     return true;
   });

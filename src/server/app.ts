@@ -21,6 +21,7 @@ import { CreditError, lockWallet, reserveCredits } from "./credits/wallet";
 import { createQuote, generationFingerprint, useQuote } from "./credits/quotes";
 import { productionChargingPolicy, type ChargingPolicy } from "./credits/config";
 import { generationPilotAllows, assertPilotCreation, recordPilotCreation } from "./credits/pilot";
+import { paidAcceptanceEnabled } from "./credits/acceptance";
 import { processJob, pollJob, liveVideoProvider, type VideoProvider } from "./jobs/runner";
 import { families } from "../lib/models";
 import { publicModeration } from "./moderation/service";
@@ -176,7 +177,7 @@ app.post("/jobs", async c => {
   const parsed=generationSchema.safeParse(input);
   if(!parsed.success) return c.json({error:parsed.error.issues[0]?.message??"Check the generation settings."},400);
   const x=parsed.data,payload=providerPayload(x);
-  if(paid && !charging.enabled && !generationPilotAllows(who.user!.id,x,charging))
+  if(paid && !charging.enabled && !generationPilotAllows(who.user!.id,x,charging) && !paidAcceptanceEnabled())
     return c.json({error:"Paid generation is not available for this request.",code:"GENERATION_CHARGING_DISABLED"},503);
   // Preserve preview fingerprints from before the wallet migration.
   const fingerprint=paid?generationFingerprint(x):createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -197,7 +198,7 @@ app.post("/jobs", async c => {
       if(Number(count[0]?.n)>=limit) return {error:"Today's preview generation limit has been reached. Please come back tomorrow.",status:429 as const};
     }
     if(videoProvider.kind === "live") await reserveGenerationCost(tx, {
-      jobId:x.requestId, fingerprint:generationFingerprint(x),
+      jobId:x.requestId, fingerprint:generationFingerprint(x), grantId:pilot?.grantId, ownerId:who.owner, billingMode, environment:paid?charging.environment:undefined,
       spec:{provider:"vibetoken",model:String(payload.model),mode:x.mode,duration:x.duration,
         resolution:x.resolution,audio:x.audio,ratio:x.ratio},
     });

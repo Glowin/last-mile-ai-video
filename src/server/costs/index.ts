@@ -83,15 +83,34 @@ async function audit(tx: Transaction, action: string, actor: string, evidenceRef
 /** Explicit cumulative cap. Updating validity/cap never resets outstanding or spent exposure. */
 export async function configureGenerationBudget(tx: Transaction, x: {
   expectedRevision: number; enabled: boolean; capMinor: number; validFrom: Date; expiresAt: Date; actor: string; evidenceRef: string;
+  scope?: { jobId: string; grantId: string };
 }) {
   money(x.capMinor); window(x.validFrom,x.expiresAt);
+  if (x.scope) { jobId(x.scope.jobId); jobId(x.scope.grantId); }
   if (!Number.isSafeInteger(x.expectedRevision) || typeof x.enabled !== 'boolean') fail('INVALID_BUDGET_CONFIG');
   const b=await lockGenerationCostBudget(tx);
   if (b.revision !== x.expectedRevision) fail('BUDGET_REVISION_CONFLICT');
   await tx.execute(sql`UPDATE generation_cost_budget SET enabled=${x.enabled},cap_minor=${x.capMinor},valid_from=${instant(x.validFrom)}::timestamptz,
     expires_at=${instant(x.expiresAt)}::timestamptz,revision=revision+1 WHERE id=true`);
-  await audit(tx,'configure-budget',x.actor,x.evidenceRef,{previousRevision:b.revision,capMinor:x.capMinor,enabled:x.enabled,validFrom:instant(x.validFrom),expiresAt:instant(x.expiresAt)});
+  await audit(tx,'configure-budget',x.actor,x.evidenceRef,{previousRevision:b.revision,capMinor:x.capMinor,enabled:x.enabled,validFrom:instant(x.validFrom),expiresAt:instant(x.expiresAt),...(x.scope?{scope:x.scope}:{})});
   return { revision:Number(b.revision)+1 };
+}
+/** Current revision only; never infer authorization from the newest timestamp.
+ * A scoped acceptance budget cannot fund previews or another grant/job. */
+export async function assertGenerationBudgetScope(tx: Transaction, id: string, grantId?: string, fromJob = false) {
+  const b = await lockGenerationCostBudget(tx); activeBudget(b);
+  const rows = await tx.execute(sql`SELECT detail FROM generation_cost_audit WHERE action='configure-budget'
+    AND detail->>'previousRevision'=${String(Number(b.revision)-1)}`);
+  if (rows.length !== 1) fail('COST_BUDGET_AUDIT_MISMATCH');
+  const detail = rows[0].detail as { scope?: {jobId?: string; grantId?: string} };
+  if (detail.scope && fromJob) {
+    const binding = await tx.execute(sql`SELECT reason FROM credit_audit WHERE job_id=${id}::uuid AND action='generation-pilot-created'`);
+    try { grantId = binding.length === 1 ? JSON.parse(String(binding[0].reason)).grantId : undefined; }
+    catch { fail('COST_BUDGET_SCOPE_INVALID_BINDING'); }
+  }
+  if (detail.scope && (detail.scope.jobId !== id || detail.scope.grantId !== grantId)) fail('COST_BUDGET_SCOPE_MISMATCH');
+  if (grantId && !detail.scope) fail('COST_BUDGET_SCOPE_MISSING');
+  return b;
 }
 /** Manual trusted confirmation only; no provider-price scraper and no implicit default prices. */
 export async function confirmGenerationRate(tx: Transaction, x: {
@@ -131,19 +150,29 @@ export async function observeSupplierPrice(tx: Transaction, x: {
   return { blocked:increased||!!r.blocked_reason };
 }
 /** Same task/fingerprint/spec is idempotent even after expiry. This is NOT permission to POST. */
-export async function reserveGenerationCost(tx: Transaction, x: { jobId: string; fingerprint: string; spec: CostSpec }) {
+export async function reserveGenerationCost(tx: Transaction, x: { jobId: string; fingerprint: string; spec: CostSpec; grantId?: string; ownerId?: string; billingMode?: string; environment?: string }) {
   jobId(x.jobId); text(x.fingerprint,'FINGERPRINT'); const key=costSpecKey(x.spec);
   const b=await lockGenerationCostBudget(tx);
   const [existing]=await tx.execute(sql`SELECT * FROM generation_cost_reservations WHERE job_id=${x.jobId}::uuid`);
   if (existing) {
+    const bound = (existing.snapshot as { acceptance?: Record<string, string> }).acceptance;
+    if (bound && (bound.grantId !== x.grantId || bound.ownerId !== x.ownerId || x.billingMode !== 'paid' || x.environment !== 'live')) fail('COST_BUDGET_SCOPE_MISMATCH');
     if (existing.fingerprint!==x.fingerprint || existing.spec_key!==key) fail('COST_RESERVATION_MISMATCH');
     return reservation(existing);
   }
-  activeBudget(b); const r=await rate(tx,key); activeRate(r);
+  await assertGenerationBudgetScope(tx, x.jobId, x.grantId); const r=await rate(tx,key); activeRate(r);
   const amount=Number(r.maximum_minor);
+  if (x.grantId) {
+    if (amount !== 456) fail('PAID_ACCEPTANCE_RATE_MISMATCH');
+    const [grant] = await tx.execute(sql`SELECT reason FROM credit_audit WHERE id=${x.grantId}::uuid AND action='unattended-paid-acceptance-issued'`);
+    let bound: Record<string, unknown>;
+    try { bound = JSON.parse(String(grant?.reason)); } catch { fail('COST_BUDGET_SCOPE_INVALID_BINDING'); }
+    if (x.billingMode !== 'paid' || x.environment !== 'live' || bound.userId !== x.ownerId || bound.requestId !== x.jobId ||
+        bound.budgetRevision !== b.revision || bound.maximumMinor !== 456) fail('COST_BUDGET_SCOPE_MISMATCH');
+  }
   if (BigInt(String(b.exposure_minor))+BigInt(amount)>BigInt(String(b.cap_minor))) fail('COST_BUDGET_EXHAUSTED');
   const snapshot={currency:'CNY',unit:'fen',spec:x.spec,rateId:r.id,maximumMinor:amount,sourceRef:r.source_ref,
-    observedAt:r.observed_at,validFrom:r.valid_from,expiresAt:r.expires_at,confirmedBy:r.confirmed_by};
+    observedAt:r.observed_at,validFrom:r.valid_from,expiresAt:r.expires_at,confirmedBy:r.confirmed_by,...(x.grantId?{acceptance:{grantId:x.grantId,ownerId:x.ownerId,billingMode:x.billingMode,environment:x.environment}}:{})};
   const [created]=await tx.execute(sql`INSERT INTO generation_cost_reservations(job_id,fingerprint,rate_id,spec_key,snapshot,reserved_minor,exposure_minor,state)
     VALUES(${x.jobId}::uuid,${x.fingerprint},${r.id}::uuid,${key},${JSON.stringify(snapshot)}::jsonb,${amount},${amount},'held') RETURNING *`);
   await tx.execute(sql`UPDATE generation_cost_budget SET exposure_minor=exposure_minor+${amount} WHERE id=true`);
@@ -159,7 +188,7 @@ export async function markGenerationSubmission(tx: Transaction, id: string) {
   if (!r) fail('COST_RESERVATION_MISSING');
   if (r.state==='submitted') return {maySubmit:false,reservation:reservation(r)};
   if (r.state==='released') fail('COST_RESERVATION_RELEASED');
-  activeBudget(b);
+  await assertGenerationBudgetScope(tx, id, undefined, true);
   if (BigInt(String(b.exposure_minor))>BigInt(String(b.cap_minor))) fail('COST_BUDGET_EXHAUSTED');
   const current=await rate(tx,String(r.spec_key)); activeRate(current);
   // Reconfirming even the same amount requires re-planning held jobs; never silently reprice.

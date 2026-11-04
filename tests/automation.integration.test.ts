@@ -76,7 +76,7 @@ before(async()=>{
  mock.method(Date,'now',()=>clock);
  initialized=true;
  for(const file of (await readdir(new URL('../db/',import.meta.url))).filter(f=>/^\d{4}-.+\.sql$/.test(f)).sort()) {
-  if(file.startsWith('0011-')) {
+  if(file === '0011-generation-automation.sql') {
    const id=randomUUID();await pg`INSERT INTO video_jobs(id,owner,family,mode,prompt,duration,resolution,fingerprint,status) VALUES(${id}::uuid,${randomUUID()}::uuid,'minimax','image','legacy',6,'2K','legacy','unknown')`;
    const before=await pg`SELECT row_to_json(j) AS j FROM video_jobs j WHERE id=${id}::uuid`;
    await pg.unsafe(await readFile(new URL('../db/'+file,import.meta.url),'utf8'));

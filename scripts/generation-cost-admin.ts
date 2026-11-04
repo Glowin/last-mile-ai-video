@@ -24,7 +24,7 @@ const command=z.discriminatedUnion('action',[
 ]);
 
 /** Refuse repo-contained, symlinked, shared-readable or oversized operator input. */
-export async function readCostAdminInput(path:string) {
+export async function readPrivateOperatorInput(path:string): Promise<unknown> {
   if(!isAbsolute(path)) throw new Error('INPUT_PATH');
   const info=await lstat(path);
   if(!info.isFile() || info.isSymbolicLink() || info.size>65_536 || (info.mode&0o777)!==0o600) throw new Error('INPUT_FILE');
@@ -39,7 +39,10 @@ export async function readCostAdminInput(path:string) {
     if(inRepo) throw new Error('INPUT_IN_REPOSITORY');
     if(dirname(dir)===dir) break;
   }
-  return command.parse(JSON.parse(await readFile(canonical,'utf8')));
+  return JSON.parse(await readFile(canonical,'utf8'));
+}
+export async function readCostAdminInput(path:string) {
+  return command.parse(await readPrivateOperatorInput(path));
 }
 export async function runCostAdmin(path:string) {
   const input=await readCostAdminInput(path);

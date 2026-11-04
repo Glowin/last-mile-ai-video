@@ -5,7 +5,7 @@ export const GENERATION_CHARGING_ENABLED = false;
 export type CreditEnvironment = "test" | "live";
 export type ChargingPolicy = { enabled: boolean; environment: CreditEnvironment };
 export const productionChargingPolicy: ChargingPolicy = Object.freeze({ enabled: GENERATION_CHARGING_ENABLED, environment: "live" });
-export type GenerationPilot = Readonly<{ userId: string; requestId: string; expiresAt: string }>;
+export type GenerationPilot = Readonly<{ userId: string; requestId: string; expiresAt: string; grantId?: string; budgetRevision?: number; previousJobId?: string }>;
 /** Separate from public charging. Invalid/partial/revoked config fails closed;
  * read at each new authorization, never prevent recovery of started jobs. */
 export function generationPilotFromEnvironment(env: NodeJS.ProcessEnv = process.env, now = Date.now()): GenerationPilot | null {

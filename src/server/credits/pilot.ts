@@ -8,6 +8,7 @@ import type { jobs } from "../schema";
 import { GenerationCostError } from "../costs";
 import { generationPilotFromEnvironment, type ChargingPolicy, type GenerationPilot } from "./config";
 import { CreditError, lockWallet } from "./wallet";
+import { acceptanceForInput, acceptanceOffer, assertAcceptanceSubmission, paidAcceptanceEnabled } from "./acceptance";
 
 const spec = Object.freeze({ family: "minimax", mode: "image", duration: 6, resolution: "2K", ratio: "adaptive", audio: false } as const);
 const action = "generation-pilot-created";
@@ -25,6 +26,8 @@ export async function pilotJobs(tx: Transaction, userId: string) {
     AND billing_mode='paid' AND credit_environment='live' LIMIT 2`);
 }
 export async function assertPilotCreation(tx: Transaction, userId: string, x: GenerationInput, policy: ChargingPolicy): Promise<GenerationPilot> {
+  const acceptance = !policy.enabled && policy.environment === "live" ? await acceptanceForInput(tx, userId, x) : null;
+  if (acceptance) return acceptance;
   const prior = await pilotJobs(tx, userId);
   // Read config/deadline AFTER waiting for locks and queries.
   const pilot = generationPilotFromEnvironment();
@@ -40,7 +43,7 @@ function payloadHash(payload: Record<string, unknown> | null) {
 export async function recordPilotCreation(tx: Transaction, job: typeof jobs.$inferSelect, pilot: GenerationPilot) {
   await tx.execute(sql`INSERT INTO credit_audit(id,job_id,action,actor,reason)
     VALUES(${randomUUID()}::uuid,${job.id}::uuid,${action},'server',${JSON.stringify({
-      userId: job.owner, expiresAt: pilot.expiresAt, fingerprint: job.fingerprint, payloadHash: payloadHash(job.payload), credits: 23,
+      userId: job.owner, expiresAt: pilot.expiresAt, ...(pilot.grantId ? {grantId:pilot.grantId,budgetRevision:pilot.budgetRevision} : {}), fingerprint: job.fingerprint, payloadHash: payloadHash(job.payload), credits: 23,
     })})`);
 }
 
@@ -53,6 +56,12 @@ export async function assertPilotSubmission(tx: Transaction, job: typeof jobs.$i
   let saved: Record<string, unknown>;
   try { saved = JSON.parse(String(rows[0].reason)); }
   catch { throw new GenerationCostError("GENERATION_PILOT_INVALID_BINDING"); }
+  if (saved.grantId) {
+    if (rows.length !== 1 || saved.userId !== job.owner || saved.fingerprint !== job.fingerprint ||
+        saved.payloadHash !== payloadHash(job.payload) || saved.credits !== 23)
+      throw new GenerationCostError("PAID_ACCEPTANCE_INVALID_BINDING");
+    return assertAcceptanceSubmission(tx, job, saved);
+  }
   const prior = await pilotJobs(tx, job.owner);
   const pilot = generationPilotFromEnvironment();
   if (rows.length !== 1 || !pilot || pilot.userId !== job.owner || pilot.requestId !== job.id ||
@@ -67,6 +76,9 @@ export async function assertPilotSubmission(tx: Transaction, job: typeof jobs.$i
 /** Synchronous final check: call after preparing the body, immediately before
  * invoking transport. No await may separate this check from that invocation. */
 export function pilotPostAllowed(authorization: GenerationPilot, job: typeof jobs.$inferSelect): boolean {
+  if (authorization.grantId) return paidAcceptanceEnabled() && authorization.userId === job.owner &&
+    authorization.requestId === job.id && Date.parse(authorization.expiresAt) > Date.now() &&
+    !!job.leaseUntil && job.leaseUntil.getTime() > Date.now();
   const current = generationPilotFromEnvironment();
   return !!current && current.userId === authorization.userId && current.userId === job.owner &&
     current.requestId === authorization.requestId && current.requestId === job.id &&
@@ -76,6 +88,11 @@ export function pilotPostAllowed(authorization: GenerationPilot, job: typeof job
 
 /** Authenticated billing summary only. Never attach this to public catalog/models. */
 export async function generationPilotOffer(userId: string): Promise<GenerationPilotOffer | null> {
+  const acceptance = paidAcceptanceEnabled() ? await database().transaction(async tx => {
+    await lockWallet(tx, userId, "live");
+    return acceptanceOffer(tx, userId);
+  }) : null;
+  if (acceptance) return acceptance;
   const pilot = generationPilotFromEnvironment();
   if (!pilot || pilot.userId !== userId || Date.parse(pilot.expiresAt) <= Date.now()) return null;
   return database().transaction(async tx => {

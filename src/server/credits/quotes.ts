@@ -7,6 +7,7 @@ import type { Transaction } from "../account";
 import { balance, CreditError, lockWallet } from "./wallet";
 import type { ChargingPolicy } from "./config";
 import { generationPilotAllows, pilotJobs } from "./pilot";
+import { acceptanceForInput } from "./acceptance";
 /** Hash every validated field, including request id, prompt, audio and full upload reference. */
 export function generationFingerprint(x: GenerationInput) {
   return createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(x).sort(([a],[b])=>a.localeCompare(b))))).digest("hex");
@@ -17,9 +18,10 @@ export async function createQuote(userId: string, x: GenerationInput, policy: Ch
   return database().transaction(async tx=>{
     await lockWallet(tx,userId,policy.environment);
     const b=await balance(tx,userId,policy.environment);
-    const prior = !policy.enabled && policy.environment === "live" ? await pilotJobs(tx, userId) : [];
-    const allowed = policy.enabled || generationPilotAllows(userId, x, policy);
-    const reason=!allowed?"GENERATION_CHARGING_DISABLED":!policy.enabled&&prior.length?"GENERATION_PILOT_JOB_LIMIT":b.blocked?"WALLET_BLOCKED":b.available<credits?"INSUFFICIENT_CREDITS":undefined;
+    const acceptance = !policy.enabled && policy.environment === "live" ? await acceptanceForInput(tx, userId, x) : null;
+    const prior = !acceptance && !policy.enabled && policy.environment === "live" ? await pilotJobs(tx, userId) : [];
+    const allowed = policy.enabled || !!acceptance || generationPilotAllows(userId, x, policy);
+    const reason=!allowed?"GENERATION_CHARGING_DISABLED":!acceptance&&!policy.enabled&&prior.length?"GENERATION_PILOT_JOB_LIMIT":b.blocked?"WALLET_BLOCKED":b.available<credits?"INSUFFICIENT_CREDITS":undefined;
     if (reason) return {quoteId:null,credits,priceVersion:VIDEO_PRICE_VERSION,expiresAt:expiresAt.toISOString(),available:false,reason};
     await tx.execute(sql`INSERT INTO video_quotes(id,user_id,environment,fingerprint,credits,price_version,expires_at)
       VALUES(${quoteId}::uuid,${userId}::uuid,${policy.environment},${generationFingerprint(x)},${credits},${VIDEO_PRICE_VERSION},${expiresAt.toISOString()}::timestamptz)`);
@@ -27,7 +29,7 @@ export async function createQuote(userId: string, x: GenerationInput, policy: Ch
   });
 }
 export async function useQuote(tx: Transaction, userId:string, x:GenerationInput, quoteId:string, policy:ChargingPolicy) {
-  if (!policy.enabled && !generationPilotAllows(userId, x, policy)) throw new CreditError("GENERATION_CHARGING_DISABLED", 503);
+  if (!policy.enabled && !generationPilotAllows(userId, x, policy) && !(policy.environment === "live" && await acceptanceForInput(tx, userId, x, true))) throw new CreditError("GENERATION_CHARGING_DISABLED", 503);
   const [q]=await tx.execute(sql`SELECT * FROM video_quotes WHERE id=${quoteId}::uuid AND user_id=${userId}::uuid AND environment=${policy.environment} FOR UPDATE`);
   if(!q || q.fingerprint!==generationFingerprint(x)) throw new CreditError("QUOTE_MISMATCH");
   if(q.job_id) throw new CreditError("QUOTE_ALREADY_USED");
