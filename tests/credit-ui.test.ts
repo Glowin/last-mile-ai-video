@@ -193,7 +193,7 @@ test("refund and quote responses from a replaced account are discarded", async (
   } finally { state.restore(); }
 });
 
-test("pricing renders the actual eight rates, published offer and closed-sale state without effects", () => {
+test("pricing renders the actual nine rates with mode column, published offer and closed-sale state without effects", () => {
   const require = createRequire(import.meta.url);
   const previous = require.extensions[".css"];
   // SSR has no CSS loader. This replaces style tokens only, not React or product logic.
@@ -210,7 +210,11 @@ test("pricing renders the actual eight rates, published offer and closed-sale st
     assert.match(html, /14-day refund/);
     assert.equal((html.match(/<tr>/g) ?? []).length, VIDEO_CREDIT_RATES.length + 1);
     for (const rate of VIDEO_CREDIT_RATES) assert.ok(html.includes(`<td>${rate.credits}</td>`));
-    assert.match(html, /Image-to-video pricing is not yet verified/);
+    assert.match(html, /<th scope="col">Mode<\/th>/);
+    assert.match(html, /<td>Text to video<\/td>/);
+    assert.match(html, /<td>Image to video<\/td>/);
+    assert.match(html, /MiniMax H3 2K for 6 seconds is the only verified image-to-video rate/);
+    assert.match(html, /other image-to-video pricing is not yet verified/i);
     assert.match(html, /Save completed videos to your device/);
   } finally {
     if (previous) require.extensions[".css"] = previous;

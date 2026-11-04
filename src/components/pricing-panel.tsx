@@ -26,7 +26,7 @@ const questions = [
   },
   {
     question: "How many videos will a credit pack make?",
-    answer: "It depends on the model, duration and resolution. Review the text-to-video rates below and request an exact quote in the studio. One credit does not mean one video. Some settings need more than the 150 credits in one pack.",
+    answer: "It depends on the model, mode, duration and resolution. Review the credit rates below and request an exact quote in the studio. One credit does not mean one video. Some settings need more than the 150 credits in one pack.",
   },
   {
     question: "Why sign in with Google?",
@@ -139,17 +139,17 @@ export function PricingPanel() {
 
       <section className={styles.rates} aria-labelledby="video-rates">
         <span className={styles.eyebrow}>PLAN YOUR NEXT CLIP</span>
-        <h2 id="video-rates">Text-to-video credit rates</h2>
+        <h2 id="video-rates">Video credit rates</h2>
         <p className={styles.small}>Paid-offer rates. Sales have not opened yet. Request a current quote in the studio before generating.</p>
-        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Text-to-video credit rates">
+        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Video credit rates">
           <table>
-            <thead><tr><th scope="col">Model</th><th scope="col">Resolution</th><th scope="col">Length</th><th scope="col">Credits</th></tr></thead>
-            <tbody>{VIDEO_CREDIT_RATES.map((rate) => <tr key={`${rate.family}-${rate.resolution}-${rate.duration}`}>
-              <td>{getFamily(rate.family)?.name}</td><td>{rate.resolution}</td><td>{rate.duration}s</td><td>{rate.credits}</td>
+            <thead><tr><th scope="col">Model</th><th scope="col">Mode</th><th scope="col">Resolution</th><th scope="col">Length</th><th scope="col">Credits</th></tr></thead>
+            <tbody>{VIDEO_CREDIT_RATES.map((rate) => <tr key={`${rate.family}-${rate.mode}-${rate.resolution}-${rate.duration}`}>
+              <td>{getFamily(rate.family)?.name}</td><td>{rate.mode === "image" ? "Image to video" : "Text to video"}</td><td>{rate.resolution}</td><td>{rate.duration}s</td><td>{rate.credits}</td>
             </tr>)}</tbody>
           </table>
         </div>
-        <p className={styles.small}>Seedance 1080p for 10 seconds costs 160 credits, more than one Starter Pack. You need sufficient available credits; repeat purchases add to your balance. Image-to-video pricing is not yet verified and paid image generation is unavailable.</p>
+        <p className={styles.small}>Seedance 1080p for 10 seconds costs 160 credits, more than one Starter Pack. You need sufficient available credits; repeat purchases add to your balance. MiniMax H3 2K for 6 seconds is the only verified image-to-video rate (23 credits); other image-to-video pricing is not yet verified and paid image generation is unavailable for those settings.</p>
       </section>
 
       <section className={styles.explainer} aria-labelledby="credits-explained">

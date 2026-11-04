@@ -1,25 +1,34 @@
 ---
 title: "KakaReel 开售执行与验收清单"
-date: 2026-10-29
-source: "既有生产验收；2026-10-29 线上catalog、28cf67f源码、Waffo官方AIGC文档与2026-10-26客服邮件回读"
-status: "本人付款与首条付费视频已验；公众销售关闭；无人值守真实成片、正式签名回调及退款待验，输出审核差异与税务职责待确认"
+date: 2026-11-04
+source: "既有生产验收；2026-10-29 线上catalog、28cf67f源码、Waffo官方AIGC文档与2026-10-26客服邮件回读；2026-11-04 生产只读数据库、运行容器与线上接口实核"
+status: "本人付款与首条付费视频已验；公众销售关闭；2026-11-04已实核生产生成额度与成本配置；无人值守真实成片、正式签名回调及退款待验，输出审核差异与税务职责待确认"
 ---
 
 <a id="public-launch-status-20261029"></a>
-## 2026-10-29 公众开售卡点核查
+## 2026-10-29 公众开售卡点核查（2026-11-04 同步生产实核）
 
-真实支付与积分交付的已验范围：2026-10-27 本人付款到账150积分；2026-10-28 首条付费视频经本人完整观看及人工批准后交付，扣除23积分，余额127、预留0。上述是已记录的生产验收，本轮没有再次付款、生成或重查钱包；本人运营验收不计外部客户首单。新无人值守策略的验收边界另见[策略正本](unattended-generation.md#acceptance-record)。
+真实支付与积分交付的已验范围：2026-10-27 本人付款到账150积分；2026-10-28 首条付费视频经本人完整观看及人工批准后交付，扣除23积分，余额127、预留0。上述是已记录的生产验收，本轮没有再次付款或发起新生成；本人运营验收不计外部客户首单。新无人值守策略的验收边界另见[策略正本](unattended-generation.md#acceptance-record)。
 
-2026-10-29 从 Glow Chrome 直接读取[线上catalog](https://kakareel.com/api/billing/catalog)：`environment=live`、`checkoutEnabled=false`，商品和全部渠道不可购买。源码核对基线为 `28cf67f`；本轮只核查和沉淀，不开放销售、调整预算或发送渠道消息。
+2026-10-29 从 Glow Chrome 直接读取、2026-11-04 再次请求[线上catalog](https://kakareel.com/api/billing/catalog)：`environment=live`、`checkoutEnabled=false`，商品和全部渠道不可购买。
 
 | 项目 | 已核证据与边界 | 接续动作及完成信号 |
 |---|---|---|
 | 公众购买与付费生成放行 | 线上结账关闭；`src/server/billing/config.ts` 的 `liveSalesApproved=false`，`src/server/credits/config.ts` 的 `GENERATION_CHARGING_ENABLED=false`。正式商品最后一次后台回读为下架，本轮未重查商品状态 | 完成开售验收并获明确放行后，复核商品状态，协调上架、销售配置与生成扣费；从普通登录账户验购买、报价和使用，不能只打开购买按钮 |
-| 无人值守真实交付 | 生产 Prompt Sift 文字探针已 allow；隔离数据库已验自动交付及一次性扣积分。新策略尚无真实视频完整交付证据，不能用前述人工审核任务代替 | 执行已单独授权的最多¥4.56新预览验收，失败不重试、不充值，不扣已购买积分；核实际成片交付。自动扣积分目前仍为隔离数据库证据 |
-| 正式生成额度与规格 | 2026-10-28 最后生产快照中预算关闭、风险额度占满；不是本日生产数据库重查。账户充值不证明项目Key额度充足；代码要求预算及对应规格成本费率有效 | 调用前重核Key额度、预算和成本费率；正式运营另确定预算及开放规格，不能把单次验收授权扩成持续支出或把旧未知成本清零 |
+| 无人值守真实交付 | 生产 Prompt Sift 文字探针已 allow；隔离数据库已验自动交付及一次性扣积分。2026-11-04 核 `generation_automation` 仍为0行，新策略尚无真实视频完整交付证据，不能用前述人工审核任务代替 | 执行已单独授权的最多¥4.56新预览验收，失败不重试、不充值，不扣已购买积分；核实际成片交付。自动扣积分目前仍为隔离数据库证据 |
+| 正式生成额度与规格 | 2026-11-04 生产只读数据库（`kakareel_ro`）与运行容器实核：`generation_cost_budget` 为 `enabled=false`、`revision=6`、`cap_minor=1368`、`exposure_minor=1368`（含实付456分＋两条历史unknown敞口912分）、`remaining_minor=0` 且窗口已于 `2026-10-28T11:42:58Z` 过期；`generation_cost_specs` 仅1条 `minimax/minimax-h3-i2v` 6秒2K `adaptive` `audio=false`（`456`分，已过期），其余8档文生积分规格尚无成本记录；运行态 `GENERATION_DAILY_LIMIT=3`（仅限preview，当日UTC提交0），`credit_batches` 可用余额127积分 | 调用前重核VibeToken项目Key剩余额度、开启短时预算并确认对应7元组规格成本费率；正式运营另确定预算及开放规格，不能把单次验收授权扩成持续支出或把旧未知成本清零 |
 | 正式签名回调与退款验收 | 付款入账已确认，但该笔由签名回调还是查询对账触发尚未单独核实。退款、查询恢复及对账worker已实现，沙盒退款及幂等冲销已有成功证据；正式退款未验 | 先查原生产回调及对账证据，再按单独确定的费用范围补正式退款验收。已消费23积分的原包不能当作整包未使用退款测试；验收缺口不等于已知代码故障 |
 | 新审核策略与渠道要求 | 当前MVP只查文字，图片和成片未审核、按策略放行。2026-10-29读取[Waffo AIGC要求](https://docs.waffo.ai/zh/mor/account-reviews/aigc-compliance)，其要求生成前检查文字、展示前审核输出 | 如实向渠道确认这套MVP是否获接受；若不接受，再落实输出审核。原商户审核通过不等于新策略获认可，不提交虚假审核声明 |
 | 税务职责与可售地区 | 2026-10-26客服邮件明确目前所有国家税率为0%，测试生产一致；没有解释本商户适用的税务承担、申报与销售范围 | 向渠道取得适用协议、可售市场及税款处理口径；不能将0税解释为免税，也不再把它仅记为未知沙盒故障 |
+
+<a id="quota-and-cost-audit-20261104"></a>
+### 2026-11-04 生成额度与成本配置对账及价格表修复
+
+来源：本机 `kakareel_ro` 原生 PostgreSQL 只读查询、生产 Web／Worker 容器运行态环境核查、`scripts/generation-safety-status.ts` 只读聚合输出及线上 HTTPS 接口回读。
+
+- **生产库成本与额度实测（2026-11-04 18:13 CST）**：`generation_cost_budget` 处于关闭且过期状态（`enabled=false, revision=6, cap_minor=1368, exposure_minor=1368, remaining_minor=0`）；`generation_cost_reservations` 共3条（2条2026-10-27 `unknown` 各占456分敞口，1条2026-10-28 `success` 实付456分）；`generation_cost_specs` 仅1条 `minimax/minimax-h3-i2v`（`mode=image, duration=6, resolution=2K, ratio=adaptive, audio=false, maximum_minor=456`，已过期）；`credit_batches` 的唯一 `live` 批次为发放150、已用23、预留0、可用127；`video_jobs` 仍为9条（preview成功4、失败2、unknown 2，paid成功1），`generation_automation` 为0条。
+- **运行态闸门核查**：Web 与 Worker 容器均启用 `GENERATION_DAILY_LIMIT=3`、`GENERATION_REVIEW_POLICY=mvp-text-only-v1`、`GENERATION_MVP_AUTOMATION_ENABLED=true`（等待上限300秒、最多3次尝试、单次超时10秒）；`liveSalesApproved=false`、`GENERATION_CHARGING_ENABLED=false`，单次付费试点窗口已过期且唯一试点名额已占用。
+- **定价页表格修正**：`src/lib/video-credit-rates.ts` 含8档文生与1档 MiniMax H3 6秒2K图生（23积分），原 `src/components/pricing-panel.tsx` 未渲染 `mode` 列且 React `key` 未包含 `mode`，导致 `minimax-2K-6` 重复渲染两行且与下方说明冲突。本轮补齐 `Mode` 列（区分 `Text to video` 与 `Image to video`）及唯一 `key`，并同步更新说明文案与单元测试。
 
 提款账户另属资金回收待办：2026-10-26记录为基本身份已填、实际收款账户未绑定，2026-10-27由负责人安排亲自提交；本轮未重新进入后台核实，不能断言今天仍未提交。真实付款成功说明它不是已证实的收款接口阻断，提款验证仍须补证。
 
