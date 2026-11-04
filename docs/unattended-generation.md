@@ -1,9 +1,13 @@
 ---
 title: "Unattended MVP generation: policy, rollout and rollback"
-date: 2026-10-28
+date: 2026-11-04
 source: "Owner's explicit 2026-10-28 decision; current implementation; official Prompt Sift contract"
-status: "cd3d93c deployed and MVP policy enabled; live text allow verified; fresh video acceptance pending"
+status: "2026-11-04 live preview: automated text allow and upstream acceptance verified; provider returned failed/model temporarily unavailable; real delivery and paid auto-capture remain unverified"
 ---
+
+## 2026-11-04 live acceptance
+
+One real preview was submitted automatically after one Prompt Sift allow, without human moderation or purchased-credit debit. The original provider task then failed with “This model is temporarily unavailable.” No video was delivered. Real unattended delivery and paid auto-capture remain unverified. See the [dated acceptance and next steps](launch-readiness.md#unattended-acceptance-20261104); do not retry or infer zero supplier cost from this failure.
 
 # Scope and truthfulness
 
