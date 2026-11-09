@@ -84,7 +84,7 @@ export default function Home() {
               </a>
             </div>
             <span className="micro">
-              Starter Pack: US$19 + applicable taxes / 150 credits · MiniMax H3 image-to-video · Separate invite-only preview
+              Starter Pack: US$19 + applicable taxes / 150 credits · Seedance, Kling & MiniMax · Separate invite-only preview
             </span>
           </div>
           <div
@@ -320,7 +320,7 @@ export default function Home() {
             {[
               [
                 "Can I try it today?",
-                "You can sign in with Google, purchase credits and generate a MiniMax H3 image-to-video clip without an invitation. The separate limited preview still requires a code.",
+                "You can sign in with Google, purchase credits and generate supported Seedance or Kling text-to-video clips or MiniMax H3 image-to-video clips without an invitation. The separate limited preview still requires a code.",
               ],
               [
                 "What can I use as an input?",
@@ -328,7 +328,7 @@ export default function Home() {
               ],
               [
                 "What does a generation cost?",
-                "The published Starter Pack is US$19 plus applicable taxes for 150 credits, with no expiry or automatic renewal. Paid generation currently supports MiniMax H3 image-to-video, 6 seconds and 2K at 23 credits. Invited preview generations use a separate limited allowance. Credit usage depends on the model and settings; see Pricing for the offer and rates.",
+                "The published Starter Pack is US$19 plus applicable taxes for 150 credits, with no expiry or automatic renewal. Paid generation supports Seedance and Kling text-to-video at published settings with audio off, plus MiniMax H3 image-to-video, 6 seconds and 2K at 23 credits. Invited preview generations use a separate limited allowance. Credit usage depends on the model and settings; see Pricing for the offer and rates.",
               ],
               [
                 "How long will it take?",

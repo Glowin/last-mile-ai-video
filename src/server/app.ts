@@ -24,7 +24,7 @@ import { generationPilotAllows, assertPilotCreation, recordPilotCreation } from 
 import { paidAcceptanceEnabled } from "./credits/acceptance";
 import { processJob, pollJob, liveVideoProvider, type VideoProvider } from "./jobs/runner";
 import { families } from "../lib/models";
-import { publicPaidGenerationAllowed } from "../lib/video-credit-rates";
+import { publicPaidGenerationAllowed, PUBLIC_PAID_GENERATION_DESCRIPTION } from "../lib/video-credit-rates";
 import { publicModeration } from "./moderation/service";
 import { createAutomation, publicSafety } from "./moderation/automation";
 import { reviewPolicy, MVP_POLICY } from "./moderation/policy";
@@ -181,7 +181,7 @@ app.post("/jobs", async c => {
   if(paid && !charging.enabled && !generationPilotAllows(who.user!.id,x,charging) && !paidAcceptanceEnabled())
     return c.json({error:"Paid generation is not available for this request.",code:"GENERATION_CHARGING_DISABLED"},503);
   if(paid && charging.enabled && charging.environment === "live" && !publicPaidGenerationAllowed(x))
-    return c.json({error:"Paid generation currently supports MiniMax H3 image-to-video, 6 seconds, 2K and Match input image.",code:"PAID_SPEC_UNAVAILABLE"},409);
+    return c.json({error:PUBLIC_PAID_GENERATION_DESCRIPTION,code:"PAID_SPEC_UNAVAILABLE"},409);
   // Preserve preview fingerprints from before the wallet migration.
   const fingerprint=paid?generationFingerprint(x):createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   const rawLimit=Number(process.env.GENERATION_DAILY_LIMIT??10);

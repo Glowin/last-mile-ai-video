@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VIDEO_CREDIT_RATES, videoCredits, publicPaidGenerationAllowed } from '../src/lib/video-credit-rates';
+import { VIDEO_CREDIT_RATES, videoCredits, publicPaidGenerationAllowed, PUBLIC_PAID_GENERATION_SPECS } from '../src/lib/video-credit-rates';
 import { generationFingerprint } from '../src/server/credits/quotes';
 import { publicAddress, videoHeader } from '../src/server/jobs/delivery';
 import { GENERATION_CHARGING_ENABLED } from '../src/server/credits/config';
+import { families, ratios, resolutions } from '../src/lib/models';
+import { generationSchema, providerPayload } from '../src/server/input';
 import { createApp } from '../src/server/app';
 test('eight text rates stay unchanged and only MiniMax 6s 2K image is added at 23 credits',()=>{
   assert.deepEqual(VIDEO_CREDIT_RATES.map(x=>x.credits),[33,65,80,160,72,143,23,38,23]);
@@ -32,9 +34,35 @@ test('sandbox charging cannot use real provider or override live release gate',(
   assert.throws(()=>createApp({charging:{enabled:true,environment:'live'}}),/sandbox-only/);
 });
 
-test('public paid release permits only the verified image specification',()=>{
+test('public paid release preserves the verified MiniMax image specification',()=>{
  const x={family:'minimax',mode:'image',duration:6,resolution:'2K',ratio:'adaptive',audio:false};
  assert.equal(publicPaidGenerationAllowed(x),true);
  for(const change of [{family:'kling'},{mode:'text'},{duration:10},{resolution:'768P'},{ratio:'16:9'},{audio:true}])
   assert.equal(publicPaidGenerationAllowed({...x,...change}),false);
+});
+
+
+test('paid release is exactly six silent text tiers across supported ratios plus original MiniMax image',()=>{
+ assert.equal(PUBLIC_PAID_GENERATION_SPECS.length,31);
+ let allowed=0;
+ for(const family of families) for(const mode of ['text','image'] as const)
+ for(const resolution of resolutions(family.slug,mode)) for(const duration of family.durations)
+ for(const ratio of ratios(family.slug,mode)) for(const audio of [false,true]) {
+  const spec={family:family.slug,mode,resolution,duration,ratio,audio};
+  const expected=!audio && (family.slug==='minimax'
+   ? mode==='image' && duration===6
+   : mode==='text' && [5,10].includes(duration));
+  assert.equal(publicPaidGenerationAllowed(spec),expected,JSON.stringify(spec));
+  if(expected) {
+   allowed++;
+   const parsed=generationSchema.parse({...spec,requestId:'00000000-0000-4000-8000-000000000001',prompt:'A leaf',...(mode==='image'?{image:'data:image/png;base64,iVBORw0KGgoAAAAA'}:{})});
+   const payload=providerPayload(parsed);
+   assert.equal(payload.model,mode==='text'?family.t2v:family.i2v);
+   if(family.slug==='seedance') {assert.equal(payload.generate_audio,false);assert.equal(payload.ratio,ratio);}
+   if(family.slug==='kling') {assert.equal(payload.sound,false);assert.equal(payload.aspect_ratio,ratio);}
+  }
+ }
+ assert.equal(allowed,31);
+ for(const change of [{ratio:'adaptive'},{ratio:'2:1'},{resolution:'480p'},{duration:30},{family:'unknown'}])
+  assert.equal(publicPaidGenerationAllowed({family:'seedance',mode:'text',resolution:'720p',duration:5,ratio:'16:9',audio:false,...change}),false);
 });

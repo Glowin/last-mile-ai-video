@@ -5,7 +5,7 @@ import { SiteFooter, SiteHeader } from "@/components/site-header";
 const title = "150 AI Video Credits for US$19 + Tax | KakaReel";
 
 const description =
-  "Starter Pack: 150 AI video credits for US$19 plus applicable taxes. One-time purchase, no expiry or automatic renewal. Paid generation currently supports MiniMax H3 image-to-video, 6 seconds and 2K.";
+  "Starter Pack: 150 AI video credits for US$19 plus applicable taxes. One-time purchase, no expiry or automatic renewal. Paid generation supports Seedance and Kling text-to-video and MiniMax H3 image-to-video. See published settings and request a current quote.";
 
 export const metadata: Metadata = {
   title: { absolute: title },

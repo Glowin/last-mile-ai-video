@@ -74,7 +74,8 @@ test("privacy retains full-prompt storage, legacy records and nonzero retention 
 
 test("policy rollout does not change the published offer or imply Waffo approved it", () => {
   const { text } = pageContent(Terms);
-  assert.match(text, /Packs are not yet on sale/);
+  assert.match(text, /Current checkout availability is shown on Pricing and in your account/);
+  assert.doesNotMatch(text, /Packs are not yet on sale/);
   assert.match(text, /US\$19 before applicable taxes and includes 150 credits/);
   assert.match(text, /one-time purchase: no subscription, automatic renewal, or expiry date/);
   assert.match(text, /wholly unused pack is eligible for a refund within 14 days/);

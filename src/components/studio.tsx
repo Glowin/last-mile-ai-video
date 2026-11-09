@@ -41,7 +41,7 @@ import { GoogleSignIn } from "./google-sign-in";
 import { trackGeneration } from "@/lib/analytics-client";
 import { generationPilotInputAllowed, type BillingSummaryResponse } from "@/lib/billing";
 import { normalizeImageUpload, ImageUploadError, type NormalizedImageUpload } from "@/lib/image-upload";
-import { videoCredits, publicPaidGenerationAllowed } from "@/lib/video-credit-rates";
+import { videoCredits, publicPaidGenerationAllowed, PUBLIC_PAID_GENERATION_DESCRIPTION } from "@/lib/video-credit-rates";
 import { focusStudioProgress, StudioRequests, studioJobState, studioJobDescription, studioJobSafetyDisclosure, studioHistoryHint, studioHistoryView, type StudioHistoryState, type StudioJob } from "@/lib/studio-generation";
 const creditStateLabel = {
   none: "No purchased credits used",
@@ -51,7 +51,7 @@ const creditStateLabel = {
 };
 const quoteReason: Record<string, string> = {
   GENERATION_CHARGING_DISABLED: "Paid generation is not yet available.",
-  PAID_SPEC_UNAVAILABLE: "Paid generation currently supports MiniMax H3 image-to-video, 6 seconds, 2K and Match input image.",
+  PAID_SPEC_UNAVAILABLE: PUBLIC_PAID_GENERATION_DESCRIPTION,
   GENERATION_COST_UNAVAILABLE: "Generation capacity is temporarily unavailable. No credits have been reserved. Please try again later.",
   WALLET_BLOCKED: "Credit spending is blocked for this account. Review your orders.",
   INSUFFICIENT_CREDITS: "You do not have enough available credits for this generation.",
@@ -288,7 +288,10 @@ export function Studio() {
       const summary: BillingSummaryResponse = await api("/billing", { headers: { "X-KakaReel-Owner": owner } });
       if (epoch !== identityEpoch.current) return;
       setBilling(summary);
-      if (summary.generationChargingEnabled && !summary.previewAccess) setBillingMode("paid");
+      if (summary.generationChargingEnabled && !summary.previewAccess) {
+        setBillingMode("paid");
+        setAudio(false);
+      }
       setBillingError("");
     } catch (cause) {
       if (epoch !== identityEpoch.current) return;
@@ -387,7 +390,7 @@ export function Studio() {
     };
   }, [authenticated, pollError, user?.id]);
   function changeModel(slug: FamilySlug) {
-    if (slug === "minimax") setAudio(false);
+    if (slug === "minimax" || billingMode === "paid") setAudio(false);
     const model = getFamily(slug)!;
     setFamily(slug);
     setDuration(model.defaultDuration);
@@ -670,6 +673,7 @@ export function Studio() {
                 <label className="field-label" htmlFor="billing-mode">Generation access</label>
                 <select id="billing-mode" value={billingMode} disabled={busy} onChange={(event) => {
                   setBillingMode(event.target.value as "preview" | "paid");
+                  if (event.target.value === "paid") setAudio(false);
                   setQuote(null);
                   setError("");
                 }}>
@@ -815,10 +819,11 @@ export function Studio() {
                     <input
                       type="checkbox"
                       checked={audio}
+                      disabled={billingMode === "paid"}
                       onChange={(e) => setAudio(e.target.checked)}
                     />
                     <span>Generate audio</span>
-                    <span className="muted">Optional</span>
+                    <span className="muted">{billingMode === "paid" ? "Off for paid generation" : "Optional"}</span>
                   </label>
                 ) : (
                   <p className="micro">
@@ -827,7 +832,7 @@ export function Studio() {
                 )}
                 {billingMode === "paid" && <div className="access-panel" aria-live="polite">
                   <b>Review credit cost</b>
-                  {!billing?.generationPilot && <p className="micro">Paid generation currently supports MiniMax H3, Image to video, 6 seconds, 2K and Match input image (23 credits). Other settings are not available for paid generation yet.</p>}
+                  {!billing?.generationPilot && <p className="micro">{PUBLIC_PAID_GENERATION_DESCRIPTION}</p>}
                   <p>{estimatedCredits === null ? "Paid pricing is not verified for these settings." : `Published rate: ${estimatedCredits} credits. Request a quote for your exact inputs.`}</p>
                   {currentQuote && <p>{currentQuote.available
                     ? `${currentQuote.credits} credits · ${usableGenerationQuote(currentQuote, now) ? `Quote expires at ${new Date(currentQuote.expiresAt).toLocaleTimeString("en-US")}` : "Quote expired. Request a new quote."}`

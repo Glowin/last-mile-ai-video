@@ -1,9 +1,13 @@
 ---
 title: "VibeToken 视频接口接入"
-date: 2026-10-21
+date: 2026-11-09
 source: "VibeToken 官方文档与模型 schema"
-status: "Seedance 480p 已知失败已本地拦截；其余 Seedance 配置未通过真实验收"
+status: "Seedance 480p 保持拦截；六档 Seedance／Kling 付费文生开放实现通过隔离验收，生产状态另验"
 ---
+
+# 当前付费开放范围
+
+2026-11-09：Seedance 和 Kling 的六档静音文生规格开放实现及当前价格依据见[付费规格与验收](public-paid-models.md)。下文 2026-10-21 的未验状态和待授权为历史记录；不能据此覆盖本轮明确授权，也不能把隔离测试当作新上游成片验收。
 
 # 接口与限制
 

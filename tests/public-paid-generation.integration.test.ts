@@ -13,7 +13,8 @@ import { database, closeDatabase } from '../src/server/db';
 import { jobs, users, authSessions } from '../src/server/schema';
 import { billingOrders } from '../src/server/billing/schema';
 import { walletSummary, grantPurchase, reserveCredits, settleCredits, lockWallet } from '../src/server/credits/wallet';
-import type { GenerationInput } from '../src/server/input';
+import { providerPayload, type GenerationInput } from '../src/server/input';
+import { PUBLIC_PAID_GENERATION_SPECS, videoCredits } from '../src/lib/video-credit-rates';
 import { configureGenerationBudget, confirmGenerationRate, getGenerationCost, getGenerationBudget } from '../src/server/costs';
 import { processJob, pollJob, type VideoProvider } from '../src/server/jobs/runner';
 
@@ -41,6 +42,8 @@ const provider:VideoProvider={kind:'live',request:async(path,init)=>{
   return {id:taskId,status,...(status==='success'?{data:[{url:outputUrl}]}:{})};
 },verifyDelivery:async()=>{throw new Error('MVP must verify complete content');},verifyContent:async()=>contentAvailable?{contentSha256,bytes:100,mime:'video/mp4'}:null};
 const input=(id=requestId):GenerationInput=>({requestId:id,family:'minimax',mode:'image',duration:6,resolution:'2K',ratio:'adaptive',audio:false,prompt:'A synthetic bird',image:'data:image/png;base64,iVBORw0KGgoAAAAA'});
+const textSpecs=PUBLIC_PAID_GENERATION_SPECS.filter(spec=>spec.mode==='text');
+const textInput=(spec=textSpecs[0]):GenerationInput=>({...spec,family:spec.family as GenerationInput['family'],mode:'text',requestId:randomUUID(),prompt:'A synthetic leaf'});
 const from=()=>new Date(Date.now()-60_000),until=()=>new Date(Date.now()+3600_000);
 async function actor():Promise<Actor>{
  const id=randomUUID(),sid=randomUUID();
@@ -105,6 +108,7 @@ beforeEach(async()=>{
  }
  await database().transaction(tx=>configureGenerationBudget(tx,{expectedRevision:0,enabled:true,capMinor:1368,validFrom:from(),expiresAt:until(),actor:'synthetic',evidenceRef:'synthetic:budget'}));
  await database().transaction(tx=>confirmGenerationRate(tx,{spec:{provider:'vibetoken',model:'minimax/minimax-h3-i2v',mode:'image',duration:6,resolution:'2K',audio:false,ratio:'adaptive'},expectedRateId:null,maximumMinor:456,sourceRef:'synthetic:rate',observedAt:from(),validFrom:from(),expiresAt:until(),actor:'synthetic'}));
+ for(const spec of textSpecs) await database().transaction(tx=>confirmGenerationRate(tx,{spec:{provider:'vibetoken',model:String(providerPayload(textInput(spec)).model),mode:'text',duration:spec.duration,resolution:spec.resolution,audio:false,ratio:spec.ratio},expectedRateId:null,maximumMinor:100,sourceRef:'synthetic:release-rate-not-market-price',observedAt:from(),validFrom:from(),expiresAt:until(),actor:'synthetic'}));
  previousJobId=randomUUID();
  await database().transaction(async tx=>{
   await lockWallet(tx,owner.id,'live');
@@ -134,7 +138,7 @@ test('ordinary signed-in accounts without preview access have public paid mode a
 });
 
 test('public quotes and create reject all unreleased specifications without holds or model calls',opts,async()=>{
- for(const change of [{duration:10},{audio:true},{family:'kling',resolution:'4K'},{mode:'text',ratio:'16:9',image:undefined}]){
+ for(const change of [{duration:10},{audio:true},{family:'kling',resolution:'4K'},{mode:'text',ratio:'16:9',image:undefined},{family:'seedance',resolution:'720p',duration:5},{family:'kling',mode:'text',ratio:'16:9',resolution:'4K',duration:6,image:undefined},{family:'seedance',mode:'text',ratio:'16:9',resolution:'720p',duration:5,audio:true,image:undefined},{family:'kling',mode:'text',ratio:'16:9',resolution:'4K',duration:5,audio:true,image:undefined},{family:'seedance',mode:'text',ratio:'16:9',resolution:'720p',duration:6,image:undefined}]){
   const x={...input(),...change} as GenerationInput;
   const q=await quote(x);assert.equal(q.available,false);assert.equal(q.reason,'PAID_SPEC_UNAVAILABLE');
   const r=await request('/jobs','POST',{...x,billingMode:'paid',quoteId:randomUUID()});assert.equal(r.status,409);assert.equal((await r.json()).code,'PAID_SPEC_UNAVAILABLE');
@@ -146,7 +150,9 @@ test('public quote is unavailable when budget is disabled, scoped or exhausted a
  for(const config of [{enabled:false,capMinor:1368},{enabled:true,capMinor:0},{enabled:true,capMinor:1368,scope:{jobId:randomUUID(),grantId:randomUUID()}}]){
   const b=(await getGenerationBudget(database()))!;
   await database().transaction(tx=>configureGenerationBudget(tx,{expectedRevision:b.revision,...config,validFrom:from(),expiresAt:until(),actor:'synthetic',evidenceRef:'synthetic:quote-capacity'}));
-  const q=await quote();assert.equal(q.available,false);assert.equal(q.reason,'GENERATION_COST_UNAVAILABLE');
+  for(const x of [input(),...textSpecs.map(textInput)]) {
+   const q=await quote(x);assert.equal(q.available,false);assert.equal(q.reason,'GENERATION_COST_UNAVAILABLE');
+  }
  }
  await balances(127,0,23);assert.equal((await getGenerationBudget(database()))!.exposureMinor,0);assert.equal(calls.length,0);
 });
@@ -182,7 +188,9 @@ for(const mode of ['expired','blocked','missing'] as const)test('public quote re
  if(mode==='expired')await pg`UPDATE generation_cost_rates SET valid_from=now()-interval '2 hours',expires_at=now()-interval '1 hour'`;
  if(mode==='blocked')await pg`UPDATE generation_cost_specs SET blocked_reason='synthetic-price-change'`;
  if(mode==='missing')await pg`DELETE FROM generation_cost_specs`;
- const q=await quote();assert.equal(q.available,false);assert.equal(q.reason,'GENERATION_COST_UNAVAILABLE');
+ for(const x of [input(),...textSpecs.map(textInput)]) {
+   const q=await quote(x);assert.equal(q.available,false);assert.equal(q.reason,'GENERATION_COST_UNAVAILABLE');
+  }
  await balances(127,0,23);assert.equal(calls.length,0);
 });
 test('budget closing after quote rolls back job, quote consumption and customer hold',opts,async()=>{
@@ -193,4 +201,47 @@ test('budget closing after quote rolls back job, quote consumption and customer 
  assert.equal((await pg`SELECT count(*)::int n FROM video_jobs WHERE id=${requestId}::uuid`)[0].n,0);
  assert.equal((await pg`SELECT job_id FROM video_quotes WHERE id=${q.quoteId}::uuid`)[0].job_id,null);
  await balances(127,0,23);assert.equal(calls.length,0);
+});
+
+
+for(const family of ['seedance','kling']) for(const duration of [5,10])
+for(const resolution of family==='seedance'?['720p','1080p']:['4K'])
+for(const outcome of ['success','failed'] as const)
+test(`public paid ${family} ${resolution} ${duration}s ${outcome} across every released ratio`,opts,async()=>{
+ // Synthetic extra purchase covers the 160-credit tier and six aspect ratios.
+ const id=randomUUID();
+ await database().insert(billingOrders).values({id,userId:owner.id,requestId:randomUUID(),productId:'synthetic',productName:'synthetic',priceVersion:'synthetic',provider:'pancake',environment:'live',merchantAccountId:'synthetic',providerProductId:'synthetic',amountMinor:1900,subtotalMinor:1900,currency:'USD',credits:1200,status:'paid'});
+ await database().transaction(tx=>grantPurchase(tx,{orderId:id,userId:owner.id,environment:'live',credits:1200,paidAt:new Date()}));
+ let available=1327,consumed=23;
+ const specs=textSpecs.filter(spec=>spec.family===family && spec.duration===duration && spec.resolution===resolution);
+ assert.equal(specs.length,family==='seedance'?6:3);
+ for(const spec of specs) {
+  const x=textInput(spec);requestId=x.requestId;taskId='synthetic-'+requestId;status='pending';
+  const credits=videoCredits(x)!;assert.ok(credits>0);
+  const q=await quote(x);assert.equal(q.available,true);assert.equal(q.credits,credits);
+  const created=await request('/jobs','POST',{...x,billingMode:'paid',quoteId:q.quoteId});assert.equal(created.status,201);
+  available-=credits;await balances(available,credits,consumed);
+  status=outcome;
+  await Promise.all([processJob(requestId,provider,true,true,allow),processJob(requestId,provider,true,true,allow)]);
+  await pollJob(requestId,provider,true);await pollJob(requestId,provider,true);
+  if(outcome==='success') consumed+=credits;else available+=credits;
+  await balances(available,0,consumed);
+  const row=await job();assert.equal(row.status,outcome);assert.equal(row.creditState,outcome==='success'?'consumed':'released');
+  const submitted=calls.filter(call=>call.method==='POST');
+  // Compare each exact payload, rather than treating a model invocation as delivery proof.
+  assert.deepEqual(JSON.parse(submitted.at(-1)!.body!),providerPayload(x));
+  const cost=(await getGenerationCost(database(),requestId))!;
+  assert.equal(cost.exposureMinor,100);assert.equal(cost.actualMinor,null);assert.equal(cost.outcome,outcome);
+  assert.equal(await auditCount('automation-delivery'),outcome==='success'?1:0);
+ }
+ assert.equal(calls.filter(call=>call.method==='POST').length,specs.length);await noManual();
+});
+
+test('invalid text ratios and known-bad resolution fail validation before quotes or jobs',opts,async()=>{
+ for(const change of [{ratio:'adaptive'},{ratio:'2:1'},{resolution:'480p'}]) {
+  const x={...textInput(),...change};
+  assert.equal((await request('/jobs/quote','POST',x)).status,400);
+  assert.equal((await request('/jobs','POST',{...x,billingMode:'paid',quoteId:randomUUID()})).status,400);
+ }
+ await balances(127,0,23);assert.equal(calls.length,0);assert.equal((await getGenerationBudget(database()))!.exposureMinor,0);
 });

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, starterCheckoutEnvironment, starterCheckoutProvider } from "@/lib/api";
 import type { BillingCatalogResponse } from "@/lib/billing";
-import { VIDEO_CREDIT_RATES, publicPaidGenerationAllowed } from "@/lib/video-credit-rates";
+import { VIDEO_CREDIT_RATES, publicPaidRateAvailable, PUBLIC_PAID_GENERATION_DESCRIPTION } from "@/lib/video-credit-rates";
 import { getFamily } from "@/lib/models";
 import { STARTER_CREDIT_OFFER } from "@/lib/credit-offer";
 import Image from "next/image";
@@ -14,7 +14,7 @@ import styles from "./pricing.module.css";
 const questions = [
   {
     question: "Can I make a video today?",
-    answer: "Sign in with Google and use purchased credits for MiniMax H3 image-to-video: 6 seconds, 2K, matching your input image, for 23 credits. Preview generation uses a separate invitation allowance. Other paid settings are not available yet.",
+    answer: `Sign in with Google and use purchased credits. ${PUBLIC_PAID_GENERATION_DESCRIPTION} Preview generation uses a separate invitation allowance.`,
   },
   {
     question: "Can I buy credits now?",
@@ -26,7 +26,7 @@ const questions = [
   },
   {
     question: "How many videos will a credit pack make?",
-    answer: "The currently available MiniMax H3 image-to-video setting costs 23 credits per clip. A 150-credit pack covers six such clips, with 12 credits left. Other published settings are not available for paid generation yet. Request an exact quote before generating.",
+    answer: "The currently available MiniMax H3 image-to-video setting costs 23 credits per clip. A 150-credit pack covers six such clips, with 12 credits left. Seedance and Kling text-to-video rates vary by duration and resolution; for example, Seedance 720p for 5 seconds costs 33 credits. Request an exact quote before generating.",
   },
   {
     question: "Why sign in with Google?",
@@ -71,7 +71,7 @@ export function PricingPanel() {
           <h1 id="pricing-title">A little idea.<br /><em>Room to take flight.</em></h1>
           <p className={styles.lead}>
             One simple pack for your next ideas. Published pricing, no subscription.
-            Use purchased credits for MiniMax H3 image-to-video, or explore the separate invite-only preview.
+            Use purchased credits for Seedance and Kling text-to-video or MiniMax H3 image-to-video, or explore the separate invite-only preview.
           </p>
           <a className={styles.inlineLink} href="#access-options">
             Explore your options <ArrowRight size={17} aria-hidden="true" />
@@ -140,12 +140,12 @@ export function PricingPanel() {
       <section className={styles.rates} aria-labelledby="video-rates">
         <span className={styles.eyebrow}>PLAN YOUR NEXT CLIP</span>
         <h2 id="video-rates">Video credit rates</h2>
-        <p className={styles.small}>Published rates. Paid access currently supports MiniMax H3 image-to-video, 6 seconds and 2K only. Request a current quote in the studio before generating.</p>
+        <p className={styles.small}>{PUBLIC_PAID_GENERATION_DESCRIPTION} Availability also depends on current generation capacity.</p>
         <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Video credit rates">
           <table>
             <thead><tr><th scope="col">Model</th><th scope="col">Mode</th><th scope="col">Resolution</th><th scope="col">Length</th><th scope="col">Credits</th><th scope="col">Paid access</th></tr></thead>
             <tbody>{VIDEO_CREDIT_RATES.map((rate) => <tr key={`${rate.family}-${rate.mode}-${rate.resolution}-${rate.duration}`}>
-              <td>{getFamily(rate.family)?.name}</td><td>{rate.mode === "image" ? "Image to video" : "Text to video"}</td><td>{rate.resolution}</td><td>{rate.duration}s</td><td>{rate.credits}</td><td>{publicPaidGenerationAllowed({...rate,ratio:"adaptive",audio:false}) ? "Available" : "Not yet available"}</td>
+              <td>{getFamily(rate.family)?.name}</td><td>{rate.mode === "image" ? "Image to video" : "Text to video"}</td><td>{rate.resolution}</td><td>{rate.duration}s</td><td>{rate.credits}</td><td>{publicPaidRateAvailable(rate) ? "Available" : "Not yet available"}</td>
             </tr>)}</tbody>
           </table>
         </div>

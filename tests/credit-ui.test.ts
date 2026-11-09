@@ -210,6 +210,9 @@ test("pricing renders the actual nine rates with mode column, published offer an
     assert.match(html, /14-day refund/);
     assert.equal((html.match(/<tr>/g) ?? []).length, VIDEO_CREDIT_RATES.length + 1);
     for (const rate of VIDEO_CREDIT_RATES) assert.ok(html.includes(`<td>${rate.credits}</td>`));
+    assert.equal((html.match(/<td>Available<\/td>/g) ?? []).length, 7);
+    assert.equal((html.match(/<td>Not yet available<\/td>/g) ?? []).length, 2);
+    assert.match(html, /Seedance and Kling use audio off/);
     assert.match(html, /<th scope="col">Mode<\/th>/);
     assert.match(html, /<td>Text to video<\/td>/);
     assert.match(html, /<td>Image to video<\/td>/);
