@@ -10,6 +10,8 @@ import { createHash } from "node:crypto";
 import { STARTER_CREDIT_OFFER } from "../src/lib/credit-offer";
 import { VIDEO_CREDIT_RATES, videoCredits } from "../src/lib/video-credit-rates";
 import type { BillingCatalogResponse, BillingOrder, BillingSummaryResponse } from "../src/lib/billing";
+import { getTemplate } from "../src/lib/templates";
+import sitemap from "../src/app/sitemap";
 
 function catalog(): BillingCatalogResponse & { providers: { id: "pancake"; available: boolean; environment: "test" | "live" }[] } {
   return { mode: "one-time-credits", environment: "live", checkoutEnabled: true,
@@ -204,6 +206,7 @@ test("pricing renders the actual nine rates with mode column, published offer an
     assert.match(html, /US\$19/);
     assert.match(html, /applicable taxes/);
     assert.match(html, /150/);
+    assert.match(html, /Starter Pack · 150 AI video credits/);
     assert.match(html, /Not yet on sale/);
     assert.match(html, /No expiry/);
     assert.match(html, /No automatic renewal/);
@@ -283,5 +286,24 @@ test("rendered sandbox action says no real payment and never advertises an open 
   } finally {
     if (previous) require.extensions[".css"] = previous;
     else delete require.extensions[".css"];
+  }
+});
+
+test("template definitions and sitemap include /templates/no-ordinary-love with TDH title and shorthand specs", () => {
+  const template = getTemplate("no-ordinary-love");
+  assert.ok(template);
+  assert.equal(template.pageTitle, "No Ordinary Love AI Animation Template – MiniMax H3 | KakaReel");
+  assert.equal(template.h1, "No Ordinary Love AI Animation Template");
+  assert.equal(template.specShorthand, "6s · 2K · 23 credits");
+  assert.equal(template.modelSlug, "minimax");
+  assert.equal(template.mode, "image");
+  const saved = process.env.APP_URL;
+  process.env.APP_URL = "https://kakareel.com";
+  try {
+    const entries = sitemap().map((e) => e.url);
+    assert.ok(entries.includes("https://kakareel.com/templates/no-ordinary-love"));
+  } finally {
+    if (saved === undefined) delete process.env.APP_URL;
+    else process.env.APP_URL = saved;
   }
 });

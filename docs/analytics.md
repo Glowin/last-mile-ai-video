@@ -1,8 +1,8 @@
 ---
 title: "GA4 访问统计"
-date: 2026-10-29
-source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；2026-10-28 PR #4 审查、合并与生产验收；2026-10-29 真人注册与只读归因验收"
-status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线；GA_API_SECRET 已在生产 web 生效，Search Console 已关联；真实注册及数据库UTM已验；生成、结账、购买事件待验"
+date: 2026-11-12
+source: "江昪 2026-10-23 接入指令；Google Analytics 控制台；2026-10-28 PR #4 审查、合并与生产验收；2026-10-29 真人注册与只读归因验收；2026-11-12 GA4 Data API 标准报表转化事件与自定义维度核验"
+status: "PR #4 已部署；GA_API_SECRET 与 Search Console 已关联；sign_up、generate_video、begin_checkout 三项真实事件及自定义维度已在生产 GA4 报表验通；仅服务端 purchase 待下一笔真实付款验收"
 ---
 
 # 采集范围
@@ -54,6 +54,7 @@ status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线
 
 # 修订
 
+- 2026-11-12：通过专用服务账号调用 GA4 Data API 标准报表，核实 `sign_up`（4 次，`method=google`）、`generate_video`（2026-11-04 共 3 次：2 次 `preview`／`minimax`／`image`／`2K`／`0 credits`，1 次 `paid`／`minimax`／`image`／`2K`／`6s`／`23 credits`）与 `begin_checkout`（2026-11-09 共 1 次，`USD 19`）均已真实落表；同时补齐 `GET /api/billing`、`GET /api/billing/orders` 与 `BillingReconciliationWorker` 对账转 `paid` 后的 `purchase` 触发链路。
 - 2026-10-29：同步真实注册／UTM／GA聚合sign_up通过状态，保留其余三事件待验；把UTM完整链接纳入验收步骤，明确旧账号级分析表不再作为现行判据。
 
 - 2026-10-28：按江昪“沉淀”，将 PR #4 的合并部署、四项修复及验收边界回写正本；明确购买上报未启用及后续配置／验收步骤。
@@ -97,7 +98,7 @@ status: "PR #4 已合并并部署为 ea7ee21；渠道归因与转化代码上线
 - 撤回先停止本页 GA，再 DELETE `/api/analytics/consent`，服务端删除此浏览器凭据并级联删除订单关联。独立于账户登录令牌，即使登录过期或已退出也可撤回。收到成功回执才刷新；失败显示重试入口，拒绝状态重载后也重试。跨标签广播拒绝，Web Locks 串行化凭据创建／撤回，延迟 GA 回调须再次核同意。发送中持有凭据行共享锁（网络超时 5 秒），撤回成功后不会再用该凭据发送新事件。
 - 没有订单级上下文或对应授权已撤回／过期的订单记 `skipped_no_consent`，不发送。
 - 去重：`analytics_purchase_events` 以订单 ID 为主键，带租约认领；只发 `live`、`status=paid`、无 `review_reason` 的订单；GA 非 2xx 记 `failed`，下次触发重试，最多 5 次。迁移时已有的已付／已退款订单（含 10-27 验收单）回填为 `skipped_backfill`，永不补发。
-- 触发：webhook 响应后、用户轮询 `GET /api/billing/orders/:id` 响应后（`app.ts` 中间件，异步不阻塞响应），以及 CLI `dispatch-purchases`。仅靠对账 worker 转为 paid 且用户未回到订单页的订单，要等下一次 webhook／轮询或手动 CLI。
+- 触发：webhook 响应后、用户访问 `GET /api/billing`、`GET /api/billing/orders` 或 `GET /api/billing/orders/:id` 响应后（`app.ts` 中间件，异步不阻塞响应）、对账 worker 查询确认订单转为 `paid` 后，以及 CLI `dispatch-purchases`。
 - 发送 `non_personalized_ads: true`，`ad_user_data`／`ad_personalization` 为 DENIED；72 小时内的订单带 `timestamp_micros`=付款时间。购买附带原始 `session_id` 的前提是发送在该会话开始 24 小时内，付款在结账后 30 分钟内（现有 GA 默认不活跃超时）；超窗仍记购买，但不声称原会话归因。若 GA 会话超时配置改变，需同步这里的判据。[Google 会话归因要求](https://developers.google.com/analytics/devguides/collection/protocol/ga4/use-cases#session_attribution)。
 - 退款不会自动发 `refund` 事件（未做，避免改计费流程）。
 
@@ -174,3 +175,17 @@ pnpm analytics:report dispatch-purchases
 **后续入口与边界：** 不需要再次创建账号来证明本次sign_up。付款／生成继续遵守私有记录中的指定账号、单次预算与关闭试点要求；换账号不会继承原预算。GA事件与业务表分别验收，结账时检查订单级统计上下文，结束关闭调试并核生产运行态。
 
 **本轮沉淀：** 发给测试者的链接要服务当前验收目标，来源验证保留明确UTM；直接域名可正常注册，不追补此前来源。`analytics_ga_clients`已退役，其空表不能作为注册故障或购买上报阻塞的判据；购买路径以本文件现行订单上下文说明及 `collectCheckoutAnalytics`、`bindOrderAnalytics`、`dispatchPaidPurchases` 为准。
+
+<a id="conversion-events-verified-20261112"></a>
+## 生成与结账转化事件核验（2026-11-12）
+
+2026-11-12 使用既有只读服务账号调用 GA4 Data API（`properties/560433433:runReport`，日期范围 `2026-10-28` 至 `2026-11-12`），独立核实前序生产操作已真实触发并落入 GA4 标准报表，无需为 `generate_video` 或 `begin_checkout` 重复发起付费消耗：
+
+| 事件 | GA4 标准报表实测读数 | 对应生产业务事实 | 当前结论 |
+| --- | --- | --- | --- |
+| `sign_up` | `2026-10-29`、`2026-11-05`、`2026-11-08`、`2026-11-10` 各 1 次（合计 4 次），`customEvent:method=google` | 生产库 `users` 由 7 人增至 11 人（新增 4 人） | **已通过** |
+| `generate_video` | `2026-11-04` 共 3 次：`minimax / image / 2K / preview` 2 次（`duration_seconds=12`、`credits=0`）；`minimax / image / 2K / paid` 1 次（`duration_seconds=6`、`credits=23`） | 2026-11-04 两次自动预览与一次 23 积分真实付费自动生成 | **已通过** |
+| `begin_checkout` | `2026-11-09` 共 1 次，`currencyCode=USD`、`eventValue=19` | 2026-11-09 10:12:56 UTC 正式收银台验收单 | **已通过** |
+| `purchase` | 0 次（2026-10-27 首笔实付早于 PR #4，记为 `skipped_backfill`） | `GA_API_SECRET` 于 2026-10-28 23:21 生效后尚无新付款订单 | **待下一笔真实已付订单验收** |
+
+同轮代码补齐对账触发缺口：`BillingReconciliationWorker` 在查询确认订单转为 `paid` 时调用 `dispatchPaidPurchases()`，`web` 服务在 `GET /api/billing` 与 `GET /api/billing/orders` 响应后同样触发异步补发。完整 API 响应保存在库外 `~/.vibefriends/last-mile-ai-video/ga-conversion-events-verified-20261112.json`（权限 `0600`）。

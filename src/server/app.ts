@@ -89,6 +89,8 @@ app.route("/analytics", analyticsRoutes);
 // GA4 purchase events go out only after billing has marked an order paid (webhook or
 // order-status polling with reconciliation). Runs after the response; billing is untouched.
 app.use("/billing/webhooks/*", async (c, next) => { await next(); if (c.res.ok) triggerPurchaseDispatch(); });
+app.use("/billing", async (c, next) => { await next(); if (c.req.method === "GET" && c.res.ok) triggerPurchaseDispatch(); });
+app.use("/billing/orders", async (c, next) => { await next(); if (c.req.method === "GET" && c.res.ok) triggerPurchaseDispatch(); });
 app.use("/billing/orders/*", async (c, next) => { await next(); if (c.req.method === "GET" && c.res.ok) triggerPurchaseDispatch(); });
 // Signed provider callbacks have their own exact-path authentication boundary.
 app.route("/billing/webhooks", billingWebhookRoutes);

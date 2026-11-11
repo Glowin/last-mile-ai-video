@@ -119,7 +119,7 @@ export function PricingPanel() {
               <span className={styles.packIcon} aria-hidden="true"><span /><span /><span /></span>
               <span className={`${styles.badge} ${styles.plannedBadge}`}>{available ? "One-time purchase" : "Not yet on sale"}</span>
             </div>
-            <h3 id="credits-title">{STARTER_CREDIT_OFFER.name}</h3>
+            <h3 id="credits-title">{STARTER_CREDIT_OFFER.name} · {STARTER_CREDIT_OFFER.credits} AI video credits</h3>
             <p className={styles.cardIntro}>One-time packs for the clips you want to make.</p>
             <div className={styles.offer}>
               <p className={styles.offerTitle}>US$19 <small>+ applicable taxes</small></p>

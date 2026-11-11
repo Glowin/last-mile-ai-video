@@ -4,6 +4,7 @@ import { database } from '../db';
 import { billingOptionsFromEnvironment } from './config';
 import { BillingService, type BillingOptions } from './service';
 import { defaultProviders, type BillingProvider, type ProviderRegistry } from './providers';
+import { dispatchPaidPurchases } from '../analytics/purchases';
 
 // Code-level limits: environment variables cannot relax them or enable sales.
 export const reconciliationLimits = Object.freeze({ batch: 10, attempts: 64,
@@ -96,6 +97,7 @@ export class BillingReconciliationWorker {
         try {
           const recovered = await this.service.reconcile(String(job.order_id));
           stats.observed++;
+          if (recovered.order.status === 'paid') await dispatchPaidPurchases().catch(() => {});
           if (recovered.order.status === 'refunded') state = 'complete';
           else if (recovered.order.reviewRequired || recovered.order.refundStatus === 'review_required') {
             state = 'review'; result = 'review_required';

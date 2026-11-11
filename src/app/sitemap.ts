@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { families } from "@/lib/models";
 import { topics } from "@/lib/topics";
+import { templates } from "@/lib/templates";
 export const dynamic = "force-dynamic";
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = process.env.APP_URL?.replace(/\/$/, "");
@@ -11,5 +12,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/pricing",
     ...families.map((f) => `/models/${f.slug}`),
     ...topics.map((topic) => `/topics/${topic.slug}`),
+    ...templates.map((t) => `/templates/${t.slug}`),
   ].map((path) => ({ url: base + path }));
 }

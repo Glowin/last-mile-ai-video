@@ -14,8 +14,8 @@ export async function generateMetadata({
   const f = getFamily((await params).slug);
   if (!f) return {};
   return {
-    title: `${f.name} AI Video Generator`,
-    description: `Explore ${f.name} text-to-video and image-to-video in the KakaReel studio. Choose your settings, track your task, and save the result.`,
+    title: f.seoTitle,
+    description: `${f.seoHeading} in the KakaReel studio (${f.specShorthand}). Choose your settings, track your task, and save the finished MP4.`,
     alternates: { canonical: `/models/${f.slug}` },
   };
 }
@@ -35,41 +35,34 @@ export default async function ModelPage({
         <Link className="text-link" href="/#models">
           ← All models
         </Link>
-        <span className="eyebrow">{f.maker} · {f.tag.toUpperCase()} · INDEPENDENT STUDIO PREVIEW</span>
+        <span className="eyebrow">{f.maker} · {f.tag.toUpperCase()} · {f.specShorthand.toUpperCase()}</span>
         <h1>
-          {f.name}.<br />
-          <em>Your next take.</em>
+          {f.seoHeading}
         </h1>
         <p className="lead">{f.description}</p>
-        <div className="actions">
-          <Link className="button" href={`/create?model=${f.slug}`}>
-            Try {f.name} <ArrowUpRight size={19} />
-          </Link>
-          <Link
-            className="text-link"
-            href={`/create?model=${f.slug}&mode=image`}
-          >
-            Start with an image <ArrowRight size={17} />
-          </Link>
+        <div className="model-specs" aria-label={`${f.name} specifications`}>
+          <span>{f.specShorthand}</span>
+          <span>{modelResolutions.join(" · ")}</span>
+          <span>{modelRatios.join(" · ")}</span>
+          <span>Up to {f.maxPrompt.toLocaleString("en-US")} chars</span>
         </div>
-        <dl className="spec-ledger" aria-label={`${f.name} technical specifications`}>
-          <div>
-            <dt>Resolutions</dt>
-            <dd>{modelResolutions.join(" · ")}</dd>
-          </div>
-          <div>
-            <dt>Clip Duration</dt>
-            <dd>{f.durations[0]}s – {f.durations[f.durations.length - 1]}s ({f.durations.length} presets)</dd>
-          </div>
-          <div>
-            <dt>Aspect Ratios</dt>
-            <dd>{modelRatios.join(" · ")}</dd>
-          </div>
-          <div>
-            <dt>Prompt Capacity</dt>
-            <dd>Up to {f.maxPrompt.toLocaleString("en-US")} chars</dd>
-          </div>
-        </dl>
+        <div className="actions">
+          <Link className="button" href={f.slug === "minimax" ? "/create?model=minimax&mode=image" : `/create?model=${f.slug}`}>
+            Try {f.seoHeading} <ArrowUpRight size={19} />
+          </Link>
+          {f.slug === "minimax" ? (
+            <Link className="text-link" href="/templates/no-ordinary-love">
+              No Ordinary Love AI animation template <ArrowRight size={17} />
+            </Link>
+          ) : (
+            <Link
+              className="text-link"
+              href={`/create?model=${f.slug}&mode=image`}
+            >
+              Start with an image <ArrowRight size={17} />
+            </Link>
+          )}
+        </div>
         <div className="detail-grid">
           <article>
             <div className="detail-card-head">

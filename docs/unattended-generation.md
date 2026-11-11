@@ -1,8 +1,8 @@
 ---
 title: "Unattended MVP generation: policy, rollout and rollback"
-date: 2026-11-04
-source: "Owner's explicit 2026-10-28 decision; current implementation; official Prompt Sift contract"
-status: "2026-11-04 single real paid automatic delivery and 23-credit capture verified; embedded playback, full download hash and CNY4.56 supplier cost verified; public sales and charging remain closed"
+date: 2026-11-12
+source: "Owner's explicit 2026-10-28 and 2026-11-09 decisions; current implementation; official Prompt Sift contract"
+status: "2026-11-09 public checkout and 7 paid video specifications active under mvp-text-only-v1; 31 exact cost specs and rev15 budget valid until 2026-11-16; reference-image and output moderation remain unimplemented"
 ---
 
 ## 2026-11-04 real paid acceptance

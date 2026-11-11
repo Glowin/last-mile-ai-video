@@ -1,9 +1,17 @@
 ---
 title: "KakaReel 开售执行与验收清单"
-date: 2026-11-09
-source: "既有生产验收；2026-11-09主会话完整回读原客服线程8封邮件（最新2026-11-05 08:49:08 UTC）、Pancake商品、生产预算及Git复核；官方开发者条款与支持国家入口"
-status: "2026-11-09公众购买及Seedance／Kling六档静音文生已部署，原授权生成预算有效，31个精确成本规格可用；本轮只核报价未生成；审核缺口未解除"
+date: 2026-11-12
+source: "既有生产验收；2026-11-09主会话完整回读原客服线程8封邮件（最新2026-11-05 08:49:08 UTC）、Pancake商品、生产预算及Git复核；2026-11-12生产数据库只读核验、GA4转化报表核验与SEO模板落地页发布"
+status: "2026-11-09公众购买及7档付费规格已开放，31个精确成本规格与rev15预算有效至2026-11-16；2026-11-12核实sign_up／generate_video／begin_checkout三项GA4事件已落表，上线/templates/no-ordinary-love与TDH规格简写；按所有者决定暂维持mvp-text-only-v1"
 ---
+
+<a id="todo-closure-20261112"></a>
+## 2026-11-12 待办推进：GA4 三事件核实、SEO 模板页上线与审核策略确认
+
+- **生产运行态与数据库只读复核**：`/api/health` 与 `/api/billing/catalog` 均返回 HTTP 200，`checkoutEnabled=true`；生产库累计注册用户 11 人（`user_attribution` 含 1 条 `wechat / referral / signup-verification` 及 4 条直接注册），live 订单 2 笔（1 笔 `paid`、1 笔 `pending`），本人钱包仍为 104 可用／0 预留／累计已用 46；`billing_reconciliation` 正常轮询（1 笔 `scheduled/observed`、1 笔历史 `exhausted`）；生成预算 `rev15`（`cap=8488` 分、`exposure=2736` 分、可用 `5752` 分）与 31 条精确费率均有效至 `2026-11-16T09:45:19.940Z`。
+- **GA4 转化事件已核实三项通过**：经专用服务账号读取 GA4 Data API 标准报表，`sign_up`（4 次，`method=google`）、`generate_video`（2026-11-04 共 3 次，含 `paid / minimax / image / 2K / 6s / 23 credits`）及 `begin_checkout`（2026-11-09 共 1 次，`USD 19`）均已带完整自定义维度与指标落表；仅 `purchase` 待下一笔 live 新付款订单验证。同时已补齐 `BillingReconciliationWorker` 与 `/api/billing`、`/api/billing/orders` 的 `purchase` 异步触发链路，详见 [analytics.md](analytics.md#conversion-events-verified-20261112)。
+- **SEO 模板页 `/templates/no-ordinary-love` 与 TDH 规格简写上线**：按所有者确认，新建 `/templates/no-ordinary-love`（标题 `No Ordinary Love AI Animation Template – MiniMax H3 | KakaReel`，预设 MiniMax H3 图生参数直达 Studio，并纳入 `sitemap.xml`），同步将模型落地页、首页模型卡与定价页套餐卡（`Starter Pack · 150 AI video credits`）更新为品牌＋型号＋品类标题及去标签简写规格（如 `6s · 2K · 23 credits`）。
+- **内容审核与预算边界**：所有者本轮确认暂维持 `mvp-text-only-v1`（文字经 Prompt Sift 检查＋成片完整文件校验），待外部订单增长或渠道进一步要求再接入多模态输入／输出审核；此决定不代表 Waffo 已豁免输出审核要求。VibeToken 网页端登录态在当前浏览器已过期，待所有者重新登录核实最新余额／API Key 限额后，再在 `2026-11-16` 到期前通过 `scripts/generation-cost-admin.ts` 续期预算与 31 条费率。
 
 <a id="public-paid-model-release-20261109"></a>
 ## 2026-11-09 Seedance／Kling 付费规格已开放

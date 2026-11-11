@@ -181,11 +181,10 @@ export default function Home() {
                   <span />
                 </div>
                 <span className="eyebrow">{f.maker} · {f.tag}</span>
-                <h3>{f.name}</h3>
+                <h3>{f.seoHeading}</h3>
                 <p>{f.description}</p>
                 <div className="model-specs" aria-label={`${f.name} specifications`}>
-                  <span>{resolutions(f.slug, "text").join(" · ")}</span>
-                  <span>{f.durations[0]}–{f.durations[f.durations.length - 1]}s</span>
+                  <span>{f.specShorthand}</span>
                   <span>Up to {f.maxPrompt.toLocaleString("en-US")} chars</span>
                 </div>
                 <div className="card-foot">
@@ -236,7 +235,11 @@ export default function Home() {
           </div>
           <p className="micro">
             Illustrations show prompt concepts, not model-generated video
-            results.
+            results. Looking for portrait animation? Try the{" "}
+            <Link href="/templates/no-ordinary-love">
+              No Ordinary Love AI Animation Template – MiniMax H3
+            </Link>{" "}
+            (6s · 2K · 23 credits).
           </p>
         </section>
         <section id="how-it-works" className="section steps-section">
