@@ -54,7 +54,7 @@ status: "PR #4 已部署；GA_API_SECRET 与 Search Console 已关联；sign_up�
 
 # 修订
 
-- 2026-11-12：通过专用服务账号调用 GA4 Data API 标准报表，核实 `sign_up`（4 次，`method=google`）、`generate_video`（2026-11-04 共 3 次：2 次 `preview`／`minimax`／`image`／`2K`／`0 credits`，1 次 `paid`／`minimax`／`image`／`2K`／`6s`／`23 credits`）与 `begin_checkout`（2026-11-09 共 1 次，`USD 19`）均已真实落表；同时补齐 `GET /api/billing`、`GET /api/billing/orders` 与 `BillingReconciliationWorker` 对账转 `paid` 后的 `purchase` 触发链路。
+- 2026-11-12：通过专用服务账号调用 GA4 Data API 标准报表，核实 `sign_up`（4 次，`method=google`）、`generate_video`（2026-11-04 共 3 次：2 次 `preview`／`minimax`／`image`／`2K`／`0 credits`，1 次 `paid`／`minimax`／`image`／`2K`／`6s`／`23 credits`）与 `begin_checkout`（2026-11-09 共 1 次，`USD 19`）均已真实落表；`web` 新增 `GET /api/billing` 与 `GET /api/billing/orders` 响应后的 `purchase` 补发触发（生产 `GA_API_SECRET` 仍仅注入 `web`，对账 worker 转 `paid` 的订单在用户打开账户／工作台读取账单、下次 webhook 或手动 CLI 时发出）。
 - 2026-10-29：同步真实注册／UTM／GA聚合sign_up通过状态，保留其余三事件待验；把UTM完整链接纳入验收步骤，明确旧账号级分析表不再作为现行判据。
 
 - 2026-10-28：按江昪“沉淀”，将 PR #4 的合并部署、四项修复及验收边界回写正本；明确购买上报未启用及后续配置／验收步骤。
@@ -98,7 +98,7 @@ status: "PR #4 已部署；GA_API_SECRET 与 Search Console 已关联；sign_up�
 - 撤回先停止本页 GA，再 DELETE `/api/analytics/consent`，服务端删除此浏览器凭据并级联删除订单关联。独立于账户登录令牌，即使登录过期或已退出也可撤回。收到成功回执才刷新；失败显示重试入口，拒绝状态重载后也重试。跨标签广播拒绝，Web Locks 串行化凭据创建／撤回，延迟 GA 回调须再次核同意。发送中持有凭据行共享锁（网络超时 5 秒），撤回成功后不会再用该凭据发送新事件。
 - 没有订单级上下文或对应授权已撤回／过期的订单记 `skipped_no_consent`，不发送。
 - 去重：`analytics_purchase_events` 以订单 ID 为主键，带租约认领；只发 `live`、`status=paid`、无 `review_reason` 的订单；GA 非 2xx 记 `failed`，下次触发重试，最多 5 次。迁移时已有的已付／已退款订单（含 10-27 验收单）回填为 `skipped_backfill`，永不补发。
-- 触发：webhook 响应后、用户访问 `GET /api/billing`、`GET /api/billing/orders` 或 `GET /api/billing/orders/:id` 响应后（`app.ts` 中间件，异步不阻塞响应）、对账 worker 查询确认订单转为 `paid` 后，以及 CLI `dispatch-purchases`。
+- 触发：`web` 服务在 webhook 响应后、用户访问 `GET /api/billing`、`GET /api/billing/orders` 或 `GET /api/billing/orders/:id` 响应后（`app.ts` 中间件，异步不阻塞响应），以及 CLI `dispatch-purchases`（`BillingReconciliationWorker` 亦含调用钩子，但生产 `compose.yaml` 仅将 `GA_API_SECRET` 注入 `web`，故仅靠对账 worker 转为 `paid` 的订单会在任意账单读取请求、下次 webhook 或手动 CLI 时由带密钥的进程补发）。
 - 发送 `non_personalized_ads: true`，`ad_user_data`／`ad_personalization` 为 DENIED；72 小时内的订单带 `timestamp_micros`=付款时间。购买附带原始 `session_id` 的前提是发送在该会话开始 24 小时内，付款在结账后 30 分钟内（现有 GA 默认不活跃超时）；超窗仍记购买，但不声称原会话归因。若 GA 会话超时配置改变，需同步这里的判据。[Google 会话归因要求](https://developers.google.com/analytics/devguides/collection/protocol/ga4/use-cases#session_attribution)。
 - 退款不会自动发 `refund` 事件（未做，避免改计费流程）。
 
@@ -142,7 +142,7 @@ pnpm analytics:report dispatch-purchases
 - `/api/health`、`/create`、`/privacy` 返回 200，隐私页含新的撤回说明。无账户登录的合成浏览器凭据 POST 200，Cookie 为 Secure／HttpOnly／SameSite=Lax；跨站 DELETE 403，同源 DELETE 200，Cookie 和数据库凭据均已删除。该探针未创建订单、生成视频或向 GA 发送事件。
 - 此次 PR 合并部署时，生产 `GA_MEASUREMENT_ID` 已配置，`GA_API_SECRET` 未配置，购买发送路径关闭；该历史状态已被下方23:21配置验收更新。代码部署与合成接口验收不等于 GA DebugView／真实支付验收。
 
-**接续：** 当前配置及剩余真实事件验收见下方最新记录。退款事件与对账 worker 单独完成付款时的触发缺口仍见上方实现边界，本轮未补齐。
+**接续：** 当前配置及真实事件核验见下方 2026-11-12 最新记录。退款事件未自动上报；生产 `GA_API_SECRET` 仅注入 `web` 的边界保持不变。
 
 **四项修复的复用判据：** 撤回能力不能随短期账户令牌一起过期；发送许可必须来自该订单下单浏览器，而非同账号其他设备；保存 client ID 不足以证明原会话归因，须显式验证 session ID 与时间窗；Cookie 解码入口要区分浏览器原始值与框架已解码值。对应回归分别在 `tests/analytics-consent.test.ts`、`tests/analytics.integration.test.ts`、`tests/analytics.test.ts`，后续改动沿这些边界验证。
 
@@ -188,4 +188,4 @@ pnpm analytics:report dispatch-purchases
 | `begin_checkout` | `2026-11-09` 共 1 次，`currencyCode=USD`、`eventValue=19` | 2026-11-09 10:12:56 UTC 正式收银台验收单 | **已通过** |
 | `purchase` | 0 次（2026-10-27 首笔实付早于 PR #4，记为 `skipped_backfill`） | `GA_API_SECRET` 于 2026-10-28 23:21 生效后尚无新付款订单 | **待下一笔真实已付订单验收** |
 
-同轮代码补齐对账触发缺口：`BillingReconciliationWorker` 在查询确认订单转为 `paid` 时调用 `dispatchPaidPurchases()`，`web` 服务在 `GET /api/billing` 与 `GET /api/billing/orders` 响应后同样触发异步补发。完整 API 响应保存在库外 `~/.vibefriends/last-mile-ai-video/ga-conversion-events-verified-20261112.json`（权限 `0600`）。
+同轮拓宽 `web` 补发触发面：`web` 服务在原有 webhook 与单笔订单轮询之外，新增 `GET /api/billing`（工作台与账户页均调用）与 `GET /api/billing/orders` 响应后的异步补发；生产 `compose.yaml` 仍仅向 `web` 注入 `GA_API_SECRET`，若订单仅由对账 worker 转为 `paid` 且完全无后续账单读取／webhook，则由 CLI `dispatch-purchases` 兜底。完整 API 响应保存在库外 `~/.vibefriends/last-mile-ai-video/ga-conversion-events-verified-20261112.json`（权限 `0600`）。

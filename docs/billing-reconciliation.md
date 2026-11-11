@@ -1,7 +1,7 @@
 ---
 title: "账单自动查询恢复 worker"
 date: 2026-11-12
-status: "隔离 PostgreSQL 验收通过；已随生产 Compose 常驻运行并验证 live 订单查询观测；对账转 paid 订单已补齐 GA4 purchase 触发链路"
+status: "隔离 PostgreSQL 验收通过；已随生产 Compose 常驻运行并验证 live 订单查询观测；web 已新增账单概览与列表读取时的 GA4 purchase 补发触发"
 ---
 
 # 范围与调用边界

@@ -99,9 +99,9 @@ export default async function ModelPage({
           </article>
         </div>
         <p className="muted">
-          Generation requires preview access. Model availability and output
-          depend on the provider. No commercial-use guarantee is made by this
-          preview.
+          Sign in with Google to generate using purchased credits on supported
+          settings, or use a separate invitation code for preview access. Model
+          availability and output depend on the provider.
         </p>
         <h2>Explore another <em>direction.</em></h2>
         <div className="actions">
