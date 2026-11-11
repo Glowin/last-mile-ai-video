@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getFamily, ratios } from "../src/lib/models";
-import { getTopic, topicStaticParams, topics } from "../src/lib/topics";
+import { getTopic, topicStaticParams, topicStudioHref, topics } from "../src/lib/topics";
 import sitemap from "../src/app/sitemap";
 
 test("the chairman spy romance topic is registered once", () => {
@@ -14,9 +14,10 @@ test("the chairman spy romance topic is registered once", () => {
   assert.deepEqual(topicStaticParams(), [{ slug: "ai-chairman-spy-romance" }]);
 });
 
-test("topic prompts use studio models, durations, and text aspect ratios", () => {
+test("topic prompts use studio models, durations, and mode-specific aspect ratios", () => {
   const topic = getTopic("ai-chairman-spy-romance");
   assert.ok(topic);
+  assert.equal(topic.featuredPromptId, "ep03-image");
   assert.ok(topic.prompts.some((prompt) => prompt.id === topic.featuredPromptId));
   for (const prompt of topic.prompts) {
     assert.ok(prompt.prompt.length > 40);
@@ -28,8 +29,8 @@ test("topic prompts use studio models, durations, and text aspect ratios", () =>
         `${prompt.id} ${variant.durationSeconds}s`,
       );
       assert.ok(
-        ratios(variant.modelSlug, "text").includes(variant.aspect),
-        `${prompt.id} ${variant.aspect}`,
+        ratios(variant.modelSlug, prompt.mode).includes(variant.aspect),
+        `${prompt.id} (${prompt.mode}) ${variant.aspect}`,
       );
       assert.ok(
         prompt.prompt.length <= family.maxPrompt,
@@ -39,16 +40,35 @@ test("topic prompts use studio models, durations, and text aspect ratios", () =>
   }
 });
 
-test("fiction disclaimer and acceptable-use links stay on the topic", () => {
+test("topic SEO metadata, riverfront restaurant photo details, and acceptable-use links are present", () => {
   const topic = getTopic("ai-chairman-spy-romance");
   assert.ok(topic);
+  assert.match(topic.seo.title, /Jensen Huang/);
+  assert.match(topic.seo.title, /Alice Huang/);
+  assert.match(topic.seo.title, /黄仁勋/);
+  assert.match(topic.seo.title, /黄乐/);
+  assert.match(topic.seo.description, /Huang Le/);
+  assert.ok(topic.seo.keywords.includes("Jensen Huang Alice Huang"));
+  assert.ok(topic.seo.keywords.includes("黄仁勋 黄乐"));
+  assert.match(topic.scene.place, /upside-down red '福' diamond/);
+  assert.match(topic.scene.positioning, /across-the-table candid POV/i);
   assert.match(topic.hero.disclaimer, /\/acceptable-use/);
   assert.match(topic.cta.footnote, /\/acceptable-use/);
   assert.match(topic.hero.disclaimer, /FableX: MLAT-AI/);
   assert.match(topic.hero.disclaimer, /Veil Consortium/);
   assert.match(topic.tickerNote, /not a real listing/);
   assert.match(topic.world, /Meridian Lattice AI/);
-  assert.equal(topic.seo.keywords.some((keyword) => /[\u4e00-\u9fff]/.test(keyword)), false);
+});
+
+test("topicStudioHref pre-fills studio model, image mode, and prompt", () => {
+  assert.equal(
+    topicStudioHref("minimax", "image", "Animate riverfront toast"),
+    "/create?model=minimax&mode=image&prompt=Animate+riverfront+toast",
+  );
+  assert.equal(
+    topicStudioHref("seedance", "text"),
+    "/create?model=seedance",
+  );
 });
 
 test("sitemap includes the topic path when APP_URL is set", () => {

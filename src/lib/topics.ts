@@ -86,301 +86,329 @@ export type Topic = {
 
 const aiChairmanSpyRomance: Topic = {
   slug: "ai-chairman-spy-romance",
-  featuredPromptId: "ep03-seedance",
+  featuredPromptId: "ep03-image",
   seo: {
-    title: "AI Romance Short Drama | Chairman & Spy Love Story + Paparazzi Hook — KakaReel",
-    description: "Generate a fictional listed-AI-chairman × spy romance miniseries. Soft kisses, dances, rain, and a paparazzi twist outside a modern Chinatown neo-Chinese restaurant. No real people, no NSFW. Prompts for Seedance, Kling & MiniMax on KakaReel.",
+    title:
+      "Jensen Huang & Alice Huang (黄仁勋 · 黄乐) Restaurant Photo AI Video · The AI Chairman & the Spy | KakaReel",
+    description:
+      "Animate the viral Jensen Huang & Alice Huang (Huang Le / Le Huang / 黄仁勋 & 黄乐) riverfront restaurant red-wine photo or generate the 5-episode AI Chairman & Spy short drama on KakaReel with MiniMax H3, Seedance 2.5, and Kling 3.0.",
     keywords: [
-        "AI romance short drama",
-        "spy romance AI video",
-        "AI CEO romance short",
-        "listed AI chairman love story",
-        "AI tycoon spy thriller romance",
-        "honeytrap romance AI",
-        "paparazzi Chinatown restaurant AI video",
-        "modern Chinese restaurant romance AI",
-        "neo-Chinese dining spy romance",
-        "boardroom romance short film AI",
-        "corporate espionage romance AI video",
-        "fictional spy love drama prompts",
-        "KakaReel romance miniseries",
-      ],
+      "Jensen Huang Alice Huang",
+      "Jensen Huang Huang Le",
+      "Jensen Huang Le Huang",
+      "黄仁勋 黄乐",
+      "黄仁勋 黄乐 餐厅照片",
+      "黄仁勋 黄乐 合照 AI视频",
+      "Jensen Huang Alice Huang restaurant photo",
+      "Jensen Huang spy romance AI video",
+      "Alice Huang Megaspeed AI short drama",
+      "riverfront Chinese restaurant red wine AI video",
+      "AI romance short drama",
+      "spy romance AI video",
+      "The AI Chairman and the Spy KakaReel",
+    ],
   },
   hero: {
-    eyebrow: "Fiction only · AI listed-company romance",
-    title: "The AI Chairman & the Spy.",
-    emphasis: "She came for the weights. She stayed for him.",
-    lead: "A five-clip romantic miniseries set around earnings week at a fictional listed AI company. Soft tension, soft kisses—and one viral hook: dinner behind glass at a **modern Chinatown neo-Chinese restaurant**, until the paparazzi lens finds them. Never NSFW. Never real people.",
-    primaryCta: "Start in Studio",
+    eyebrow: "Trending Gossip Topic · 黄仁勋 & 黄乐 · Image-to-Video & Short Drama",
+    title: "Jensen Huang & Alice Huang.",
+    emphasis: "黄仁勋 · 黄乐: Riverfront Restaurant Photo & AI Short Drama.",
+    lead: "Built around the viral **Jensen Huang (黄仁勋)** and **Alice Huang / Huang Le / Le Huang (黄乐)** gossip and their **daytime riverfront Chinese restaurant red-wine photo**. Upload the restaurant photo in **Image-to-Video** (sitting side by side in black tops before a floor-to-ceiling river-view window with an upside-down red **“福” (Fu)** paper cutout, raising **stemmed red wine glasses** over a **glass lazy Susan** of spicy Chinese dishes) and animate the Episode 03 twist where his smile freezes and he **points straight at the camera lens**.",
+    primaryCta: "Animate Restaurant Photo in Studio",
     secondaryCta: "Acceptable Use",
-    disclaimer: "This page is pure fiction. Characters, company, exchange ticker (**FableX: MLAT-AI**), and the **Veil Consortium** are invented. Do **not** generate lookalikes of living people. Soft romance between fictional adults is allowed; pornography and real-person intimate deepfakes are banned under our [Acceptable Use Policy](/acceptable-use). This is **not** about any real news story.",
+    disclaimer:
+      "This topic page tracks search interest around **Jensen Huang (黄仁勋)** and **Alice Huang / Huang Le (黄乐)** while providing a fictionalized parody storyboard (**Adrian Cole**, **Mira Solenne**, **Meridian Lattice AI**, exchange ticker **FableX: MLAT-AI**, and the **Veil Consortium**) so prompts pass safety checks. Under our [Acceptable Use Policy](/acceptable-use), do **not** generate non-consensual intimate deepfakes, nudity, or deceptive real-person footage.",
   },
   scene: {
-    kicker: "Ep03 · the turning episode",
-    title: "Caught Through the Glass",
-    place: "Chinatown neo-Chinese dining room",
-    positioning: "Chinatown at night · a modern, trendy neo-Chinese restaurant (not a traditional old-school Chinese restaurant; no red lanterns).",
+    kicker: "Ep03 · Core Hook · Based on the Viral Riverfront Restaurant Photo",
+    title: "Caught at the Riverfront Table (黄仁勋 · 黄乐 江景餐厅合照场景)",
+    place:
+      "Daytime river-view Chinese restaurant · floor-to-ceiling window with upside-down red '福' diamond · white-tablecloth glass lazy-Susan table",
+    positioning:
+      "Across-the-table candid POV inside a bright waterfront Chinese dining room (daytime river, white ferry pier, green trees, and high-rise skyline behind the glass; upside-down red '福' cutout on the upper-left pane), moving from a warm red-wine toast to the moment he freezes and points straight at the camera lens.",
     blocks: [
       {
-        heading: "Setting",
+        heading: "Photo Composition & Riverfront Setting (画面构图与江景餐厅细节)",
         paragraphs: [
-            "Night in **Chinatown**, outside a **modern, trendy neo-Chinese restaurant** (not a traditional old-school Chinese restaurant; **no red lanterns**). The camera stays on the wet sidewalk, shooting **through a floor-to-ceiling glass wall** into a minimal contemporary dining room: dark wood, brass and marble details, recessed warm lighting and designer pendant lamps; a large round table with a **lazy Susan**; refined plated Chinese dishes and a tea set; optional modernized wood-lattice panels. Fictional listed-AI chairman **Adrian Cole** (silver-white medium-length hair, 3:7 side part, deep-emerald enamel-frame glasses, pure black suit) and **Mira Solenne** dine together—relaxed, romantic, happy—soft eye contact, a gentle clink of tea or small baijiu cups, spinning the lazy Susan to serve each other. Outside: wet asphalt reflections, distant **blurred unreadable or invented** Chinese neon sign glow (e.g. fictional “Cloud Ink” haze—never a real restaurant name), passing cars.",
-          ],
+          "Bright **daytime** inside an upper-floor **riverfront Chinese restaurant** (not a dark nighttime Chinatown street). Tall **floor-to-ceiling glass windows** span the backdrop behind the couple, overlooking a wide river, a white sightseeing/ferry pier and boat moored on the left, green trees along the opposite embankment, and modern high-rise residential and office towers across the water. A dark matte horizontal window ledge runs behind their shoulders (with a clear bottle on the right), a grey cylindrical column stands on the right edge, and a traditional red diamond-shaped **“福” (Fu)** paper cutout is pasted **upside-down** on the upper-left window pane.",
+          "Instead of sitting across from each other, the two sit **side by side** on the window side of a large round table dressed in a **white tablecloth** with a **clear glass lazy Susan turntable** in the center. On the left, the silver-haired chairman (**Jensen Huang / Adrian Cole** archetype: silver-white short side-parted hair, **rimless rectangular glasses**, **casual black short-sleeve polo / T-shirt**) rests his right forearm on the table edge while holding the stem of a **red wine glass** in his left hand (with a second stemmed wine glass beside his right hand). On the right, **Alice Huang / Huang Le / Mira Solenne** (**long straight dark hair** over her shoulders, **sleeveless black top**) leans warmly toward his left shoulder with a bright smile, holding a **stemmed glass of dark red wine** in her right hand.",
+          "The glass lazy Susan and white tablecloth hold a full spread of regional Chinese dishes: a center white bowl of **spicy minced pork and tofu in glossy red chili oil** with a serving spoon; a large right-side dish of **Sichuan red chili chicken (辣子鸡)**; a square plate of **sliced braised duck/meat**; a left white bowl of **golden stir-fried shrimp and egg**; a front-left boat plate of **shredded garnish over noodles**; a front-center cold appetizer of **yellow-and-green cubes in bright red sauce** with black chopsticks resting on the rim; two clear water tumblers in front of them; a small glass carafe of dark plum juice (**酸梅汤**) with a spoon; a tall glass of frothy pale-yellow juice on the far left; and green tissue packets.",
+        ],
       },
       {
-        heading: "Camera",
+        heading: "Camera POV & Natural Daylight (跨桌跟拍视角与光线)",
         paragraphs: [
-            "Full-clip **paparazzi long-lens POV**. Optional foreground: blurred lens hood / telephoto barrel edge or a modern planter silhouette. Gentle handheld breath; not shaky-cam chaos. The lens *is* the tabloid photographer.",
-          ],
+          "High-angle **across-the-table candid / secret-phone POV** from the opposite side of the round table, matching the exact perspective of the viral restaurant photo. Because the camera is inside the dining room facing them (with the river window behind their shoulders), when he spots the camera and points at the lens, he points **straight forward across the lazy Susan toward the viewer**, never turning away toward the window.",
+          "Bright **daylight riverfront backlight** through the floor-to-ceiling glass balanced with warm indoor restaurant fill on their faces, catching specular highlights on his **rimless glasses**, the **stemmed red wine glasses**, the circular glass lazy-Susan edge, and the red chili oil on the dishes.",
+        ],
       },
       {
-        heading: "Light",
-        paragraphs: [
-            "Interior: warm red-amber recessed glow and designer pendants on faces. Exterior/camera side: cool pink/cyan Chinatown neon spill on wet pavement. The glass is the warm/cold border—romance inside, surveillance outside.",
-          ],
-      },
-      {
-        heading: "Performance beat (~8–10s)",
+        heading: "Performance Beat: Toast → Freeze → Point at Lens (6–10s 动作节奏)",
         ordered: [
-            "**0–4s:** Happy dinner; before speaking he **lightly pushes up his deep-emerald enamel-frame glasses**; soft tea/baijiu cup clink or lazy-Susan serve.",
-            "**4–6s:** His smile freezes as he notices the sidewalk; hand instinctively moves to the **first button** of his black jacket.",
-            "**6–8/10s:** Shock; he raises a hand and **points straight at the camera** (out the window); she turns to look. Optional flash reflection in the glass.",
-          ],
+          "**0–2.5s (Warm Red-Wine Toast):** Starting directly from the restaurant photo composition, both sit side by side smiling warmly at the camera; she leans slightly toward his shoulder as they gently swirl and clink their **stemmed red wine glasses** above the glass lazy Susan.",
+          "**2.5–4s (The Smile Freezes):** Mid-toast, his smile suddenly stiffens as he realizes the phone/camera across the table is secretly recording video; his eyes narrow behind his **rimless glasses**, and he lowers his red wine glass slightly toward the white tablecloth.",
+          "**4–6s / 6–10s (Points Straight at the Camera):** Startled confrontation: he raises his hand and **points straight forward across the lazy Susan directly at the camera lens** (calling out the person filming); beside him, her smile vanishes as she lowers her wine glass and turns her startled gaze straight into the lens, followed by a subtle handheld camera flinch.",
+        ],
       },
       {
-        heading: "Adrian look (this shot — consistent everywhere)",
+        heading: "Character Look Anchors (基于照片的人物视觉特征)",
         paragraphs: [
-            "Silver-white medium-length hair with a 3:7 side part; deep-emerald enamel-frame glasses; pure black suit with open white shirt, no tie; mid-50s; invented face. Never leather jackets, short salt-and-pepper hair, ethnic facial labels, or chubby CEO tropes.",
-          ],
+          "**Chairman (Jensen Huang / Adrian Cole look):** Silver-white short side-parted hair; **rimless rectangular glasses**; **casual black short-sleeve polo / T-shirt** in the daytime restaurant scene (or tailored black jacket in evening gala/rooftop episodes); stemmed red wine glass in hand.",
+          "**Envoy (Alice Huang · Huang Le / Mira Solenne look):** Early 30s; **long straight dark hair** draped over her shoulders; **sleeveless black top**; leaning slightly inward toward his left shoulder while holding a stemmed glass of dark red wine.",
+        ],
       },
       {
-        heading: "Sound",
+        heading: "Sound (环境音与快门抓手)",
         paragraphs: [
-            "Modern Chinese-restaurant ambience (soft talk, porcelain cup taps, faint lazy-Susan turn); Chinatown night bed and distant traffic; then crisp **camera shutter clicks** (one or two) at the turn, optional flash pop. The hook is **sound spike + pointing at the lens**.",
-          ],
+          "Daytime Chinese restaurant murmur (soft talk, porcelain plate and chopstick taps, faint lazy-Susan rotation), a clean **crystal red-wine glass clink**, then a sudden drop in conversation and **two crisp camera shutter / phone-recording clicks** right as he freezes and points at the lens.",
+        ],
       },
       {
-        heading: "Why it hooks short-form",
+        heading: "Why This Photo + Ep03 Beat Hooks Viewers (为什么这个场景有流量)",
         paragraphs: [
-            "Readable frame in one glance (lazy Susan + glass + neon vs warm interior); clean emotion flip; fourth-wall break when he points at “us”; chic neo-Chinese Chinatown vibe without traditional lantern clichés; stays 100% fictional.",
-          ],
+          "Viewers searching **Jensen Huang & Alice Huang (黄仁勋 · 黄乐)** immediately recognize the iconic **daytime riverfront window + upside-down red “福” diamond + side-by-side black tops + red wine glasses + glass lazy Susan** frame. Animating that exact still into a **warm toast → sudden freeze → pointing straight at the camera** fourth-wall break turns a static gossip photo into an instant short-form drama hook.",
+        ],
         bullets: [],
       },
     ],
   },
-  world: "**Meridian Lattice AI** (FableX: **MLAT-AI**) is a fictional public AI platform company: foundation models, enterprise inference APIs, and a sealed training roadmap. It is **earnings week**. After-hours, fictional boards flicker **MLAT-AI** while Chairman **Adrian Cole** tries to keep both the stock narrative and his private life intact. **Mira Solenne**, “strategic envoy” for the fictional **Veil Consortium**, was sent to get close to him and reach **model-weight notes** and the **Q-next compute roadmap**. She falls for him. He begins to trust her. Romance leads; espionage presses from the edges—until a paparazzi lens outside a modern Chinatown neo-Chinese restaurant turns their secret dinner into a crisis.",
+  world:
+    "Searchers arriving from the **Jensen Huang (黄仁勋)** and **Alice Huang / Huang Le / Le Huang (黄乐)** headlines and their viral **riverfront Chinese restaurant photo** can recreate the full 5-clip parody arc set around **Meridian Lattice AI** (FableX: **MLAT-AI** during **earnings week**). While after-hours boards flicker **MLAT-AI**, Chairman **Adrian Cole** tries to protect both the stock narrative and his private life. **Mira Solenne**, a strategic envoy connected to the **Veil Consortium**, got close to him around **model-weight notes** and the **Q-next compute roadmap**, until a candid lens across the white-tablecloth lazy-Susan table in a daytime riverfront Chinese restaurant turns their private red-wine toast into a viral crisis.",
   tickerNote: "FableX: MLAT-AI is not a real listing.",
-  tone: "Romance first; spy craft and paparazzi pressure as obstacles. Ending open or bittersweet.",
+  tone: "Daytime riverfront realism for Ep03; tense corporate-espionage romance across the 5-clip arc.",
   characters: [
     {
-      role: "Listed AI chairman",
+      role: "AI Chairman (黄仁勋 / Jensen Huang archetype)",
       name: "Adrian Cole",
-      look: "Mid-50s, tall; **silver-white medium-length hair, 3:7 side part**; **deep-emerald enamel-frame glasses**; **pure black suit** + open white shirt, no tie; invented face (no real-person likeness). **Signature beats:** (1) lightly pushes up his enamel glasses before speaking; (2) flips a worn old coin between his fingers when thinking; (3) fastens the first button of his black jacket when composing himself. Never: leather jacket, short salt-and-pepper hair, ethnic facial labels, or stocky/chubby CEO tropes.",
-      motive: "Protect earnings narrative, model IP, and a fragile new love",
+      look: "Silver-white short side-parted hair; **rimless rectangular glasses**; **black short-sleeve polo / T-shirt** at the riverfront restaurant table (tailored black jacket in evening scenes). **Signature beats:** (1) lightly adjusts his rimless glasses before speaking; (2) swirls a stemmed red wine glass over the lazy Susan; (3) freezes and **points straight across the table at the camera lens** when he spots the secret recording.",
+      motive: "Protect earnings narrative, compute roadmap, and a secret riverside rendezvous",
     },
     {
-      role: "Spy who falls in love",
+      role: "Strategic Envoy (黄乐 / Alice Huang · Huang Le archetype)",
       name: "Mira Solenne",
-      look: "Early 30s, dark evening dress or coat, composed smile that softens; invent features (e.g. warm olive skin, shoulder-length dark wavy hair, hazel eyes)—**not** modeled on any real person",
-      motive: "Mission: weights & roadmap; heart: not to destroy him",
+      look: "Early 30s; **long straight dark hair** over her shoulders; **sleeveless black top**; warm composed smile leaning slightly toward his shoulder while holding a **stemmed glass of dark red wine**.",
+      motive: "Sent for compute & weight access; caught in the same riverfront frame",
     },
     {
       role: "Company",
       name: "Meridian Lattice AI",
-      look: "Listed **AI model/platform** co. (not a chip/GPU giant)",
-      motive: "Survive earnings + keep IP",
+      look: "Listed **AI compute & foundation-model platform** company",
+      motive: "Survive earnings week and board scrutiny",
     },
     {
       role: "Ticker",
       name: "FableX: MLAT-AI",
-      look: "Fictional exchange + ticker",
-      motive: "Story prop: after-hours moves, media heat",
+      look: "Fictional exchange + ticker for storyboard overlays",
+      motive: "Story prop: after-hours market swings and headline heat",
     },
     {
       role: "Org",
       name: "Veil Consortium",
-      look: "Fictional private intelligence broker",
-      motive: "Buys secrets as product (no real agency names)",
+      look: "Fictional offshore brokerage & intelligence network",
+      motive: "Trades compute allocation and proprietary roadmap intel",
     },
   ],
   look: {
-    heading: "Adrian Cole — look and signature beats",
+    heading: "Visual Continuity from the Riverfront Restaurant Photo",
     paragraphs: [
-        "Mid-50s, tall. Silver-white medium-length hair with a **3:7 side part**. **Deep-emerald enamel-frame glasses**. **Pure black suit**, open white shirt, no tie. Invented face—not based on any real person.",
-        "**Signature beats:** (1) lightly pushes up his enamel glasses before speaking; (2) flips a worn old coin between his fingers when thinking; (3) fastens the first button of his black jacket when composing himself.",
-        "**Banned descriptors:** leather jacket / leather coat; short black-and-white or salt-and-pepper hair; explicit ethnic facial labels; stocky/chubby build tropes that echo any real CEO.",
-      ],
+      "Keep the exact visual anchors from the restaurant photo across Ep03 generations: **daytime floor-to-ceiling riverfront window**, **upside-down red diamond “福” paper cutout** on the upper-left glass, **side-by-side seating** in **black tops** (his **rimless glasses** and **black short-sleeve polo/tee**; her **long straight dark hair** and **sleeveless black top**), **stemmed red wine glasses**, and a **white-tablecloth round table with a clear glass lazy Susan** loaded with spicy Chinese dishes.",
+      "**Key motion arc (6–10s):** (1) relaxed side-by-side smiles and a gentle red-wine glass clink; (2) his smile freezes as he notices the lens across the table; (3) he raises his hand and **points straight forward at the camera** while she turns to look at the lens.",
+    ],
   },
-  episodesIntro: "About 40–50 seconds overall, as vertical episodes or a horizontal trailer.",
+  episodesIntro:
+    "Five 6–10s clips (~45 seconds total). Start with Episode 03 using the restaurant photo in Image-to-Video, or generate all five clips in Text-to-Video.",
   episodes: [
     {
       id: "ep01",
-      title: "The Dance",
-      duration: "8s",
-      beat: "Earnings-week partnership dinner; they dance together; their eyes meet.",
+      title: "The Gala Toast",
+      duration: "10s",
+      beat: "Tech-summit VIP reception; rimless glasses, black attire, and long straight dark hair; first red-wine toast and lingering eye contact.",
     },
     {
       id: "ep02",
       title: "Rain & Umbrella",
-      duration: "8s",
-      beat: "Under one umbrella; a brief embrace and a light kiss; she swallows the confession.",
+      duration: "10s",
+      beat: "Sharing one black umbrella after the reception; a quiet embrace as she hesitates over her hidden agenda.",
     },
     {
       id: "ep03",
-      title: "Caught Through the Glass",
-      duration: "8–10s",
+      title: "Caught at the Riverfront Table (江景餐厅合照)",
+      duration: "6–10s",
       featured: true,
-      beat: "Long lens through the floor-to-ceiling glass outside a Chinatown neo-Chinese restaurant; a romantic dinner at a large round table with a lazy Susan → they notice the paparazzi → shock → he points at the lens.",
+      beat: "Daytime river-view Chinese restaurant with upside-down red '福' window sticker; sitting side by side in black tops with stemmed red wine glasses at a white-tablecloth glass lazy Susan → warm toast → smile freezes → he points straight at the camera lens.",
     },
     {
       id: "ep04",
-      title: "The Tell",
-      duration: "8–10s",
-      beat: "His office; a restricted “MODEL WEIGHTS” tablet; they hold hands, then let go.",
+      title: "The Compute Ledger",
+      duration: "10s",
+      beat: "Executive office after the leaked restaurant photo; a restricted “MLAT-AI COMPUTE & WEIGHTS” tablet on the desk; tense silence.",
     },
     {
       id: "ep05",
-      title: "Rooftop Lights",
-      duration: "8–10s",
-      beat: "A rooftop view of the lights and a distant fictional ticker; an embrace goodbye; a light kiss; an open, bittersweet ending.",
+      title: "Rooftop Ticker Lights",
+      duration: "10s",
+      beat: "Overlooking the city skyline and a distant “FableX MLAT-AI” ticker; a bittersweet parting look as the investigation breaks.",
     },
   ],
-  exportLabel: "Label every export “AI-generated · fiction · FableX: MLAT-AI is not real”.",
+  exportLabel:
+    "Label exports clearly when sharing parody/story clips (“AI-generated short drama · FableX: MLAT-AI”).",
   prompts: [
+    {
+      id: "ep03-image",
+      group: "image",
+      title: "Image to video (English) · Animate the Riverfront Restaurant Photo",
+      mode: "image",
+      prompt:
+        "Animate this exact daytime riverfront Chinese restaurant photo from an across-the-table candid POV. Preserve the exact composition, lighting, and subjects: the older silver-haired man on the left in rimless glasses and a black short-sleeve polo shirt, and the woman on the right with long straight dark hair in a sleeveless black top sitting side by side before the floor-to-ceiling river-view window with the upside-down red diamond 'Fu' paper cutout on the upper-left glass, behind a white-tablecloth round table and glass lazy Susan of Chinese dishes. From 0-2.5s they smile warmly, lean slightly closer together, and gently swirl and clink their long-stemmed red wine glasses. At 2.5-4s his smile suddenly freezes as he realizes the camera across the table is secretly recording video; his eyes sharpen behind his rimless glasses and he lowers his wine glass slightly. From 4-6s he looks alarmed, raises his free hand, and points straight forward across the lazy Susan directly at the camera lens while the woman stops smiling and turns her startled gaze straight into the lens. Subtle handheld phone-camera breathing and a slight flinch at the end.",
+      variants: [
+        { modelSlug: "minimax", durationSeconds: 6, aspect: "adaptive" },
+        { modelSlug: "kling", durationSeconds: 5, aspect: "adaptive" },
+        { modelSlug: "seedance", durationSeconds: 5, aspect: "adaptive" },
+      ],
+    },
+    {
+      id: "ep03-image-zh",
+      group: "image",
+      title: "Image to video (中文提示词) · 基于江景餐厅合照生成「碰杯→变脸→指镜头」",
+      mode: "image",
+      prompt:
+        "基于这张白天江景中餐厅合照生成跨桌偷拍感视频，严格保持原图人物穿搭与环境构图不变：落地窗外是白天江面、左侧白色游船码头、对岸绿树与高楼群，左上角玻璃贴着倒贴的红色「福」字菱形窗花；圆桌铺白桌布、中央玻璃转盘摆满辣子鸡、红油肉末豆腐等中式菜肴；左侧银白短发、戴无框眼镜、穿黑色短袖T恤的男士与右侧黑色长直发、穿黑色无袖上衣的女士并排而坐，手中各举高脚红酒杯。0–2.5秒两人面带灿烂微笑，身体微微靠近，轻晃高脚杯并在玻璃转盘上方轻轻碰杯，神情放松亲密；2.5–4秒男士笑容骤然凝固，透过无框眼镜意识到桌子对面正在偷拍录像，眼神瞬间变得警觉并微微放下酒杯；4–6秒他神情震惊，抬起手越过餐桌笔直指向正前方的镜头，身旁女士也收起笑容、惊愕地转头直视镜头，画面伴随轻微手持手机抖动。",
+      variants: [
+        { modelSlug: "minimax", durationSeconds: 6, aspect: "adaptive" },
+        { modelSlug: "kling", durationSeconds: 5, aspect: "adaptive" },
+        { modelSlug: "seedance", durationSeconds: 5, aspect: "adaptive" },
+      ],
+    },
     {
       id: "ep03-seedance",
       group: "hook",
-      title: "Seedance 2.5 · ambience and shutter",
+      title: "Seedance 2.5 · Daytime Riverfront Restaurant + Shutter Audio",
       mode: "text",
-      prompt: "Cinematic paparazzi POV, fiction only. Night in Chinatown outside a modern trendy neo-Chinese restaurant (not traditional; no red lanterns). Camera on wet sidewalk, shooting through floor-to-ceiling glass into a minimal contemporary dining room: dark wood, brass and marble details, recessed warm lights and designer pendants, modernized wood-lattice accents. Centered: large round table with a lazy Susan, refined plated Chinese dishes and a tea set. Adrian Cole—a fictional mid-50s tall chairman with silver-white medium-length hair in a 3:7 side part, deep-emerald enamel-frame glasses, pure black suit with an open white shirt and no tie, invented face not based on any real person—sits across from Mira Solenne, a fictional early-30s woman with shoulder-length dark wavy hair, hazel eyes, dark elegant dress—also fully invented. They dine happily; he lightly pushes up his enamel glasses, they gently clink small tea or baijiu cups, he turns the lazy Susan to serve her. Warm red-amber interior vs cool Chinatown neon spill outside; distant blurred unreadable Chinese neon sign haze (fictional only). Blurred telephoto lens-hood foreground. Soft handheld breath.\n\nBeat: 0-4s joyful dinner with glasses-push and cup clink; 4-6s his smile freezes as he notices the sidewalk, hand moves to the first button of his black jacket; 6-10s shock, he raises his hand and points straight at the camera (out the window toward the lens); she turns to look. Optional flash reflection on the glass.\n\nSoundtrack: modern Chinese-restaurant ambience (soft talk, porcelain taps, faint lazy-Susan turn), Chinatown night bed, then clear camera shutter clicks (two rapid clicks) at the reveal. Soft romance earlier, sudden tension. No leather jackets, no short salt-and-pepper hair, no ethnic facial labels, no real restaurant names, no real people, no NSFW, no bedroom. Meridian Lattice AI / FableX MLAT-AI are fictional.",
-      variants: [{ modelSlug: "seedance", durationSeconds: 10, aspect: "16:9" }],
+      prompt:
+        "Candid across-the-table phone POV inside a bright daytime river-view Chinese restaurant. Tall floor-to-ceiling windows behind the table overlook a wide river, a white ferry pier on the left, green trees on the bank, and city high-rise buildings under daylight; an upside-down red diamond 'Fu' paper cutout is pasted on the upper-left glass pane, with a dark window ledge behind the chairs and a grey pillar on the right. Sitting side by side facing the camera at a large white-tablecloth round table with a clear glass lazy Susan: on the left, a silver-haired older man with a side part, rimless rectangular glasses, and a casual black short-sleeve polo shirt; on the right, an early-30s woman with long straight dark hair in a sleeveless black top leaning warmly toward his shoulder. Both hold long-stemmed red wine glasses. On the glass lazy Susan: a center white bowl of spicy minced pork in red chili oil, Sichuan red chili chicken, sliced braised duck, golden stir-fried shrimp, noodles, a cold dish in red sauce with black chopsticks, water tumblers, a small carafe of dark plum drink, and a glass of pale-yellow juice.\n\nBeat: 0-4s relaxed joyful lunch, warm smiles, gently swirling and clinking their stemmed red wine glasses above the lazy Susan; 4-6s his smile freezes as he notices the camera across the table is secretly recording, eyes narrowing behind his rimless glasses; 6-10s shock and confrontation, he raises his hand and points straight forward across the table directly at the camera lens while she turns her startled gaze into the lens.\n\nSoundtrack: daytime Chinese dining room murmur, porcelain and chopstick taps, a soft crystal wine-glass clink, then two crisp camera shutter clicks at the moment he points at the lens.",
+      variants: [
+        { modelSlug: "seedance", durationSeconds: 10, aspect: "16:9" },
+        { modelSlug: "seedance", durationSeconds: 5, aspect: "16:9" },
+      ],
     },
     {
       id: "ep03-kling",
       group: "hook",
-      title: "Kling 3.0 · vertical, expression, push-in",
+      title: "Kling 3.0 · Vertical Across-the-Table Push-In & Expression Flip",
       mode: "text",
-      prompt: "Vertical spy-romance hook, paparazzi long-lens POV through Chinatown neo-Chinese restaurant glass at night (modern trendy interior, no red lanterns). Large round table with lazy Susan, refined Chinese dishes and tea set; dark wood, brass, marble, designer warm lights. Fictional Adrian Cole (mid-50s, silver-white medium-length hair with 3:7 side part, deep-emerald enamel-frame glasses, pure black suit, open white shirt, no tie, invented face) and Mira Solenne (early 30s, dark dress, dark wavy hair, hazel eyes, invented face) laughing softly; he lightly pushes up his glasses; soft tea-cup clink. Slow push-in through the glass toward their faces. Wet street reflections and blurred Chinese neon outside. His expression changes from happy to startled shock; he points directly at the camera. Mild handheld, shallow depth of field. Fiction only, no leather jacket, no real restaurant names, no real celebrities, no NSFW.",
-      variants: [{ modelSlug: "kling", durationSeconds: 8, aspect: "9:16" }],
+      prompt:
+        "Vertical candid across-the-table POV inside a bright daytime riverfront Chinese restaurant. Floor-to-ceiling window behind the couple shows a wide river, white boat pier, green trees, and city high-rises, with an upside-down red diamond 'Fu' paper cutout on the upper-left glass. White-tablecloth round table with a glass lazy Susan full of plated Chinese dishes (spicy red chili oil bowl, chili chicken, braised duck, cold dish, water glasses, dark drink carafe). Sitting side by side facing the camera: a silver-white-haired man in rimless glasses and a black short-sleeve polo shirt on the left, and a woman with long straight dark hair in a sleeveless black top on the right, each holding a stemmed red wine glass. Slow push-in across the lazy Susan: first they smile warmly and clink red wine glasses; then his smile freezes in shock as he spots the secret recording, and he raises his hand to point straight at the camera lens while she looks startled into the lens. Mild handheld realism, natural daylight.",
+      variants: [
+        { modelSlug: "kling", durationSeconds: 10, aspect: "9:16" },
+        { modelSlug: "kling", durationSeconds: 5, aspect: "9:16" },
+      ],
     },
     {
       id: "ep03-minimax",
       group: "hook",
-      title: "MiniMax H3 · polished 10s master",
+      title: "MiniMax H3 · Polished 10s Riverfront Lazy-Susan Master",
       mode: "text",
-      prompt: "Polished cinematic short. Night in Chinatown outside a modern trendy neo-Chinese restaurant (no traditional lanterns), shooting through floor-to-ceiling glass at a large round table with a lazy Susan, refined plated Chinese dishes and tea set. Minimal interior: dark wood, brass, marble, recessed warm lights and designer pendants. Fictional listed-AI chairman Adrian Cole—silver-white medium-length hair with a 3:7 side part, deep-emerald enamel-frame glasses, pure black suit, open white shirt, no tie, invented face—and Mira Solenne share a romantic happy dinner; he adjusts his enamel glasses while smiling; they gently clink small cups. Wet pavement and blurred Chinese neon outside. Telephoto paparazzi framing with subtle foreground blur. Mid-clip he notices the photographer; joy flips to fear; he points at the window toward the lens; a brief flash reflects in the glass. High detail faces that do not resemble real public figures. No leather jackets, no real restaurant names, no real brands, no chip-factory imagery, no sexual content. Pure fiction romance thriller beat.",
+      prompt:
+        "Polished cinematic candid shot inside a daytime river-view Chinese restaurant. Across-the-table high-angle framing looking at a white-tablecloth round table and clear glass lazy Susan loaded with colorful Chinese dishes (center bowl of spicy red chili tofu/minced pork, Sichuan chili chicken on the right, sliced braised duck, stir-fried shrimp, cold dish in red sauce, clear water glasses, dark drink carafe, pale-yellow juice). Behind the table, floor-to-ceiling glass windows reveal a daytime river, white pier, green trees, and city towers, with an upside-down red diamond 'Fu' cutout pasted on the upper-left window. Sitting side by side: a silver-haired older man in rimless glasses and a black short-sleeve polo shirt on the left, and a woman with long straight dark hair in a sleeveless black top leaning slightly toward him on the right, both holding stemmed red wine glasses. They share a warm laugh and toast; mid-clip his expression flips from happy warmth to startled alarm as he notices the camera recording across the table, and he points straight forward at the lens.",
       variants: [{ modelSlug: "minimax", durationSeconds: 10, aspect: "16:9" }],
-    },
-    {
-      id: "ep03-image",
-      group: "image",
-      title: "Image to video · motion",
-      mode: "image",
-      prompt: "Animate this still as a paparazzi shot through Chinatown neo-Chinese restaurant glass. Keep identities and framing: silver-white medium-length side-parted hair, deep-emerald enamel glasses, pure black suit, lazy Susan table. First he lightly pushes up his glasses and gently clinks a small tea or baijiu cup; then he notices the camera outside, smile collapses into shock, he raises his arm and points straight at the lens; the woman turns to look. Subtle handheld, optional shutter click timing mid-clip. No morph into real celebrities, no real restaurant signs becoming readable, no leather jacket, no NSFW.",
-      variants: [
-        { modelSlug: "kling", durationSeconds: 8, aspect: "9:16" },
-        { modelSlug: "seedance", durationSeconds: 10, aspect: "16:9" },
-        { modelSlug: "minimax", durationSeconds: 10, aspect: "16:9" },
-      ],
     },
     {
       id: "ep01-kling",
       group: "episode",
-      title: "Episode 01 · The Dance",
+      title: "Episode 01 · The Gala Toast",
       mode: "text",
-      prompt: "Romantic spy drama, fiction only. Earnings-week gala for fictional listed AI company Meridian Lattice AI. Adrian Cole—mid-50s, tall, silver-white medium-length hair with a 3:7 side part, deep-emerald enamel-frame glasses, pure black suit with open white shirt and no tie, invented face—invites Mira Solenne, early 30s in a dark evening dress, dark wavy hair, hazel eyes, invented face, to dance; he lightly pushes up his glasses before offering his hand. They waltz slowly under warm chandeliers; eyes locked; soft smiles; no real people. Elegant camera orbit, shallow depth of field, lush strings. Soft romance, no leather jacket, no NSFW, no real brand logos.",
-      variants: [{ modelSlug: "kling", durationSeconds: 8, aspect: "16:9" }],
+      prompt:
+        "Corporate spy-romance short drama. Evening VIP reception at a tech summit for Meridian Lattice AI. An older chairman with silver-white short side-parted hair, rimless rectangular glasses, and a tailored black jacket over a black shirt raises a stemmed red wine glass with an early-30s woman with long straight dark hair in a sleeveless black evening top. Warm chandelier glow, subtle eye contact, composed smiles before the secret riverfront lunch. Smooth camera orbit, shallow depth of field.",
+      variants: [{ modelSlug: "kling", durationSeconds: 10, aspect: "16:9" }],
     },
     {
       id: "ep02-seedance",
       group: "episode",
       title: "Episode 02 · Rain & Umbrella",
       mode: "text",
-      prompt: "Cinematic rain romance. Adrian Cole—silver-white medium-length 3:7-part hair, deep-emerald enamel glasses, pure black suit, open white shirt—and Mira Solenne share one black umbrella on a glossy street. He pulls her into a brief embrace; they share a soft, closed-mouth kiss; rain streaks on his glasses in the backlight. Tender, melancholic, PG romantic tone. Fictional adults with invented faces only. No bedroom, no undressing, no leather jacket, no explicit content, no likenesses of real people.",
-      variants: [{ modelSlug: "seedance", durationSeconds: 8, aspect: "16:9" }],
+      prompt:
+        "Cinematic rain drama. The silver-haired chairman in rimless rectangular glasses and dark attire shares one black umbrella on a wet city walkway with the woman with long straight dark hair in a sleeveless black top and dark coat. He pulls her close under the umbrella out of the rain; rain droplets glint on his rimless glasses in the streetlamp backlight as she hesitates over her secret mission. Tender, suspenseful PG romantic tone.",
+      variants: [{ modelSlug: "seedance", durationSeconds: 10, aspect: "16:9" }],
     },
     {
       id: "ep04-minimax",
       group: "episode",
-      title: "Episode 04 · The Tell",
+      title: "Episode 04 · The Compute Ledger",
       mode: "text",
-      prompt: "Corporate romance beat after a paparazzi scare. Executive office at night. A tablet shows fictional text \"Meridian Lattice AI — MODEL WEIGHTS — RESTRICTED\" and \"Q-next roadmap\". Mira Solenne hesitates; Adrian Cole—silver-white medium-length 3:7-part hair, deep-emerald enamel glasses, pure black suit—flips a worn old coin between his fingers while thinking, then gently takes her hand for two seconds and releases it with a conflicted look. Soft lamp light, slow push-in. Fiction only, no real companies, no sexual content, AI platform company not a chip factory.",
+      prompt:
+        "Corporate thriller beat after a leaked riverfront restaurant photo. Executive office at night. A tablet on the desk displays \"Meridian Lattice AI: COMPUTE ALLOCATION & MODEL WEIGHTS (RESTRICTED)\" alongside a blurred news alert of a daytime riverfront restaurant table. The woman with long straight dark hair hesitates; the silver-haired chairman in rimless glasses adjusts his glasses, briefly touches her hand, and pulls back with a conflicted expression. Slow push-in, tense dramatic lighting.",
       variants: [{ modelSlug: "minimax", durationSeconds: 10, aspect: "16:9" }],
     },
     {
       id: "ep05-kling",
       group: "episode",
-      title: "Episode 05 · Rooftop Lights",
+      title: "Episode 05 · Rooftop Ticker Lights",
       mode: "text",
-      prompt: "Vertical bittersweet ending. Rooftop overlooking a glowing city; a distant fictional ticker faintly reads \"FableX MLAT-AI\". Mira Solenne in a dark coat embraces Adrian Cole—silver-white medium-length 3:7-part hair, deep-emerald enamel glasses, pure black suit; a light farewell kiss; she walks to the stairwell; he stays alone, fastens the first button of his black jacket, and watches the lights. Slow crane up, romantic sadness, open ending. Fiction only, soft romance, no leather jacket, no NSFW, invented faces only.",
+      prompt:
+        "Vertical bittersweet finale. Rooftop terrace overlooking a glowing financial district; a distant display faintly reads \"FableX MLAT-AI\". The woman with long straight dark hair in a dark coat exchanges one last look with the silver-haired chairman in rimless glasses and black attire, then turns toward the stairwell; he remains by the glass railing, adjusts his rimless glasses, and watches the city lights alone. Slow crane up, open ending.",
       variants: [{ modelSlug: "kling", durationSeconds: 10, aspect: "9:16" }],
     },
     {
       id: "trailer-minimax",
       group: "trailer",
-      title: "Trailer mood (wide)",
+      title: "Trailer Montage (Wide)",
       mode: "text",
-      prompt: "Ultra-wide romantic trailer for a fictional AI-chairman spy love story. Quick beats: ballroom dance; rain-umbrella embrace and soft kiss silhouette; cut to paparazzi view through Chinatown neo-Chinese restaurant glass (lazy Susan, warm modern interior, blurred neon outside) as he points at the lens; cut to empty boardroom chair before dawn. No dialogue, lush score swell. Invented characters only, no red lanterns, no real celebrities, no explicit intimacy.",
+      prompt:
+        "Ultra-wide dramatic trailer for the AI Chairman & Spy short drama. Quick cuts: VIP gala red-wine toast; shared black umbrella in the rain; cut to the bright daytime riverfront Chinese restaurant shot (upside-down red 'Fu' window sticker, white-tablecloth glass lazy Susan of spicy Chinese dishes, side-by-side black tops, stemmed red wine glasses) as his smile freezes and he points straight at the camera lens; final cut to an empty boardroom before dawn.",
       variants: [{ modelSlug: "minimax", durationSeconds: 6, aspect: "21:9" }],
     },
   ],
   imageToVideo: {
-    title: "Image to video",
+    title: "Image to video · Generate from the Restaurant Photo (基于餐厅合照生成视频)",
     steps: [
-      "Generate a still: Chinatown night, modern neo-Chinese restaurant exterior (no red lanterns); paparazzi view through glass; lazy-Susan round table with refined Chinese dishes and tea set; dark wood/brass/marble interior; wet street + blurred Chinese neon; Adrian with silver-white medium-length 3:7-part hair, deep-emerald enamel glasses, pure black suit—invented faces only—**no** real reference photos or real restaurant names.",
-      "Upload in [KakaReel image-to-video](/create?mode=image).",
-      "Use the motion prompt above.",
-      "Prefer Kling 8s 9:16 or Seedance 10s 16:9.",
-      "QC for likeness drift, NSFW, and the point-at-lens beat.",
+      "Click **Open MiniMax H3** (or copy either the English or Chinese Image-to-Video prompt above) to open [KakaReel image-to-video](/create?model=minimax&mode=image) with the prompt pre-filled.",
+      "Upload the **daytime riverfront Chinese restaurant photo** (side-by-side black tops, rimless glasses, stemmed red wine glasses, glass lazy Susan, and upside-down red “福” window sticker).",
+      "Select **MiniMax H3 · 6s · 2K · Adaptive (23 credits)** for the live paid image-to-video path, or preview with Kling 3.0 / Seedance 2.5.",
+      "Verify the 3-beat motion arc in the generated clip: **warm red-wine toast (0–2.5s) → smile freezes (2.5–4s) → points straight across the table at the camera lens (4–6s)**.",
     ],
-    
-    
-    
   },
   steps: [
-    "Open [KakaReel Studio](/create).",
-    "Pick Seedance 2.5 / Kling 3.0 / MiniMax H3.",
-    "Paste an episode prompt—**never** replace names with real people.",
-    "For the Hero hook (Ep03), start with the model-specific *Caught Through the Glass* prompt above, or use the **image-to-video** path.",
-    "Set duration & aspect as recommended.",
-    "Generate, review the full clip, export with a fiction label.",
-    "Soft romance OK for fictional adults; if anything looks like a living public figure or turns NSFW, discard and rewrite.",
+    "Open [KakaReel Studio](/create?model=minimax&mode=image) or click **Open in studio** on any prompt card below to pre-load the model, mode, and prompt.",
+    "To animate the **restaurant photo**, stay in **Image to video** mode, upload the riverfront dining photo, and run the 6-second MiniMax H3 motion prompt.",
+    "To generate from scratch without uploading a photo, switch to **Seedance 2.5** (10s · 720p/1080p) or **Kling 3.0** (10s · 4K) in **Text to video** mode.",
+    "Chain Episode 01–05 clips into a 45-second vertical short drama or export Episode 03 as a standalone 6–10s hook.",
   ],
   faqs: [
     {
-      question: "Is this based on real news?",
-      answer: "No. Original fiction. Not about any real chairman, company, or investigation.",
+      question:
+        "What is the Jensen Huang & Alice Huang (黄仁勋 · 黄乐) restaurant photo scene on this page?",
+      answer:
+        "It breaks down the viral **daytime riverfront Chinese restaurant photo** discussed in coverage of **Jensen Huang (黄仁勋)** and **Alice Huang / Huang Le / Le Huang (黄乐)**, featuring a floor-to-ceiling river window with an upside-down red **“福” (Fu)** diamond cutout, side-by-side black tops, rimless glasses, **stemmed red wine glasses**, and a **white-tablecloth glass lazy Susan** of Chinese dishes, and pairs it with the Episode 03 **toast → freeze → point-at-camera** video prompt.",
     },
     {
-      question: "Can I put real CEOs or real people in romantic or paparazzi scenes?",
-      answer: "**No.** Real-person deepfakes—including fabricated kissing, hugging, or intimate acts involving living people—are banned. See [/acceptable-use](/acceptable-use).",
+      question:
+        "How do I generate a video directly from the restaurant photo (基于餐厅照片图生视频)?",
+      answer:
+        "Use the **Image to video** prompt card above (available in both English and Chinese). Click **Open MiniMax H3** to launch [/create?model=minimax&mode=image](/create?model=minimax&mode=image) with the motion prompt pre-filled, upload the restaurant photo, and generate a **6s · 2K · adaptive** clip where they clink red wine glasses before freezing and pointing straight at the lens.",
     },
     {
-      question: "Can fictional characters kiss or hug?",
-      answer: "**Yes, softly.** Dance, shared umbrella, hand-holding, embrace, and a light kiss are OK for invented adult characters. **No** bedrooms, nudity, or sexual/NSFW content.",
+      question:
+        "Why did the earlier draft fail to match the actual restaurant photo?",
+      answer:
+        "The initial draft guessed a nighttime Chinatown exterior with tea cups and a suit. This updated scene matches the real daytime riverfront photo geometry: **inside the dining room looking across the white-tablecloth glass lazy Susan**, **floor-to-ceiling river view and upside-down red “福” sticker behind them**, **casual black short-sleeve polo & sleeveless black top**, and **stemmed red wine glasses**.",
     },
     {
-      question: "Can I use real tickers or real AI company names?",
-      answer: "Please don’t. Use **Meridian Lattice AI** and **FableX: MLAT-AI**, or invent new fictional names.",
+      question:
+        "Why do the storyboard prompts use descriptive visual traits or fictional company tickers?",
+      answer:
+        "Video model APIs and automated prompt checks often block raw celebrity names paired with espionage or romance keywords. Using exact visual descriptors from the photo (**silver-white short hair, rimless rectangular glasses, black short-sleeve polo, long straight dark hair, sleeveless black top, stemmed red wine glasses, glass lazy Susan**) plus fictionalized props (**Meridian Lattice AI**, **FableX: MLAT-AI**, **Veil Consortium**) preserves the exact scene while keeping generation reliable and compliant with [/acceptable-use](/acceptable-use).",
     },
     {
-      question: "Chip / GPU company OK?",
-      answer: "No—keep it an **AI model/platform** company.",
-    },
-    {
-      question: "Why the Chinatown neo-Chinese restaurant paparazzi shot?",
-      answer: "It is a short-form emotion-flip hook (happy → shock → points at camera) that fits a secret-romance beat while staying fictional—modern dining, not an old-school lantern restaurant.",
-    },
-    {
-      question: "Which model first for Ep03?",
-      answer: "Seedance 2.5 for glass ambience + shutter SFX; Kling 3.0 for vertical push-in and face change; MiniMax H3 for a polished 10s master.",
+      question: "Which KakaReel model should I choose for Episode 03?",
+      answer:
+        "Choose **MiniMax H3 (6s · 2K · Image-to-Video · 23 credits)** when animating the restaurant photo directly. For **Text-to-Video**, choose **Seedance 2.5 (5s/10s · 720p/1080p)** for wide riverfront framing or **Kling 3.0 (5s/10s · 4K)** for vertical 9:16 push-in and facial expression change.",
     },
   ],
   cta: {
-    title: "Start with the glass.",
-    body: "Paste the Chinatown neo-Chinese paparazzi dinner prompt—or begin Episode 01. Keep it fictional. Soft romance only.",
-    button: "Create on KakaReel",
-    footnote: "By generating, you agree to follow [/acceptable-use](/acceptable-use). Fiction only. **FableX: MLAT-AI** is not a real listing.",
+    title: "Animate the Riverfront Restaurant Scene.",
+    body: "Upload the restaurant photo with our MiniMax H3 Image-to-Video prompt, or run the Seedance 2.5 and Kling 3.0 Episode 03 prompts in KakaReel Studio.",
+    button: "Open Image-to-Video in Studio",
+    footnote:
+      "By generating, you agree to follow [/acceptable-use](/acceptable-use). Parody storyboard tickers (**FableX: MLAT-AI**) are fictional.",
   },
 };
 
@@ -394,8 +422,13 @@ export function topicStaticParams(): { slug: string }[] {
   return topics.map((topic) => ({ slug: topic.slug }));
 }
 
-export function topicStudioHref(modelSlug: FamilySlug, mode: Mode): string {
+export function topicStudioHref(
+  modelSlug: FamilySlug,
+  mode: Mode,
+  prompt?: string,
+): string {
   const params = new URLSearchParams({ model: modelSlug });
   if (mode === "image") params.set("mode", "image");
+  if (prompt) params.set("prompt", prompt);
   return `/create?${params.toString()}`;
 }

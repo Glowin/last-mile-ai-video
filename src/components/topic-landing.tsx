@@ -28,8 +28,8 @@ function PromptCard({ prompt }: { prompt: TopicPrompt }) {
           return (
             <Link
               className="button small"
-              href={topicStudioHref(variant.modelSlug, prompt.mode)}
-              key={`${variant.modelSlug}-${variant.aspect}`}
+              href={topicStudioHref(variant.modelSlug, prompt.mode, prompt.prompt)}
+              key={`${variant.modelSlug}-${variant.durationSeconds}-${variant.aspect}`}
             >
               {prompt.variants.length === 1 ? "Open in studio" : `Open ${name}`}
               <ArrowUpRight size={16} aria-hidden="true" />
@@ -45,10 +45,14 @@ export function TopicLanding({ topic }: { topic: Topic }) {
   const featured = topic.prompts.find((prompt) => prompt.id === topic.featuredPromptId);
   const featuredVariant = featured?.variants[0];
   const hookPrompts = topic.prompts.filter((prompt) => prompt.group === "hook");
-  const imagePrompt = topic.prompts.find((prompt) => prompt.group === "image");
+  const imagePrompts = topic.prompts.filter((prompt) => prompt.group === "image");
   const laterPrompts = topic.prompts.filter(
     (prompt) => prompt.group === "episode" || prompt.group === "trailer",
   );
+  const primaryHref =
+    featured && featuredVariant
+      ? topicStudioHref(featuredVariant.modelSlug, featured.mode, featured.prompt)
+      : "/create";
 
   return (
     <>
@@ -62,7 +66,7 @@ export function TopicLanding({ topic }: { topic: Topic }) {
         </h1>
         <p className="lead">{renderInline(topic.hero.lead)}</p>
         <div className="actions">
-          <Link className="button" href="/create">
+          <Link className="button" href={primaryHref}>
             {topic.hero.primaryCta} <ArrowUpRight size={19} aria-hidden="true" />
           </Link>
           <Link className="text-link" href="/acceptable-use">
@@ -75,8 +79,8 @@ export function TopicLanding({ topic }: { topic: Topic }) {
 
         {featured && featuredVariant && (
           <article className="topic-prompt" aria-labelledby="featured-shot">
-            <span className="eyebrow">Ep03 · featured example</span>
-            <h2 id="featured-shot">{topic.scene.title}</h2>
+            <span className="eyebrow">Ep03 · Featured Image-to-Video & Scene Hook</span>
+            <h2 id="featured-shot">{featured.title}</h2>
             <p className="topic-note">{topic.scene.place}</p>
             <ul className="topic-specs">
               <li>
@@ -86,13 +90,21 @@ export function TopicLanding({ topic }: { topic: Topic }) {
                 <span>{featured.mode === "image" ? "Image to video" : "Text to video"}</span>
               </li>
             </ul>
+            <pre className="topic-prompt-text">{featured.prompt}</pre>
             <div className="actions">
               <CopyPromptButton text={featured.prompt} />
-              <Link className="button small" href={topicStudioHref(featuredVariant.modelSlug, featured.mode)}>
+              <Link
+                className="button small"
+                href={topicStudioHref(
+                  featuredVariant.modelSlug,
+                  featured.mode,
+                  featured.prompt,
+                )}
+              >
                 Open in studio <ArrowUpRight size={16} aria-hidden="true" />
               </Link>
               <a className="text-link" href="#prompts">
-                All model prompts <ArrowRight size={16} aria-hidden="true" />
+                All English & Chinese prompts <ArrowRight size={16} aria-hidden="true" />
               </a>
             </div>
           </article>
@@ -129,8 +141,8 @@ export function TopicLanding({ topic }: { topic: Topic }) {
         </section>
 
         <section id="story" aria-labelledby="story-title">
-          <span className="eyebrow">Story bible</span>
-          <h2 id="story-title">Story and characters.</h2>
+          <span className="eyebrow">Story bible · Jensen Huang & Alice Huang (Huang Le) Parody Arc</span>
+          <h2 id="story-title">From Gossip Headlines to a Five-Clip AI Storyboard.</h2>
           <p>{renderInline(topic.world)}</p>
           <p className="topic-note">{topic.tickerNote}</p>
           <div className="topic-table-wrap">
@@ -167,7 +179,7 @@ export function TopicLanding({ topic }: { topic: Topic }) {
 
         <section id="episodes" aria-labelledby="episodes-title">
           <span className="eyebrow">Five clips</span>
-          <h2 id="episodes-title">Five-episode storyboard.</h2>
+          <h2 id="episodes-title">The AI Chairman & the Spy · Five-Episode Storyboard.</h2>
           <p className="topic-note">{topic.episodesIntro}</p>
           <div className="topic-table-wrap">
             <table className="topic-table">
@@ -199,18 +211,18 @@ export function TopicLanding({ topic }: { topic: Topic }) {
         </section>
 
         <section id="prompts" aria-labelledby="prompts-title">
-          <span className="eyebrow">Ready to paste</span>
-          <h2 id="prompts-title">Example prompts.</h2>
-          <h3>Episode 03 · three models</h3>
-          <div className="topic-prompt-list">
-            {hookPrompts.map((prompt) => (
-              <PromptCard key={prompt.id} prompt={prompt} />
-            ))}
-          </div>
-          {imagePrompt && (
+          <span className="eyebrow">Ready to paste or open in Studio</span>
+          <h2 id="prompts-title">
+            Restaurant Photo Image-to-Video & Text-to-Video Prompts.
+          </h2>
+          {imagePrompts.length > 0 && (
             <>
               <h3>{topic.imageToVideo.title}</h3>
-              <PromptCard prompt={imagePrompt} />
+              <div className="topic-prompt-list">
+                {imagePrompts.map((prompt) => (
+                  <PromptCard key={prompt.id} prompt={prompt} />
+                ))}
+              </div>
               <ol className="topic-list">
                 {topic.imageToVideo.steps.map((step) => (
                   <li key={step}>{renderInline(step)}</li>
@@ -218,7 +230,13 @@ export function TopicLanding({ topic }: { topic: Topic }) {
               </ol>
             </>
           )}
-          <h3>Other episodes and a trailer</h3>
+          <h3>Episode 03 · Text-to-Video prompts (Seedance 2.5 · Kling 3.0 · MiniMax H3)</h3>
+          <div className="topic-prompt-list">
+            {hookPrompts.map((prompt) => (
+              <PromptCard key={prompt.id} prompt={prompt} />
+            ))}
+          </div>
+          <h3>Other episodes and wide trailer</h3>
           <div className="topic-prompt-list">
             {laterPrompts.map((prompt) => (
               <PromptCard key={prompt.id} prompt={prompt} />
@@ -227,8 +245,8 @@ export function TopicLanding({ topic }: { topic: Topic }) {
         </section>
 
         <section id="steps" aria-labelledby="steps-title">
-          <span className="eyebrow">From prompt to export</span>
-          <h2 id="steps-title">Steps.</h2>
+          <span className="eyebrow">From photo or prompt to export</span>
+          <h2 id="steps-title">How to Generate in KakaReel Studio.</h2>
           <ol className="topic-list">
             {topic.steps.map((step) => (
               <li key={step}>{renderInline(step)}</li>
@@ -239,7 +257,7 @@ export function TopicLanding({ topic }: { topic: Topic }) {
         <section className="faq-section" id="faq" aria-labelledby="faq-title">
           <div>
             <span className="eyebrow">Before you generate</span>
-            <h2 id="faq-title">FAQ.</h2>
+            <h2 id="faq-title">FAQ · Jensen Huang & Alice Huang (黄仁勋 · 黄乐).</h2>
             <Link className="text-link" href="/acceptable-use">
               {topic.hero.secondaryCta} <ArrowUpRight size={17} aria-hidden="true" />
             </Link>
@@ -260,7 +278,7 @@ export function TopicLanding({ topic }: { topic: Topic }) {
         <section className="closing" id="start">
           <h2>{topic.cta.title}</h2>
           <p className="topic-cta-body">{topic.cta.body}</p>
-          <Link className="button" href="/create">
+          <Link className="button" href={primaryHref}>
             {topic.cta.button} <ArrowUpRight size={19} aria-hidden="true" />
           </Link>
           <p className="topic-note topic-cta-note">{renderInline(topic.cta.footnote)}</p>
