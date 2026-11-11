@@ -36,6 +36,20 @@ test("topic prompts use studio models, durations, and mode-specific aspect ratio
         prompt.prompt.length <= family.maxPrompt,
         `${prompt.id} is ${prompt.prompt.length} chars`,
       );
+      if (prompt.mode === "image") {
+        assert.equal(variant.modelSlug, "minimax", `${prompt.id} image mode must use minimax`);
+        assert.equal(variant.durationSeconds, 6, `${prompt.id} minimax image must be 6s`);
+        assert.equal(variant.aspect, "adaptive", `${prompt.id} image aspect must be adaptive`);
+      } else {
+        assert.ok(
+          variant.modelSlug === "seedance" || variant.modelSlug === "kling",
+          `${prompt.id} text mode must use released seedance or kling tier`,
+        );
+        assert.ok(
+          variant.durationSeconds === 5 || variant.durationSeconds === 10,
+          `${prompt.id} text duration must be 5s or 10s`,
+        );
+      }
     }
   }
 });

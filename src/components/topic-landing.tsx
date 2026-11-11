@@ -230,7 +230,7 @@ export function TopicLanding({ topic }: { topic: Topic }) {
               </ol>
             </>
           )}
-          <h3>Episode 03 · Text-to-Video prompts (Seedance 2.5 · Kling 3.0 · MiniMax H3)</h3>
+          <h3>Episode 03 · Text-to-Video prompts (Seedance 2.5 · Kling 3.0)</h3>
           <div className="topic-prompt-list">
             {hookPrompts.map((prompt) => (
               <PromptCard key={prompt.id} prompt={prompt} />

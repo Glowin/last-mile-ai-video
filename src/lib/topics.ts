@@ -259,11 +259,7 @@ const aiChairmanSpyRomance: Topic = {
       mode: "image",
       prompt:
         "Animate this exact daytime riverfront Chinese restaurant photo from an across-the-table candid POV. Preserve the exact composition, lighting, and subjects: the older silver-haired man on the left in rimless glasses and a black short-sleeve polo shirt, and the woman on the right with long straight dark hair in a sleeveless black top sitting side by side before the floor-to-ceiling river-view window with the upside-down red diamond 'Fu' paper cutout on the upper-left glass, behind a white-tablecloth round table and glass lazy Susan of Chinese dishes. From 0-2.5s they smile warmly, lean slightly closer together, and gently swirl and clink their long-stemmed red wine glasses. At 2.5-4s his smile suddenly freezes as he realizes the camera across the table is secretly recording video; his eyes sharpen behind his rimless glasses and he lowers his wine glass slightly. From 4-6s he looks alarmed, raises his free hand, and points straight forward across the lazy Susan directly at the camera lens while the woman stops smiling and turns her startled gaze straight into the lens. Subtle handheld phone-camera breathing and a slight flinch at the end.",
-      variants: [
-        { modelSlug: "minimax", durationSeconds: 6, aspect: "adaptive" },
-        { modelSlug: "kling", durationSeconds: 5, aspect: "adaptive" },
-        { modelSlug: "seedance", durationSeconds: 5, aspect: "adaptive" },
-      ],
+      variants: [{ modelSlug: "minimax", durationSeconds: 6, aspect: "adaptive" }],
     },
     {
       id: "ep03-image-zh",
@@ -272,16 +268,12 @@ const aiChairmanSpyRomance: Topic = {
       mode: "image",
       prompt:
         "基于这张白天江景中餐厅合照生成跨桌偷拍感视频，严格保持原图人物穿搭与环境构图不变：落地窗外是白天江面、左侧白色游船码头、对岸绿树与高楼群，左上角玻璃贴着倒贴的红色「福」字菱形窗花；圆桌铺白桌布、中央玻璃转盘摆满辣子鸡、红油肉末豆腐等中式菜肴；左侧银白短发、戴无框眼镜、穿黑色短袖T恤的男士与右侧黑色长直发、穿黑色无袖上衣的女士并排而坐，手中各举高脚红酒杯。0–2.5秒两人面带灿烂微笑，身体微微靠近，轻晃高脚杯并在玻璃转盘上方轻轻碰杯，神情放松亲密；2.5–4秒男士笑容骤然凝固，透过无框眼镜意识到桌子对面正在偷拍录像，眼神瞬间变得警觉并微微放下酒杯；4–6秒他神情震惊，抬起手越过餐桌笔直指向正前方的镜头，身旁女士也收起笑容、惊愕地转头直视镜头，画面伴随轻微手持手机抖动。",
-      variants: [
-        { modelSlug: "minimax", durationSeconds: 6, aspect: "adaptive" },
-        { modelSlug: "kling", durationSeconds: 5, aspect: "adaptive" },
-        { modelSlug: "seedance", durationSeconds: 5, aspect: "adaptive" },
-      ],
+      variants: [{ modelSlug: "minimax", durationSeconds: 6, aspect: "adaptive" }],
     },
     {
       id: "ep03-seedance",
       group: "hook",
-      title: "Seedance 2.5 · Daytime Riverfront Restaurant + Shutter Audio",
+      title: "Seedance 2.5 · Daytime Riverfront Restaurant Wide Shot",
       mode: "text",
       prompt:
         "Candid across-the-table phone POV inside a bright daytime river-view Chinese restaurant. Tall floor-to-ceiling windows behind the table overlook a wide river, a white ferry pier on the left, green trees on the bank, and city high-rise buildings under daylight; an upside-down red diamond 'Fu' paper cutout is pasted on the upper-left glass pane, with a dark window ledge behind the chairs and a grey pillar on the right. Sitting side by side facing the camera at a large white-tablecloth round table with a clear glass lazy Susan: on the left, a silver-haired older man with a side part, rimless rectangular glasses, and a casual black short-sleeve polo shirt; on the right, an early-30s woman with long straight dark hair in a sleeveless black top leaning warmly toward his shoulder. Both hold long-stemmed red wine glasses. On the glass lazy Susan: a center white bowl of spicy minced pork in red chili oil, Sichuan red chili chicken, sliced braised duck, golden stir-fried shrimp, noodles, a cold dish in red sauce with black chopsticks, water tumblers, a small carafe of dark plum drink, and a glass of pale-yellow juice.\n\nBeat: 0-4s relaxed joyful lunch, warm smiles, gently swirling and clinking their stemmed red wine glasses above the lazy Susan; 4-6s his smile freezes as he notices the camera across the table is secretly recording, eyes narrowing behind his rimless glasses; 6-10s shock and confrontation, he raises his hand and points straight forward across the table directly at the camera lens while she turns her startled gaze into the lens.\n\nSoundtrack: daytime Chinese dining room murmur, porcelain and chopstick taps, a soft crystal wine-glass clink, then two crisp camera shutter clicks at the moment he points at the lens.",
@@ -303,13 +295,16 @@ const aiChairmanSpyRomance: Topic = {
       ],
     },
     {
-      id: "ep03-minimax",
+      id: "ep03-kling-wide",
       group: "hook",
-      title: "MiniMax H3 · Polished 10s Riverfront Lazy-Susan Master",
+      title: "Kling 3.0 · 4K Across-the-Table Lazy-Susan Master (16:9)",
       mode: "text",
       prompt:
-        "Polished cinematic candid shot inside a daytime river-view Chinese restaurant. Across-the-table high-angle framing looking at a white-tablecloth round table and clear glass lazy Susan loaded with colorful Chinese dishes (center bowl of spicy red chili tofu/minced pork, Sichuan chili chicken on the right, sliced braised duck, stir-fried shrimp, cold dish in red sauce, clear water glasses, dark drink carafe, pale-yellow juice). Behind the table, floor-to-ceiling glass windows reveal a daytime river, white pier, green trees, and city towers, with an upside-down red diamond 'Fu' cutout pasted on the upper-left window. Sitting side by side: a silver-haired older man in rimless glasses and a black short-sleeve polo shirt on the left, and a woman with long straight dark hair in a sleeveless black top leaning slightly toward him on the right, both holding stemmed red wine glasses. They share a warm laugh and toast; mid-clip his expression flips from happy warmth to startled alarm as he notices the camera recording across the table, and he points straight forward at the lens.",
-      variants: [{ modelSlug: "minimax", durationSeconds: 10, aspect: "16:9" }],
+        "Polished 4K cinematic candid shot inside a daytime river-view Chinese restaurant. Across-the-table high-angle framing looking at a white-tablecloth round table and clear glass lazy Susan loaded with colorful Chinese dishes (center bowl of spicy red chili tofu/minced pork, Sichuan chili chicken on the right, sliced braised duck, stir-fried shrimp, cold dish in red sauce, clear water glasses, dark drink carafe, pale-yellow juice). Behind the table, floor-to-ceiling glass windows reveal a daytime river, white pier, green trees, and city towers, with an upside-down red diamond 'Fu' cutout pasted on the upper-left window. Sitting side by side: a silver-haired older man in rimless glasses and a black short-sleeve polo shirt on the left, and a woman with long straight dark hair in a sleeveless black top leaning slightly toward him on the right, both holding stemmed red wine glasses. They share a warm laugh and toast; mid-clip his expression flips from happy warmth to startled alarm as he notices the camera recording across the table, and he points straight forward at the lens.",
+      variants: [
+        { modelSlug: "kling", durationSeconds: 10, aspect: "16:9" },
+        { modelSlug: "kling", durationSeconds: 5, aspect: "16:9" },
+      ],
     },
     {
       id: "ep01-kling",
@@ -330,13 +325,13 @@ const aiChairmanSpyRomance: Topic = {
       variants: [{ modelSlug: "seedance", durationSeconds: 10, aspect: "16:9" }],
     },
     {
-      id: "ep04-minimax",
+      id: "ep04-seedance",
       group: "episode",
       title: "Episode 04 · The Compute Ledger",
       mode: "text",
       prompt:
         "Corporate thriller beat after a leaked riverfront restaurant photo. Executive office at night. A tablet on the desk displays \"Meridian Lattice AI: COMPUTE ALLOCATION & MODEL WEIGHTS (RESTRICTED)\" alongside a blurred news alert of a daytime riverfront restaurant table. The woman with long straight dark hair hesitates; the silver-haired chairman in rimless glasses adjusts his glasses, briefly touches her hand, and pulls back with a conflicted expression. Slow push-in, tense dramatic lighting.",
-      variants: [{ modelSlug: "minimax", durationSeconds: 10, aspect: "16:9" }],
+      variants: [{ modelSlug: "seedance", durationSeconds: 10, aspect: "16:9" }],
     },
     {
       id: "ep05-kling",
@@ -348,21 +343,24 @@ const aiChairmanSpyRomance: Topic = {
       variants: [{ modelSlug: "kling", durationSeconds: 10, aspect: "9:16" }],
     },
     {
-      id: "trailer-minimax",
+      id: "trailer-seedance",
       group: "trailer",
-      title: "Trailer Montage (Wide)",
+      title: "Trailer Montage (Wide 21:9)",
       mode: "text",
       prompt:
         "Ultra-wide dramatic trailer for the AI Chairman & Spy short drama. Quick cuts: VIP gala red-wine toast; shared black umbrella in the rain; cut to the bright daytime riverfront Chinese restaurant shot (upside-down red 'Fu' window sticker, white-tablecloth glass lazy Susan of spicy Chinese dishes, side-by-side black tops, stemmed red wine glasses) as his smile freezes and he points straight at the camera lens; final cut to an empty boardroom before dawn.",
-      variants: [{ modelSlug: "minimax", durationSeconds: 6, aspect: "21:9" }],
+      variants: [
+        { modelSlug: "seedance", durationSeconds: 10, aspect: "21:9" },
+        { modelSlug: "seedance", durationSeconds: 5, aspect: "21:9" },
+      ],
     },
   ],
   imageToVideo: {
     title: "Image to video · Generate from the Restaurant Photo (基于餐厅合照生成视频)",
     steps: [
-      "Click **Open MiniMax H3** (or copy either the English or Chinese Image-to-Video prompt above) to open [KakaReel image-to-video](/create?model=minimax&mode=image) with the prompt pre-filled.",
+      "Click **Open in studio** (or copy either the English or Chinese Image-to-Video prompt above) to open [KakaReel image-to-video](/create?model=minimax&mode=image) with the prompt pre-filled.",
       "Upload the **daytime riverfront Chinese restaurant photo** (side-by-side black tops, rimless glasses, stemmed red wine glasses, glass lazy Susan, and upside-down red “福” window sticker).",
-      "Select **MiniMax H3 · 6s · 2K · Adaptive (23 credits)** for the live paid image-to-video path, or preview with Kling 3.0 / Seedance 2.5.",
+      "Use **MiniMax H3 · 6s · 2K · Adaptive (23 credits)**, KakaReel's released public paid image-to-video tier.",
       "Verify the 3-beat motion arc in the generated clip: **warm red-wine toast (0–2.5s) → smile freezes (2.5–4s) → points straight across the table at the camera lens (4–6s)**.",
     ],
   },
@@ -383,7 +381,7 @@ const aiChairmanSpyRomance: Topic = {
       question:
         "How do I generate a video directly from the restaurant photo (基于餐厅照片图生视频)?",
       answer:
-        "Use the **Image to video** prompt card above (available in both English and Chinese). Click **Open MiniMax H3** to launch [/create?model=minimax&mode=image](/create?model=minimax&mode=image) with the motion prompt pre-filled, upload the restaurant photo, and generate a **6s · 2K · adaptive** clip where they clink red wine glasses before freezing and pointing straight at the lens.",
+        "Use the **Image to video** prompt card above (available in both English and Chinese). Click **Open in studio** to launch [/create?model=minimax&mode=image](/create?model=minimax&mode=image) with the motion prompt pre-filled, upload the restaurant photo, and generate a **6s · 2K · adaptive** clip where they clink red wine glasses before freezing and pointing straight at the lens.",
     },
     {
       question:
