@@ -2915,3 +2915,206 @@ p {
   color: inherit;
   cursor: pointer;
 }
+
+/* Topic landing pages */
+.topic-page > .eyebrow {
+  margin-top: 0;
+}
+
+.topic-page > section {
+  margin-top: 56px;
+}
+
+.topic-page .lead {
+  max-width: 68ch;
+}
+
+.topic-disclaimer {
+  margin-top: 22px;
+  max-width: 72ch;
+}
+
+.topic-disclaimer a,
+.topic-page .topic-list a,
+.topic-page .topic-note a,
+.topic-page .faq a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.topic-note {
+  max-width: 72ch;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.topic-blocks {
+  display: grid;
+  gap: 8px;
+}
+
+.topic-blocks article {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.topic-blocks p,
+.topic-look p,
+.topic-page > section > p {
+  max-width: 74ch;
+  color: var(--ink-secondary);
+  line-height: 1.7;
+}
+
+.topic-list {
+  margin: 8px 0 18px;
+  padding-left: 1.25rem;
+  max-width: 78ch;
+  color: var(--ink-secondary);
+  line-height: 1.65;
+}
+
+.topic-list li + li {
+  margin-top: 10px;
+}
+
+.topic-specs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.topic-specs li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.topic-specs span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-secondary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-xs);
+  padding: 5px 9px;
+}
+
+.topic-table-wrap {
+  overflow-x: auto;
+  margin: 22px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+.topic-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.topic-table th,
+.topic-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.topic-table thead th {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  background: var(--bg-subtle);
+}
+
+.topic-table tbody th {
+  font-weight: 600;
+}
+
+.topic-table tr.is-featured td,
+.topic-table tr.is-featured th {
+  background: var(--bg-tinted);
+}
+
+.topic-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.topic-prompt-list {
+  display: grid;
+  gap: 16px;
+  margin: 8px 0 28px;
+}
+
+.topic-prompt {
+  margin-top: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  padding: 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.topic-prompt-list .topic-prompt {
+  margin-top: 0;
+}
+
+.topic-prompt .eyebrow {
+  margin-bottom: 8px;
+}
+
+.topic-prompt-text {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-secondary);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+}
+
+.topic-page .faq-section {
+  margin-top: 48px;
+}
+
+.topic-cta-body {
+  max-width: 46ch;
+  margin: 0 auto 26px;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.topic-cta-note {
+  margin: 18px auto 0;
+}
+
+@media (max-width: 650px) {
+  .topic-prompt {
+    padding: 18px;
+  }
+}
