@@ -1,8 +1,8 @@
 ---
 title: "Unattended MVP generation: policy, rollout and rollback"
-date: 2026-11-12
-source: "Owner's explicit 2026-10-28 and 2026-11-09 decisions; current implementation; official Prompt Sift contract"
-status: "2026-11-09 public checkout and 7 paid video specifications active under mvp-text-only-v1; 31 exact cost specs and rev15 budget valid until 2026-11-16; reference-image and output moderation remain unimplemented"
+date: 2026-11-21
+source: "Owner's explicit decisions; 2026-11-21 supplier pricing review and production renewal verification; official Prompt Sift contract"
+status: "Public checkout and 7 paid specifications remain under mvp-text-only-v1; rev16 budget and all 31 exact cost specs renewed until 2026-12-21T01:53:20.196Z; reference-image and output moderation remain unimplemented"
 ---
 
 ## 2026-11-04 real paid acceptance
